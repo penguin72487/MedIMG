@@ -1,0 +1,62 @@
+# MedSAM 官方環境配置
+# 根據官方 setup.py 依賴生成
+# 使用方式: mamba env create -f environment.yml
+# 或: conda env create -f environment.yml
+
+name: medsam-env
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Python 版本（最新 3.12）
+  - python=3.12
+
+  # PyTorch 2.4+ with CUDA 13.2（最新組合）
+  - pytorch::pytorch::2.4.0=py3.12_cuda13.2*
+  - pytorch::pytorch-cuda=13.2
+  - pytorch::torchvision=0.19.0=py3.12_cu13.2*
+  - pytorch::torchaudio=2.4.0=py3.12*
+
+  # 官方 MedSAM setup.py 直接依賴的 conda 套件（最新版本）
+  - matplotlib>=3.8.0
+  - scikit-image>=0.24.0
+  - scipy>=1.13.0
+  - opencv=4.9.0
+  - ipywidgets>=8.1.0
+  - jupyterlab>=4.1.0
+  - numpy>=2.0.0
+
+  # 補充數據處理與可視化庫（最新版本）
+  - pandas>=2.2.0
+  - scikit-learn>=1.4.0
+  - pillow>=10.2.0
+  - seaborn>=0.13.0
+
+  # 開發與工具
+  - jupyter>=1.0.0
+  - ipykernel>=6.25.0
+  - git>=2.40.0
+
+  # Pip package manager
+  - pip>=23.0.0
+
+pip:
+  # 官方 MedSAM setup.py 通過 pip 安裝的依賴（最新版本）
+  - SimpleITK>=2.3.0
+  - nibabel>=5.0.0
+  - tqdm>=4.65.0
+  - ipympl>=0.0.1
+  - transformers>=4.45.0
+  - segment-anything>=1.0
+  - monai>=1.4.0
+  
+  # NVIDIA CUDA 運行時庫（CUDA 13.2 對應版本）
+  - nvidia-cublas-cu12>=12.4.5.8
+  - nvidia-cudnn-cu12>=9.1.0.70
+  
+  # 推薦的額外依賴（最新版本）
+  - albumentations>=1.4.0
+  - timm>=1.0.0
+  - wandb>=0.17.0
