@@ -216,3 +216,44 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ============== Project-Specific Ignores ==============
+
+# Large Dataset Directories
+DDTI/
+TN3K/
+TN5000/
+
+# Compressed dataset files
+*.zip
+DDTI.zip
+TN3K.zip
+
+# Pre-trained model weights (download from external sources)
+medsam_vit_b.pth
+*.pth
+*.pt
+*.ckpt
+weights/
+
+# VS Code settings
+.vscode/
+
+# Windows system files
+*.Zone.Identifier
+Thumbs.db
+.DS_Store
+
+# IDE and editor
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+tempCodeRunnerFile.py
+
+# macOS
+.AppleDouble/
+.LSOverride/
