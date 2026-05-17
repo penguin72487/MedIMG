@@ -37,6 +37,7 @@ def _candidate_prefixes() -> List[str]:
         os.environ.get("CONDA_PREFIX", ""),
         os.path.dirname(os.path.dirname(sys.executable)),
         sys.prefix,
+        "/root/miniforge3/envs/medsam",
         "/home/penguin72487/miniforge3/envs/medsam",
     ]:
         if p and os.path.isdir(p) and p not in prefixes:

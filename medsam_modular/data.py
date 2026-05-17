@@ -67,18 +67,42 @@ class TN3KDataset(Dataset):
         self.samples: List[Dict[str, Any]] = []
         self._load_samples()
 
-    def _resolve_pair(self, sample_id: str) -> Optional[Tuple[Path, Path]]:
-        candidates = [
+    @staticmethod
+    def _image_candidates(image_dir: Path) -> List[Path]:
+        files: List[Path] = []
+        for pattern in ("*.jpg", "*.jpeg", "*.png", "*.bmp", "*.tif", "*.tiff"):
+            files.extend(sorted(image_dir.glob(pattern)))
+        return files
+
+    def _candidate_dirs(self) -> List[Tuple[Path, Path]]:
+        return [
             (self.root_dir / f"{self.split}-image", self.root_dir / f"{self.split}-mask"),
+            (self.root_dir / self.split / "images", self.root_dir / self.split / "masks"),
             (self.root_dir / "train-image", self.root_dir / "train-mask"),
             (self.root_dir / "trainval-image", self.root_dir / "trainval-mask"),
             (self.root_dir / "test-image", self.root_dir / "test-mask"),
+            (self.root_dir / "test" / "images", self.root_dir / "test" / "masks"),
         ]
-        for image_dir, mask_dir in candidates:
-            img_path = image_dir / f"{sample_id}.jpg"
-            mask_path = mask_dir / f"{sample_id}.jpg"
-            if img_path.exists() and mask_path.exists():
-                return img_path, mask_path
+
+    @staticmethod
+    def _resolve_mask_path(mask_dir: Path, stem: str) -> Optional[Path]:
+        for ext in (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"):
+            candidate = mask_dir / f"{stem}{ext}"
+            if candidate.exists():
+                return candidate
+        return None
+
+    def _resolve_pair(self, sample_id: str) -> Optional[Tuple[Path, Path]]:
+        for image_dir, mask_dir in self._candidate_dirs():
+            if not image_dir.exists() or not mask_dir.exists():
+                continue
+            for ext in (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"):
+                img_path = image_dir / f"{sample_id}{ext}"
+                if not img_path.exists():
+                    continue
+                mask_path = self._resolve_mask_path(mask_dir, sample_id)
+                if mask_path is not None:
+                    return img_path, mask_path
         return None
 
     def _load_samples(self) -> None:
@@ -91,15 +115,19 @@ class TN3KDataset(Dataset):
                 self.samples.append({"image_path": img_path, "mask_path": mask_path, "name": sid})
             return
 
-        image_dir = self.root_dir / f"{self.split}-image"
-        mask_dir = self.root_dir / f"{self.split}-mask"
-        if not image_dir.exists():
-            return
-
-        for img_file in sorted(image_dir.glob("*.jpg")):
-            mask_file = mask_dir / img_file.name
-            if mask_file.exists():
+        for image_dir, mask_dir in self._candidate_dirs():
+            if not image_dir.exists() or not mask_dir.exists():
+                continue
+            image_files = self._image_candidates(image_dir)
+            if not image_files:
+                continue
+            for img_file in image_files:
+                mask_file = self._resolve_mask_path(mask_dir, img_file.stem)
+                if mask_file is None:
+                    continue
                 self.samples.append({"image_path": img_file, "mask_path": mask_file, "name": img_file.stem})
+            if self.samples:
+                return
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -123,16 +151,48 @@ class TN3KDataset(Dataset):
 
 
 class DDTIDataset(Dataset):
-    def __init__(self, root_dir: str, image_size: int = 512, split_ids: Optional[Set[str]] = None):
+    def __init__(self, root_dir: str, split: str = "test", image_size: int = 512, split_ids: Optional[Set[str]] = None):
         self.root_dir = Path(root_dir)
+        self.split = split
         self.image_size = image_size
         self.split_ids = split_ids
         self.samples: List[Dict[str, Any]] = []
         self._load_samples()
 
+    @staticmethod
+    def _resolve_image_path(image_root: Path, case_stem: str, img_idx: int, img_text: str = "") -> Optional[Path]:
+        candidates: List[Path] = []
+        if img_text:
+            normalized = img_text.strip()
+            if normalized:
+                candidates.append(image_root / normalized)
+                candidates.append(image_root / f"{normalized}.jpg")
+        for ext in (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"):
+            candidates.append(image_root / f"{case_stem}_{img_idx}{ext}")
+            candidates.append(image_root / f"{img_idx}{ext}")
+        for path in candidates:
+            if path.exists():
+                return path
+        return None
+
     def _load_samples(self) -> None:
-        for xml_file in sorted(self.root_dir.glob("*.xml")):
-            case_id = int(xml_file.stem)
+        split_ann_root = self.root_dir / self.split / "annotations"
+        split_img_root = self.root_dir / self.split / "images"
+
+        if split_ann_root.exists() and split_img_root.exists():
+            ann_root = split_ann_root
+            image_root = split_img_root
+        else:
+            ann_root = self.root_dir
+            image_root = self.root_dir
+
+        for xml_file in sorted(ann_root.glob("*.xml")):
+            case_stem = xml_file.stem
+            try:
+                case_id: Any = int(case_stem)
+            except Exception:
+                case_id = case_stem
+
             root = ET.parse(xml_file).getroot()
             for mark in root.findall(".//mark"):
                 img_elem = mark.find("image")
@@ -140,12 +200,16 @@ class DDTIDataset(Dataset):
                 if img_elem is None or svg_elem is None:
                     continue
 
-                img_idx = int(img_elem.text)
-                sample_name = f"{case_id}_{img_idx}"
+                try:
+                    img_idx = int(str(img_elem.text).strip())
+                except Exception:
+                    continue
+
+                sample_name = f"{case_stem}_{img_idx}"
                 if self.split_ids is not None and sample_name not in self.split_ids:
                     continue
 
-                img_path = self.root_dir / f"{case_id}_{img_idx}.jpg"
+                img_path = self._resolve_image_path(image_root, case_stem, img_idx, str(img_elem.text or ""))
                 if img_path.exists():
                     self.samples.append(
                         {
@@ -218,27 +282,46 @@ class TN5000Dataset(Dataset):
         return boxes
 
     def _load_samples(self) -> None:
-        ann_dir = self.root_dir / "Annotations"
-        image_dir = self.root_dir / "JPEGImages"
-        default_split_file = self.root_dir / "ImageSets" / "Main" / f"{self.split}.txt"
+        voc_ann_dir = self.root_dir / "Annotations"
+        voc_image_dir = self.root_dir / "JPEGImages"
+        split_ann_dir = self.root_dir / self.split / "annotations"
+        split_image_dir = self.root_dir / self.split / "images"
+
+        if split_ann_dir.exists() and split_image_dir.exists():
+            ann_dir = split_ann_dir
+            image_dir = split_image_dir
+            default_split_file = None
+        else:
+            ann_dir = voc_ann_dir
+            image_dir = voc_image_dir
+            default_split_file = self.root_dir / "ImageSets" / "Main" / f"{self.split}.txt"
 
         if self.split_ids is not None:
             image_ids = sorted(self.split_ids)
-        elif default_split_file.exists():
+        elif default_split_file is not None and default_split_file.exists():
             image_ids = [line.strip() for line in default_split_file.read_text().splitlines() if line.strip()]
         else:
             image_ids = [p.stem for p in sorted(ann_dir.glob("*.xml"))]
 
         for image_id in image_ids:
             xml_path = ann_dir / f"{image_id}.xml"
-            img_path = image_dir / f"{image_id}.jpg"
-            if not xml_path.exists() or not img_path.exists():
+            img_path = None
+            for ext in (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"):
+                cand = image_dir / f"{image_id}{ext}"
+                if cand.exists():
+                    img_path = cand
+                    break
+
+            if not xml_path.exists() or img_path is None:
                 continue
 
             try:
                 root = ET.parse(xml_path).getroot()
-                width = int(root.findtext("size/width", default="0"))
-                height = int(root.findtext("size/height", default="0"))
+                width = int(float(root.findtext("size/width", default="0") or 0))
+                height = int(float(root.findtext("size/height", default="0") or 0))
+                if width <= 0 or height <= 0:
+                    with Image.open(img_path) as im:
+                        width, height = im.size
                 boxes = self._parse_boxes(root)
                 if width > 0 and height > 0 and boxes:
                     self.samples.append(
@@ -286,7 +369,7 @@ def build_dataset(dataset_name: str, root_dir: str, split_name: str, image_size:
     if dataset_name == "TN3K":
         return TN3KDataset(root_dir=root_dir, split=split_name, image_size=image_size, split_ids=split_ids)
     if dataset_name == "DDTI":
-        return DDTIDataset(root_dir=root_dir, image_size=image_size, split_ids=split_ids)
+        return DDTIDataset(root_dir=root_dir, split=split_name, image_size=image_size, split_ids=split_ids)
     if dataset_name == "TN5000":
         return TN5000Dataset(root_dir=root_dir, split=split_name, image_size=image_size, split_ids=split_ids)
     raise ValueError(f"Unsupported dataset: {dataset_name}")

@@ -257,3 +257,4 @@ tempCodeRunnerFile.py
 # macOS
 .AppleDouble/
 .LSOverride/
+results/*
