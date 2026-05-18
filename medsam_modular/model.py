@@ -4,10 +4,15 @@ import re
 import shutil
 import subprocess
 import sys
+import importlib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+
+# Ensure Triton discovers in-tree backends before any compile-related import paths run.
+os.environ.setdefault("TRITON_BACKENDS_IN_TREE", "1")
+
 import torch
 import torch.nn.functional as F
 from PIL import Image
@@ -17,9 +22,28 @@ from transformers import SamModel, SamProcessor
 _SAM_NORM_CACHE: Dict[int, Tuple[torch.Tensor, torch.Tensor]] = {}
 
 
+def _ensure_triton_in_tree_backends() -> None:
+    os.environ.setdefault("TRITON_BACKENDS_IN_TREE", "1")
+    try:
+        importlib.import_module("triton.backends")
+    except Exception:
+        pass
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name, "1" if default else "0").strip().lower()
     return raw in {"1", "true", "yes", "y", "on"}
+
+
+def _cuda_total_memory_gb() -> Optional[float]:
+    if not torch.cuda.is_available():
+        return None
+    try:
+        device_index = torch.cuda.current_device()
+        props = torch.cuda.get_device_properties(device_index)
+        return float(props.total_memory) / (1024.0 ** 3)
+    except Exception:
+        return None
 
 
 def _prepend_env_path(var_name: str, new_path: str) -> None:
@@ -161,14 +185,36 @@ def load_state_dict_compat(target_model: torch.nn.Module, path: Path, map_locati
     base.load_state_dict(sd, strict=False)
 
 
-def _build_compile_warmup_inputs(processor: SamProcessor, device: str, image_size: int) -> Dict[str, torch.Tensor]:
-    test_img = Image.new("RGB", (image_size, image_size), color=(0, 0, 0))
-    inputs = processor(
-        images=[test_img],
-        input_boxes=[[[0, 0, image_size - 1, image_size - 1]]],
-        return_tensors="pt",
-    )
+def _build_compile_warmup_inputs(
+    processor: SamProcessor,
+    device: str,
+    image_size: int,
+    batch_size: int = 1,
+) -> Dict[str, torch.Tensor]:
+    bs = max(1, int(batch_size))
+    images = [Image.new("RGB", (image_size, image_size), color=(0, 0, 0)) for _ in range(bs)]
+    boxes = [[[0, 0, image_size - 1, image_size - 1]] for _ in range(bs)]
+    inputs = processor(images=images, input_boxes=boxes, return_tensors="pt")
     return _move_inputs_to_device(inputs, device)
+
+
+def _parse_warmup_batches(raw: str, default_batches: List[int]) -> List[int]:
+    if not raw.strip():
+        return default_batches
+
+    values: List[int] = []
+    for token in raw.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            n = int(token)
+        except ValueError:
+            continue
+        if n > 0 and n not in values:
+            values.append(n)
+
+    return values or default_batches
 
 
 def _try_compile_model(model: SamModel, processor: SamProcessor, device: str, image_size: int) -> Tuple[SamModel, Dict[str, Any]]:
@@ -197,28 +243,56 @@ def _try_compile_model(model: SamModel, processor: SamProcessor, device: str, im
         report["error"] = "torch.compile not available"
         return model, report
 
-    # Default to aot_eager to avoid Triton/Inductor driver dependency issues.
-    compile_backend = os.getenv("MEDSAM_COMPILE_BACKEND", "aot_eager")
-    compile_mode = os.getenv("MEDSAM_COMPILE_MODE", "default")
+    _ensure_triton_in_tree_backends()
 
-    try:
-        compiled = torch.compile(
-            model,
-            backend=compile_backend,
-            mode=compile_mode,
-            fullgraph=False,
-            dynamic=True,
-        )
-        warmup_inputs = _build_compile_warmup_inputs(processor, device=device, image_size=image_size)
-        with torch.no_grad():
-            _ = compiled(**warmup_inputs)
-        report["compiled"] = True
-        report["backend"] = compile_backend
-        report["error"] = ""
-        return compiled, report
-    except Exception as e:
-        report["error"] = f"{type(e).__name__}: {e}"
-        return model, report
+    # Only use inductor for compilation per user preference.
+    backend_candidates = ["inductor"]
+    mode_candidates = ["reduce-overhead"]
+
+    default_dynamic = False if device == "cuda" else True
+    compile_dynamic = _env_bool("MEDSAM_COMPILE_DYNAMIC", default_dynamic)
+    cuda_total_gb = _cuda_total_memory_gb() if device == "cuda" else None
+    warmup_batches = _parse_warmup_batches(
+        os.getenv("MEDSAM_COMPILE_WARMUP_BATCHES", ""),
+        [1] if (device == "cuda" and cuda_total_gb is not None and cuda_total_gb <= 12.5) else ([1, 8] if device == "cuda" else [1]),
+    )
+    if device == "cuda" and cuda_total_gb is not None and cuda_total_gb <= 12.5:
+        warmup_batches = [b for b in warmup_batches if b <= 1] or [1]
+
+    last_error = ""
+
+    for compile_backend in backend_candidates:
+        for compile_mode in mode_candidates:
+            try:
+                compiled = torch.compile(
+                    model,
+                    backend=compile_backend,
+                    mode=compile_mode,
+                    fullgraph=False,
+                    dynamic=compile_dynamic,
+                )
+                with torch.no_grad():
+                    for bs in warmup_batches:
+                        warmup_inputs = _build_compile_warmup_inputs(
+                            processor,
+                            device=device,
+                            image_size=image_size,
+                            batch_size=bs,
+                        )
+                        _ = compiled(**warmup_inputs)
+                report["compiled"] = True
+                report["backend"] = compile_backend
+                report["error"] = ""
+                report["compile_mode"] = compile_mode
+                report["compile_dynamic"] = compile_dynamic
+                report["warmup_batches"] = warmup_batches
+                return compiled, report
+            except Exception as e:
+                last_error = f"{type(e).__name__}: {e}"
+                break
+
+    report["error"] = last_error
+    return model, report
 
 
 def load_medsam(model_id: str, device: str, image_size: int, local_weight_path: str = "") -> Tuple[SamModel, SamProcessor, Dict[str, Any]]:
@@ -236,6 +310,8 @@ def load_medsam(model_id: str, device: str, image_size: int, local_weight_path: 
         torch.set_float32_matmul_precision("high")
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
+        torch.backends.cudnn.benchmark = True
+        model = model.to(memory_format=torch.channels_last)
 
     model.eval()
     for p in model.parameters():
@@ -252,10 +328,36 @@ def _move_inputs_to_device(inputs: Dict[str, torch.Tensor], device: str) -> Dict
         if isinstance(v, torch.Tensor):
             if k == "input_boxes" and v.dtype == torch.float64:
                 v = v.to(torch.float32)
+            if non_blocking and v.device.type == "cpu":
+                try:
+                    v = v.pin_memory()
+                except Exception:
+                    pass
             moved[k] = v.to(device, non_blocking=non_blocking)
         else:
             moved[k] = v
     return moved
+
+
+def _run_prob_inference(
+    model: SamModel,
+    inputs: Dict[str, torch.Tensor],
+    output_size: Tuple[int, int],
+    device: str,
+    use_amp: bool = True,
+) -> torch.Tensor:
+    with torch.inference_mode():
+        if use_amp and device == "cuda":
+            with torch.amp.autocast("cuda", dtype=torch.float16):
+                outputs = model(**inputs)
+                probs = torch.sigmoid(outputs.pred_masks)
+        else:
+            outputs = model(**inputs)
+            probs = torch.sigmoid(outputs.pred_masks)
+
+        probs = _normalize_masks_to_4d(probs)
+        probs = F.interpolate(probs, size=output_size, mode="bilinear", align_corners=False)
+    return probs
 
 
 def _normalize_masks_to_4d(masks: torch.Tensor) -> torch.Tensor:
@@ -400,18 +502,13 @@ def predict_prob_mask(
     w, h = image.size
     inputs = build_inputs(processor, image, input_box)
     inputs = _move_inputs_to_device(inputs, device)
-
-    with torch.inference_mode():
-        if use_amp and device == "cuda":
-            with torch.amp.autocast("cuda", dtype=torch.float16):
-                outputs = model(**inputs)
-                probs = torch.sigmoid(outputs.pred_masks)
-        else:
-            outputs = model(**inputs)
-            probs = torch.sigmoid(outputs.pred_masks)
-
-        probs = _normalize_masks_to_4d(probs)
-        probs = F.interpolate(probs, size=(h, w), mode="bilinear", align_corners=False)
+    probs = _run_prob_inference(
+        model=model,
+        inputs=inputs,
+        output_size=(h, w),
+        device=device,
+        use_amp=use_amp,
+    )
 
     return probs[0, 0].detach().cpu().numpy()
 
@@ -419,32 +516,64 @@ def predict_prob_mask(
 def predict_prob_masks_batch(
     model: SamModel,
     processor: SamProcessor,
-    images: List[Image.Image],
+    images: List[Any],
     input_boxes: List[List[int]],
     device: str,
     use_amp: bool = True,
+    fixed_batch_size: int = 0,
 ) -> np.ndarray:
     if not images:
         return np.empty((0, 0, 0), dtype=np.float32)
 
-    w, h = images[0].size
-    packed_boxes = [[box] for box in input_boxes]
-    inputs = build_inputs_batch(processor=processor, images=images, input_boxes=packed_boxes)
+    first = images[0]
+    if isinstance(first, Image.Image):
+        w, h = first.size
+    else:
+        arr0 = np.asarray(first)
+        h, w = int(arr0.shape[0]), int(arr0.shape[1])
+
+    n = len(images)
+    target_batch = int(fixed_batch_size) if int(fixed_batch_size) > 0 else n
+    target_batch = max(target_batch, n)
+
+    padded_images = list(images)
+    padded_boxes = list(input_boxes)
+    if target_batch > n:
+        pad_count = target_batch - n
+        pad_image = images[-1]
+        pad_box = input_boxes[-1]
+        padded_images.extend([pad_image] * pad_count)
+        padded_boxes.extend([pad_box] * pad_count)
+
+    packed_boxes = [[box] for box in padded_boxes]
+    inputs = build_inputs_batch(processor=processor, images=padded_images, input_boxes=packed_boxes)
     inputs = _move_inputs_to_device(inputs, device)
+    probs = _run_prob_inference(
+        model=model,
+        inputs=inputs,
+        output_size=(h, w),
+        device=device,
+        use_amp=use_amp,
+    )
 
-    with torch.inference_mode():
-        if use_amp and device == "cuda":
-            with torch.amp.autocast("cuda", dtype=torch.float16):
-                outputs = model(**inputs)
-                probs = torch.sigmoid(outputs.pred_masks)
-        else:
-            outputs = model(**inputs)
-            probs = torch.sigmoid(outputs.pred_masks)
+    return probs[:n, 0].detach().cpu().numpy()
 
-        probs = _normalize_masks_to_4d(probs)
-        probs = F.interpolate(probs, size=(h, w), mode="bilinear", align_corners=False)
 
-    return probs[:, 0].detach().cpu().numpy()
+def predict_prob_masks_from_inputs(
+    model: SamModel,
+    inputs: Dict[str, torch.Tensor],
+    device: str,
+    output_size: Tuple[int, int],
+    use_amp: bool = True,
+) -> torch.Tensor:
+    moved_inputs = _move_inputs_to_device(inputs, device)
+    return _run_prob_inference(
+        model=model,
+        inputs=moved_inputs,
+        output_size=output_size,
+        device=device,
+        use_amp=use_amp,
+    )
 
 
 def predict_binary_mask(

@@ -165,7 +165,12 @@ def main() -> None:
         image_size=image_size,
         local_weight_path=weight_path,
     )
+    compile_backend = compile_report.get("backend", "<none>")
+    compile_mode = compile_report.get("compile_mode", "<none>")
+    compile_dynamic = compile_report.get("compile_dynamic", "<unknown>")
+    warmup_batches = compile_report.get("warmup_batches", "<unknown>")
     print(f"  compile    : {compile_report.get('compiled', False)}  ({time.time()-t1:.1f}s)")
+    print(f"  compile cfg: backend={compile_backend}, mode={compile_mode}, dynamic={compile_dynamic}, warmup_batches={warmup_batches}")
     if not compile_report.get('compiled', False):
         err = compile_report.get('error', '')
         if err:
@@ -209,8 +214,30 @@ def main() -> None:
         threshold=float(os.getenv("MEDSAM_OOD_THRESHOLD", "0.5")),
         method=os.getenv("MEDSAM_OOD_METHOD", "entropy"),
     )
-    tta_predictor = TTAPredictor()
+    
+    # TTA configuration via environment variables
+    tta_fusion_mode = os.getenv("MEDSAM_TTA_FUSION", "entropy_weighted")  # mean, median, entropy_weighted
+    tta_fast_mode = os.getenv("MEDSAM_TTA_FAST", "0").lower() in ("1", "true", "yes")
+    tta_augmentations = None
+    
+    # Custom augmentations via environment variable (comma-separated)
+    tta_augs_str = os.getenv("MEDSAM_TTA_AUGMENTATIONS", "")
+    if tta_augs_str:
+        tta_augmentations = [aug.strip() for aug in tta_augs_str.split(",")]
+    
+    tta_predictor = TTAPredictor(
+        augmentations=tta_augmentations,
+        fusion_mode=tta_fusion_mode,
+        use_fast_mode=tta_fast_mode,
+    )
     pred_cache = PredictionCache(output_dir / "pred_cache")
+    
+    # Log TTA configuration
+    print(f"\n=== TTA Configuration ===")
+    print(f"  Fusion mode: {tta_fusion_mode}")
+    print(f"  Fast mode: {tta_fast_mode}")
+    print(f"  Augmentations: {tta_predictor.augmentations}")
+    print(f"  Number of augmentations: {len(tta_predictor.augmentations)}")
 
     all_stats: Dict[str, Dict[str, Dict[str, Any]]] = {}
     t_eval_start = time.time()

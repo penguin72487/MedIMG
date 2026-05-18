@@ -68,6 +68,17 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="若 torch.compile(inductor) 無法啟用則中止",
     )
+    model_group.add_argument(
+        "--compile-dynamic",
+        action="store_true",
+        help="啟用 torch.compile dynamic shape（預設: CUDA 下關閉以提升固定形狀推論效能）",
+    )
+    model_group.add_argument(
+        "--compile-warmup-batches",
+        default="",
+        metavar="BATCHES",
+        help="compile warmup 批次（逗號分隔），如: 1,8",
+    )
 
     # ── 訓練（微調） ──────────────────────────────────────────────────────────
     train_group = parser.add_argument_group("訓練（微調）")
@@ -115,6 +126,40 @@ def _parse_args() -> argparse.Namespace:
         choices=["entropy", "confidence", "variance"],
         help="OOD 偵測方法",
     )
+    
+    # TTA parameters
+    eval_group.add_argument(
+        "--tta-fusion",
+        default="entropy_weighted",
+        choices=["mean", "median", "entropy_weighted"],
+        help="TTA 融合策略（mean: 平均, median: 中位數, entropy_weighted: 熵加權）",
+    )
+    eval_group.add_argument(
+        "--tta-fast",
+        action="store_true",
+        help="使用快速 TTA 模式（僅翻轉增強，加快速度）",
+    )
+    eval_group.add_argument(
+        "--tta-augmentations",
+        default="",
+        metavar="AUGS",
+        help="自訂 TTA 增強方式（逗號分隔），如: none,hflip,vflip,rotate_90,rotate_270",
+    )
+    eval_group.add_argument(
+        "--tta-chunk-size",
+        type=int,
+        default=0,
+        metavar="N",
+        help="TTA 分塊推論大小（0 表示自動；12GB GPU 建議 2-4）",
+    )
+    eval_group.add_argument(
+        "--tta-fixed-batch",
+        type=int,
+        default=0,
+        metavar="N",
+        help="固定 TTA batch 大小（0 表示不額外 padding，較省 VRAM）",
+    )
+
 
     # ── 輸出 ──────────────────────────────────────────────────────────────────
     out_group = parser.add_argument_group("輸出")
@@ -146,6 +191,11 @@ def _apply_env(args: argparse.Namespace) -> None:
     _set("MEDSAM_OUTPUT_DIR",          args.output_dir)
     _set("MEDSAM_OOD_THRESHOLD",       str(args.ood_threshold))
     _set("MEDSAM_OOD_METHOD",          args.ood_method)
+    _set("MEDSAM_TTA_FUSION",          args.tta_fusion)
+    _set("MEDSAM_TTA_AUGMENTATIONS",   args.tta_augmentations)
+    _set("MEDSAM_TTA_CHUNK_SIZE",      str(args.tta_chunk_size) if args.tta_chunk_size > 0 else "")
+    _set("MEDSAM_TTA_FIXED_BATCH",     str(args.tta_fixed_batch) if args.tta_fixed_batch > 0 else "")
+    _set("MEDSAM_COMPILE_WARMUP_BATCHES", args.compile_warmup_batches)
 
     os.environ["MEDSAM_SKIP_FINETUNE"]              = "1" if args.skip_finetune else "0"
     os.environ["MEDSAM_FINETUNE_TRAIN_BACKBONE"]    = "1" if args.train_backbone else "0"
@@ -161,6 +211,8 @@ def _apply_env(args: argparse.Namespace) -> None:
     os.environ["MEDSAM_FINETUNE_MAX_SAMPLES"]       = str(args.max_samples)
     os.environ["MEDSAM_FINETUNE_USE_FUSED_ADAMW"]   = "0" if args.no_fused_adamw else "1"
     os.environ["MEDSAM_REQUIRE_COMPILE"]            = "1" if args.require_compile else "0"
+    os.environ["MEDSAM_COMPILE_DYNAMIC"]            = "1" if args.compile_dynamic else "0"
+    os.environ["MEDSAM_TTA_FAST"]                   = "1" if args.tta_fast else "0"
 
 
 def main() -> None:
