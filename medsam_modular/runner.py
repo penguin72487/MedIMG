@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -280,11 +281,17 @@ def main() -> None:
     comparison_path = output_dir / "comparison_table.csv"
     comparison_table.to_csv(comparison_path, index=False)
     chart_path = save_comparison_chart(all_stats, output_dir)
+    top_results_dir = project_root / "results"
+    top_results_dir.mkdir(parents=True, exist_ok=True)
+    top_chart_path = top_results_dir / chart_path.name
+    if chart_path.resolve() != top_chart_path.resolve():
+        shutil.copy2(chart_path, top_chart_path)
     _save_json(output_dir / "summary.json", all_stats)
 
     print("\nOutputs:")
     print(f"- comparison_table: {comparison_path}")
     print(f"- comparison_chart: {chart_path}")
+    print(f"- comparison_chart_top: {top_chart_path}")
     print(f"- summary: {output_dir / 'summary.json'}")
 
 
