@@ -1,7 +1,7 @@
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 from medsam_modular.data import prepare_datasets_by_split
 from medsam_modular.model import load_state_dict_compat, normalize_pred_masks_to_4d
+from medsam_modular.profiler import PerformanceProfiler
 
 
 def _env_bool_value(raw: Any, default: bool = False) -> bool:
@@ -129,7 +130,7 @@ def _compute_seg_loss(outputs: Any, gt_mask: torch.Tensor) -> torch.Tensor:
     return F.binary_cross_entropy_with_logits(logits, target)
 
 
-def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
+def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler: Optional[PerformanceProfiler] = None) -> Any:
     skip = _env_bool_value(config.get("skip_finetune", "1"), default=True)
     if skip:
         print("⏭️ 跳過 fine-tune（skip_finetune 啟用）")
@@ -150,6 +151,12 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
     num_workers = int(config.get("finetune_workers", 4))
     max_samples = int(config.get("finetune_max_samples", 0))
     use_fused_adamw = _env_bool_value(config.get("finetune_use_fused_adamw", "1"), default=True)
+    ft_total_start = time.perf_counter()
+    train_data_move_total = 0.0
+    train_forward_total = 0.0
+    train_backward_total = 0.0
+    train_optimizer_total = 0.0
+    val_forward_total = 0.0
 
     print("=" * 80)
     print("[1/4] 準備資料集 ...")
@@ -240,7 +247,9 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
             unit="batch",
         )
         for step, batch in train_bar:
+            t_data = time.perf_counter()
             batch = _move_batch_to_device(batch, device)
+            train_data_move_total += (time.perf_counter() - t_data)
             model_inputs = {
                 "pixel_values": batch["pixel_values"],
                 "input_boxes": batch["input_boxes"],
@@ -248,6 +257,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
                 "reshaped_input_sizes": batch["reshaped_input_sizes"],
             }
 
+            t_forward = time.perf_counter()
             if device == "cuda":
                 with torch.amp.autocast("cuda", dtype=torch.float16):
                     outputs = base_model(**model_inputs)
@@ -255,19 +265,24 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
             else:
                 outputs = base_model(**model_inputs)
                 loss = _compute_seg_loss(outputs, batch["gt_mask"]) / grad_accum
+            train_forward_total += (time.perf_counter() - t_forward)
 
+            t_backward = time.perf_counter()
             scaler.scale(loss).backward()
+            train_backward_total += (time.perf_counter() - t_backward)
             cur_loss = float(loss.item() * grad_accum)
             train_losses.append(cur_loss)
             train_bar.set_postfix(loss=f"{cur_loss:.4f}")
 
             if step % grad_accum == 0 or step == len(train_loader):
+                t_opt = time.perf_counter()
                 if grad_clip > 0:
                     scaler.unscale_(optimizer)
                     torch.nn.utils.clip_grad_norm_(params, grad_clip)
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad(set_to_none=True)
+                train_optimizer_total += (time.perf_counter() - t_opt)
 
         base_model.eval()
         val_losses: List[float] = []
@@ -288,6 +303,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
                     "reshaped_input_sizes": batch["reshaped_input_sizes"],
                 }
 
+                t_val_forward = time.perf_counter()
                 if device == "cuda":
                     with torch.amp.autocast("cuda", dtype=torch.float16):
                         outputs = base_model(**model_inputs)
@@ -295,6 +311,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
                 else:
                     outputs = base_model(**model_inputs)
                     val_loss = _compute_seg_loss(outputs, batch["gt_mask"])
+                val_forward_total += (time.perf_counter() - t_val_forward)
 
                 val_bar.set_postfix(loss=f"{float(val_loss.item()):.4f}")
                 val_losses.append(float(val_loss.item()))
@@ -340,6 +357,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
         print(f"  ✅ Loaded best weights: {best_path}  (best_val={best_val_loss:.6f})")
 
     stats_path = output_dir / "finetune_stats.json"
+    t_save_json = time.perf_counter()
     stats_path.write_text(
         json.dumps(
             {
@@ -355,6 +373,8 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
         ),
         encoding="utf-8",
     )
+    save_json_total = time.perf_counter() - t_save_json
+    t_save_pt = time.perf_counter()
     torch.save(
         {
             "history": history,
@@ -367,10 +387,27 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
         },
         output_dir / "finetune_stats.pt",
     )
+    save_pt_total = time.perf_counter() - t_save_pt
 
     base_model.eval()
     for p in base_model.parameters():
         p.requires_grad = False
+
+    if profiler is not None and profiler.enabled:
+        ft_total_sec = time.perf_counter() - ft_total_start
+        profiler.record_duration("finetune.total", ft_total_sec)
+        profiler.record_duration("finetune.data_move", train_data_move_total)
+        profiler.record_duration("finetune.train_forward", train_forward_total)
+        profiler.record_duration("finetune.train_backward", train_backward_total)
+        profiler.record_duration("finetune.optimizer", train_optimizer_total)
+        profiler.record_duration("finetune.val_forward", val_forward_total)
+        profiler.record_duration("finetune.save_json", save_json_total)
+        profiler.record_duration("finetune.save_pt", save_pt_total)
+        profiler.add_counter("finetune.train_samples", float(len(train_dataset)))
+        profiler.add_counter("finetune.val_samples", float(len(val_dataset)))
+        profiler.add_counter("finetune.epochs_config", float(epochs))
+        profiler.add_counter("finetune.batch_size", float(batch_size))
+        profiler.flush()
 
     print("=" * 80)
     print("Fine-tune completed")

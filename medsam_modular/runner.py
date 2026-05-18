@@ -11,6 +11,7 @@ from medsam_modular.cache import PredictionCache
 from medsam_modular.data import prepare_datasets_by_split
 from medsam_modular.eval import OODDetector, TTAPredictor, evaluate_dataset
 from medsam_modular.model import load_medsam
+from medsam_modular.profiler import PerformanceProfiler, set_active_profiler
 from medsam_modular.train import maybe_finetune
 from medsam_modular.visualize import build_comparison_table, save_comparison_chart
 
@@ -31,7 +32,7 @@ def _dataset_path_is_valid(dataset_name: str, candidate: Path) -> bool:
     if not candidate.exists():
         return False
 
-    if dataset_name == "TN3K":
+    if dataset_name in {"TN3K", "TG3K"}:
         return (
             (candidate / "test-image").exists()
             or (candidate / "test" / "images").exists()
@@ -56,6 +57,7 @@ def _dataset_path_is_valid(dataset_name: str, candidate: Path) -> bool:
 def _resolve_data_paths(project_root: Path) -> Dict[str, str]:
     defaults = {
         "TN3K": str(project_root / "TN3K"),
+        "TG3K": str(project_root / "TG3K"),
         "DDTI": str(project_root / "DDTI"),
         "TN5000": str(project_root / "TN5000"),
     }
@@ -101,8 +103,18 @@ def _resolve_weight_path(project_root: Path) -> str:
 
 
 def _save_json(path: Path, payload: Any) -> None:
+    profiler = None
+    try:
+        from medsam_modular.profiler import get_active_profiler
+
+        profiler = get_active_profiler()
+    except Exception:
+        profiler = None
+    t0 = time.perf_counter() if profiler is not None and profiler.enabled else 0.0
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    if profiler is not None and profiler.enabled:
+        profiler.record_duration("io.save_json", time.perf_counter() - t0)
 
 
 def _fmt_metric(value: Any) -> str:
@@ -146,6 +158,17 @@ def main() -> None:
     model_id = os.getenv("MEDSAM_MODEL_ID", "facebook/sam-vit-base")
     data_paths = _resolve_data_paths(project_root)
     weight_path = _resolve_weight_path(project_root)
+    profile_enabled = _env_bool("MEDSAM_PROFILE", True)
+    profile_path_env = os.getenv("MEDSAM_PROFILE_PATH", "").strip()
+    profile_path = Path(profile_path_env) if profile_path_env else (output_dir / "bottleneck_profile.json")
+    profiler = PerformanceProfiler(enabled=profile_enabled, run_name="medsam_pipeline")
+    profiler.configure_output(profile_path)
+    set_active_profiler(profiler)
+    profiler.set_metadata("device", device)
+    profiler.set_metadata("model_id", model_id)
+    profiler.set_metadata("image_size", image_size)
+    profiler.set_metadata("data_paths", data_paths)
+    profiler.snapshot_cuda("startup")
 
     print("=" * 80)
     print("MedSAM Modular Runner")
@@ -159,12 +182,13 @@ def main() -> None:
 
     print("\n[Stage 1/3] 載入模型 ...")
     t1 = time.time()
-    model, processor, compile_report = load_medsam(
-        model_id=model_id,
-        device=device,
-        image_size=image_size,
-        local_weight_path=weight_path,
-    )
+    with profiler.section_and_flush("stage.load_model"):
+        model, processor, compile_report = load_medsam(
+            model_id=model_id,
+            device=device,
+            image_size=image_size,
+            local_weight_path=weight_path,
+        )
     compile_backend = compile_report.get("backend", "<none>")
     compile_mode = compile_report.get("compile_mode", "<none>")
     compile_dynamic = compile_report.get("compile_dynamic", "<unknown>")
@@ -182,28 +206,31 @@ def main() -> None:
 
     print("\n[Stage 2/3] 訓練 / 微調 ...")
     t2 = time.time()
-    model = maybe_finetune(
-        model=model,
-        processor=processor,
-        config=_build_train_config(
-            project_root=project_root,
-            data_paths=data_paths,
-            image_size=image_size,
-            device=device,
-            output_dir=output_dir,
-        ),
-    )
+    with profiler.section_and_flush("stage.finetune"):
+        model = maybe_finetune(
+            model=model,
+            processor=processor,
+            config=_build_train_config(
+                project_root=project_root,
+                data_paths=data_paths,
+                image_size=image_size,
+                device=device,
+                output_dir=output_dir,
+            ),
+            profiler=profiler,
+        )
     print(f"  微調耗時: {time.time()-t2:.1f}s")
 
     print("\n[Stage 3/3] 準備測試資料 ...")
     t3 = time.time()
     split_root = Path(os.getenv("MEDSAM_SPLIT_ROOT", str(project_root / "splits")))
-    test_sets = prepare_datasets_by_split(
-        data_paths=data_paths,
-        split_root=split_root,
-        split_name="test",
-        image_size=image_size,
-    )
+    with profiler.section_and_flush("stage.prepare_test_data"):
+        test_sets = prepare_datasets_by_split(
+            data_paths=data_paths,
+            split_root=split_root,
+            split_name="test",
+            image_size=image_size,
+        )
     total_test = sum(len(ds) for ds in test_sets.values())
     print(f"  資料準備耗時: {time.time()-t3:.1f}s")
     for name, ds in test_sets.items():
@@ -248,42 +275,51 @@ def main() -> None:
 
         print(f"\n=== Evaluating {dataset_name} ({len(dataset)} samples) ===")
         t_ds = time.time()
-        baseline_results, baseline_stats = evaluate_dataset(
-            dataset=dataset,
-            dataset_name=dataset_name,
-            model=model,
-            processor=processor,
-            device=device,
-            use_ood=False,
-            use_tta=False,
-            ood_detector=None,
-            tta_predictor=None,
-            pred_cache=pred_cache,
-        )
-        ood_results, ood_stats = evaluate_dataset(
-            dataset=dataset,
-            dataset_name=dataset_name,
-            model=model,
-            processor=processor,
-            device=device,
-            use_ood=True,
-            use_tta=False,
-            ood_detector=ood_detector,
-            tta_predictor=None,
-            pred_cache=pred_cache,
-        )
-        tta_results, tta_stats = evaluate_dataset(
-            dataset=dataset,
-            dataset_name=dataset_name,
-            model=model,
-            processor=processor,
-            device=device,
-            use_ood=False,
-            use_tta=True,
-            ood_detector=None,
-            tta_predictor=tta_predictor,
-            pred_cache=None,
-        )
+        with profiler.section_and_flush(f"eval.{dataset_name}.baseline.total"):
+            baseline_results, baseline_stats = evaluate_dataset(
+                dataset=dataset,
+                dataset_name=dataset_name,
+                model=model,
+                processor=processor,
+                device=device,
+                use_ood=False,
+                use_tta=False,
+                ood_detector=None,
+                tta_predictor=None,
+                pred_cache=pred_cache,
+                profiler=profiler,
+                profile_prefix=f"eval.{dataset_name}.baseline",
+            )
+        with profiler.section_and_flush(f"eval.{dataset_name}.ood.total"):
+            ood_results, ood_stats = evaluate_dataset(
+                dataset=dataset,
+                dataset_name=dataset_name,
+                model=model,
+                processor=processor,
+                device=device,
+                use_ood=True,
+                use_tta=False,
+                ood_detector=ood_detector,
+                tta_predictor=None,
+                pred_cache=pred_cache,
+                profiler=profiler,
+                profile_prefix=f"eval.{dataset_name}.ood",
+            )
+        with profiler.section_and_flush(f"eval.{dataset_name}.tta.total"):
+            tta_results, tta_stats = evaluate_dataset(
+                dataset=dataset,
+                dataset_name=dataset_name,
+                model=model,
+                processor=processor,
+                device=device,
+                use_ood=False,
+                use_tta=True,
+                ood_detector=None,
+                tta_predictor=tta_predictor,
+                pred_cache=None,
+                profiler=profiler,
+                profile_prefix=f"eval.{dataset_name}.tta",
+            )
 
         all_stats[dataset_name] = {
             "baseline": baseline_stats,
@@ -300,26 +336,57 @@ def main() -> None:
         _save_json(output_dir / f"{dataset_name.lower()}_ood_stats.json", ood_stats)
         _save_json(output_dir / f"{dataset_name.lower()}_tta_results.json", tta_results)
         _save_json(output_dir / f"{dataset_name.lower()}_tta_stats.json", tta_stats)
+        latest_profile = profiler.flush() or {}
+        limit_info = latest_profile.get("optimization_limit_analysis", {})
+        print(
+            f"  [{dataset_name}] optimization headroom: {limit_info.get('status', 'unknown')} | "
+            f"{limit_info.get('message', '')}"
+        )
 
     if not all_stats:
         raise RuntimeError("No test datasets were loaded. Check dataset paths and split files.")
 
-    comparison_table = build_comparison_table(all_stats)
+    with profiler.section_and_flush("stage.build_comparison"):
+        comparison_table = build_comparison_table(all_stats)
     comparison_path = output_dir / "comparison_table.csv"
-    comparison_table.to_csv(comparison_path, index=False)
-    chart_path = save_comparison_chart(all_stats, output_dir)
+    with profiler.section_and_flush("stage.save_comparison_csv"):
+        comparison_table.to_csv(comparison_path, index=False)
+    with profiler.section_and_flush("stage.save_comparison_chart"):
+        chart_path = save_comparison_chart(all_stats, output_dir)
     top_results_dir = project_root / "results"
     top_results_dir.mkdir(parents=True, exist_ok=True)
     top_chart_path = top_results_dir / chart_path.name
-    if chart_path.resolve() != top_chart_path.resolve():
-        shutil.copy2(chart_path, top_chart_path)
+    with profiler.section_and_flush("stage.copy_chart"):
+        if chart_path.resolve() != top_chart_path.resolve():
+            shutil.copy2(chart_path, top_chart_path)
     _save_json(output_dir / "summary.json", all_stats)
+    profiler.add_counter("datasets_evaluated", float(len(all_stats)))
+    profiler.add_counter("total_test_samples", float(total_test))
+    profiler.add_counter("eval_total_sec", float(time.time() - t_eval_start))
+    profiler.snapshot_cuda("end")
+    profile_payload = profiler.save_json(profile_path)
+    top_bottlenecks = profile_payload.get("top_bottlenecks", [])
 
     print("\nOutputs:")
     print(f"- comparison_table: {comparison_path}")
     print(f"- comparison_chart: {chart_path}")
     print(f"- comparison_chart_top: {top_chart_path}")
     print(f"- summary: {output_dir / 'summary.json'}")
+    print(f"- bottleneck_profile: {profile_path}")
+    if top_bottlenecks:
+        print("\nTop bottlenecks:")
+        for item in top_bottlenecks[:5]:
+            print(
+                f"  - {item.get('section')}: {float(item.get('total_sec', 0.0)):.3f}s "
+                f"({100.0 * float(item.get('ratio', 0.0)):.1f}%)"
+            )
+    limit_info = profile_payload.get("optimization_limit_analysis", {})
+    if limit_info:
+        print("\nOptimization limit analysis:")
+        print(f"  - status: {limit_info.get('status', 'unknown')}")
+        print(f"  - confidence: {float(limit_info.get('confidence', 0.0)):.2f}")
+        print(f"  - message: {limit_info.get('message', '')}")
+    set_active_profiler(None)
 
 
 if __name__ == "__main__":

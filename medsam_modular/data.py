@@ -9,6 +9,8 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 
+from medsam_modular.profiler import get_active_profiler
+
 
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".xml")
 
@@ -133,6 +135,8 @@ class TN3KDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
+        profiler = get_active_profiler()
+        t0 = cv2.getTickCount() / cv2.getTickFrequency() if profiler is not None and profiler.enabled else 0.0
         sample = self.samples[idx]
         image = Image.open(sample["image_path"]).convert("RGB")
         mask = Image.open(sample["mask_path"]).convert("L")
@@ -142,6 +146,8 @@ class TN3KDataset(Dataset):
 
         mask_np = np.array(mask) > 127
         bbox = compute_bbox_from_mask_np(mask_np.astype(np.uint8))
+        if profiler is not None and profiler.enabled:
+            profiler.record_duration("data.TN3KDataset.__getitem__", (cv2.getTickCount() / cv2.getTickFrequency()) - t0)
         return {
             "image": image,
             "mask": torch.tensor(mask_np.astype(np.float32), dtype=torch.float32),
@@ -241,12 +247,16 @@ class DDTIDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
+        profiler = get_active_profiler()
+        t0 = cv2.getTickCount() / cv2.getTickFrequency() if profiler is not None and profiler.enabled else 0.0
         sample = self.samples[idx]
         image = Image.open(sample["image_path"]).convert("RGB")
         image = image.resize((self.image_size, self.image_size), Image.BILINEAR)
 
         mask = self._svg_to_mask(sample["svg"], self.image_size, self.image_size)
         bbox = compute_bbox_from_mask_np(mask)
+        if profiler is not None and profiler.enabled:
+            profiler.record_duration("data.DDTIDataset.__getitem__", (cv2.getTickCount() / cv2.getTickFrequency()) - t0)
         return {
             "image": image,
             "mask": torch.tensor(mask.astype(np.float32), dtype=torch.float32),
@@ -340,6 +350,8 @@ class TN5000Dataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
+        profiler = get_active_profiler()
+        t0 = cv2.getTickCount() / cv2.getTickFrequency() if profiler is not None and profiler.enabled else 0.0
         sample = self.samples[idx]
         image = Image.open(sample["image_path"]).convert("RGB")
         image = image.resize((self.image_size, self.image_size), Image.BILINEAR)
@@ -357,6 +369,8 @@ class TN5000Dataset(Dataset):
                 mask[y1 : y2 + 1, x1 : x2 + 1] = 1
 
         bbox = compute_bbox_from_mask_np(mask)
+        if profiler is not None and profiler.enabled:
+            profiler.record_duration("data.TN5000Dataset.__getitem__", (cv2.getTickCount() / cv2.getTickFrequency()) - t0)
         return {
             "image": image,
             "mask": torch.tensor(mask.astype(np.float32), dtype=torch.float32),
@@ -366,7 +380,7 @@ class TN5000Dataset(Dataset):
 
 
 def build_dataset(dataset_name: str, root_dir: str, split_name: str, image_size: int, split_ids: Optional[Set[str]]) -> Dataset:
-    if dataset_name == "TN3K":
+    if dataset_name in {"TN3K", "TG3K"}:
         return TN3KDataset(root_dir=root_dir, split=split_name, image_size=image_size, split_ids=split_ids)
     if dataset_name == "DDTI":
         return DDTIDataset(root_dir=root_dir, split=split_name, image_size=image_size, split_ids=split_ids)
@@ -382,7 +396,7 @@ def prepare_datasets_by_split(
     image_size: int,
     dataset_names: Optional[List[str]] = None,
 ) -> Dict[str, Dataset]:
-    names = dataset_names or ["TN3K", "DDTI", "TN5000"]
+    names = dataset_names or ["TN3K", "TG3K", "DDTI", "TN5000"]
     prepared: Dict[str, Dataset] = {}
 
     for dataset_name in names:

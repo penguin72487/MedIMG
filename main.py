@@ -31,9 +31,10 @@ def _parse_args() -> argparse.Namespace:
         "--data-root",
         default="",
         metavar="DIR",
-        help="所有資料集的根目錄（TN3K / DDTI / TN5000 放在其下）",
+        help="所有資料集的根目錄（TN3K / TG3K / DDTI / TN5000 放在其下）",
     )
     data_group.add_argument("--tn3k-path",  default="", metavar="DIR", help="TN3K 資料集路徑（覆蓋 --data-root）")
+    data_group.add_argument("--tg3k-path",  default="", metavar="DIR", help="TG3K 資料集路徑（覆蓋 --data-root）")
     data_group.add_argument("--ddti-path",  default="", metavar="DIR", help="DDTI 資料集路徑（覆蓋 --data-root）")
     data_group.add_argument("--tn5000-path", default="", metavar="DIR", help="TN5000 資料集路徑（覆蓋 --data-root）")
     data_group.add_argument(
@@ -169,6 +170,25 @@ def _parse_args() -> argparse.Namespace:
         metavar="DIR",
         help="結果輸出目錄（預設: <專案根>/results/modular）",
     )
+    out_group.add_argument(
+        "--profile",
+        dest="profile",
+        action="store_true",
+        default=True,
+        help="啟用流程瓶頸分析與 profiling 報告輸出",
+    )
+    out_group.add_argument(
+        "--no-profile",
+        dest="profile",
+        action="store_false",
+        help="停用 profiling 報告輸出",
+    )
+    out_group.add_argument(
+        "--profile-output",
+        default="",
+        metavar="FILE",
+        help="profiling JSON 輸出路徑（預設: <output-dir>/bottleneck_profile.json）",
+    )
 
     return parser.parse_args()
 
@@ -182,6 +202,7 @@ def _apply_env(args: argparse.Namespace) -> None:
 
     _set("MEDSAM_DATA_ROOT",           args.data_root)
     _set("MEDSAM_TN3K_PATH",           args.tn3k_path)
+    _set("MEDSAM_TG3K_PATH",           args.tg3k_path)
     _set("MEDSAM_DDTI_PATH",           args.ddti_path)
     _set("MEDSAM_TN5000_PATH",         args.tn5000_path)
     _set("MEDSAM_SPLIT_ROOT",          args.split_root)
@@ -193,6 +214,7 @@ def _apply_env(args: argparse.Namespace) -> None:
     _set("MEDSAM_OOD_METHOD",          args.ood_method)
     _set("MEDSAM_TTA_FUSION",          args.tta_fusion)
     _set("MEDSAM_TTA_AUGMENTATIONS",   args.tta_augmentations)
+    _set("MEDSAM_PROFILE_PATH",        args.profile_output)
     _set("MEDSAM_TTA_CHUNK_SIZE",      str(args.tta_chunk_size) if args.tta_chunk_size > 0 else "")
     _set("MEDSAM_TTA_FIXED_BATCH",     str(args.tta_fixed_batch) if args.tta_fixed_batch > 0 else "")
     _set("MEDSAM_COMPILE_WARMUP_BATCHES", args.compile_warmup_batches)
@@ -213,6 +235,7 @@ def _apply_env(args: argparse.Namespace) -> None:
     os.environ["MEDSAM_REQUIRE_COMPILE"]            = "1" if args.require_compile else "0"
     os.environ["MEDSAM_COMPILE_DYNAMIC"]            = "1" if args.compile_dynamic else "0"
     os.environ["MEDSAM_TTA_FAST"]                   = "1" if args.tta_fast else "0"
+    os.environ["MEDSAM_PROFILE"]                    = "1" if args.profile else "0"
 
 
 def main() -> None:

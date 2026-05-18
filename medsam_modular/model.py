@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import importlib
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -17,6 +18,8 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 from transformers import SamModel, SamProcessor
+
+from medsam_modular.profiler import get_active_profiler
 
 
 _SAM_NORM_CACHE: Dict[int, Tuple[torch.Tensor, torch.Tensor]] = {}
@@ -296,6 +299,8 @@ def _try_compile_model(model: SamModel, processor: SamProcessor, device: str, im
 
 
 def load_medsam(model_id: str, device: str, image_size: int, local_weight_path: str = "") -> Tuple[SamModel, SamProcessor, Dict[str, Any]]:
+    profiler = get_active_profiler()
+    t_load = time.perf_counter() if profiler is not None and profiler.enabled else 0.0
     model = SamModel.from_pretrained(model_id)
     processor = SamProcessor.from_pretrained(model_id)
 
@@ -318,10 +323,14 @@ def load_medsam(model_id: str, device: str, image_size: int, local_weight_path: 
         p.requires_grad = False
 
     model, compile_report = _try_compile_model(model=model, processor=processor, device=device, image_size=image_size)
+    if profiler is not None and profiler.enabled:
+        profiler.record_duration("model.load_medsam", time.perf_counter() - t_load)
     return model, processor, compile_report
 
 
 def _move_inputs_to_device(inputs: Dict[str, torch.Tensor], device: str) -> Dict[str, torch.Tensor]:
+    profiler = get_active_profiler()
+    t0 = time.perf_counter() if profiler is not None and profiler.enabled else 0.0
     moved = {}
     non_blocking = device == "cuda"
     for k, v in inputs.items():
@@ -336,16 +345,24 @@ def _move_inputs_to_device(inputs: Dict[str, torch.Tensor], device: str) -> Dict
             moved[k] = v.to(device, non_blocking=non_blocking)
         else:
             moved[k] = v
+    if profiler is not None and profiler.enabled:
+        profiler.record_duration("model.device_move", time.perf_counter() - t0)
     return moved
+
+
+def move_inputs_to_device(inputs: Dict[str, torch.Tensor], device: str) -> Dict[str, torch.Tensor]:
+    return _move_inputs_to_device(inputs, device)
 
 
 def _run_prob_inference(
     model: SamModel,
     inputs: Dict[str, torch.Tensor],
-    output_size: Tuple[int, int],
+    output_size: Optional[Tuple[int, int]],
     device: str,
     use_amp: bool = True,
 ) -> torch.Tensor:
+    profiler = get_active_profiler()
+    t0 = time.perf_counter() if profiler is not None and profiler.enabled else 0.0
     with torch.inference_mode():
         if use_amp and device == "cuda":
             with torch.amp.autocast("cuda", dtype=torch.float16):
@@ -356,7 +373,10 @@ def _run_prob_inference(
             probs = torch.sigmoid(outputs.pred_masks)
 
         probs = _normalize_masks_to_4d(probs)
-        probs = F.interpolate(probs, size=output_size, mode="bilinear", align_corners=False)
+        if output_size is not None:
+            probs = F.interpolate(probs, size=output_size, mode="bilinear", align_corners=False)
+    if profiler is not None and profiler.enabled:
+        profiler.record_duration("model.prob_inference", time.perf_counter() - t0)
     return probs
 
 
@@ -482,91 +502,32 @@ def build_inputs_batch(
     images: List[Any],
     input_boxes: List[List[List[int]]],
 ) -> Dict[str, torch.Tensor]:
+    profiler = get_active_profiler()
+    t0 = time.perf_counter() if profiler is not None and profiler.enabled else 0.0
     use_fast = _env_bool("MEDSAM_USE_FAST_PREPROCESS", True)
     if use_fast:
         try:
-            return _build_inputs_fast(processor=processor, images=images, input_boxes=input_boxes)
+            outputs = _build_inputs_fast(processor=processor, images=images, input_boxes=input_boxes)
+            if profiler is not None and profiler.enabled:
+                profiler.record_duration("model.build_inputs_fast", time.perf_counter() - t0)
+            return outputs
         except Exception:
             pass
-    return processor(images=images, input_boxes=input_boxes, return_tensors="pt")
-
-
-def predict_prob_mask(
-    model: SamModel,
-    processor: SamProcessor,
-    image: Image.Image,
-    input_box: List[int],
-    device: str,
-    use_amp: bool = True,
-) -> np.ndarray:
-    w, h = image.size
-    inputs = build_inputs(processor, image, input_box)
-    inputs = _move_inputs_to_device(inputs, device)
-    probs = _run_prob_inference(
-        model=model,
-        inputs=inputs,
-        output_size=(h, w),
-        device=device,
-        use_amp=use_amp,
-    )
-
-    return probs[0, 0].detach().cpu().numpy()
-
-
-def predict_prob_masks_batch(
-    model: SamModel,
-    processor: SamProcessor,
-    images: List[Any],
-    input_boxes: List[List[int]],
-    device: str,
-    use_amp: bool = True,
-    fixed_batch_size: int = 0,
-) -> np.ndarray:
-    if not images:
-        return np.empty((0, 0, 0), dtype=np.float32)
-
-    first = images[0]
-    if isinstance(first, Image.Image):
-        w, h = first.size
-    else:
-        arr0 = np.asarray(first)
-        h, w = int(arr0.shape[0]), int(arr0.shape[1])
-
-    n = len(images)
-    target_batch = int(fixed_batch_size) if int(fixed_batch_size) > 0 else n
-    target_batch = max(target_batch, n)
-
-    padded_images = list(images)
-    padded_boxes = list(input_boxes)
-    if target_batch > n:
-        pad_count = target_batch - n
-        pad_image = images[-1]
-        pad_box = input_boxes[-1]
-        padded_images.extend([pad_image] * pad_count)
-        padded_boxes.extend([pad_box] * pad_count)
-
-    packed_boxes = [[box] for box in padded_boxes]
-    inputs = build_inputs_batch(processor=processor, images=padded_images, input_boxes=packed_boxes)
-    inputs = _move_inputs_to_device(inputs, device)
-    probs = _run_prob_inference(
-        model=model,
-        inputs=inputs,
-        output_size=(h, w),
-        device=device,
-        use_amp=use_amp,
-    )
-
-    return probs[:n, 0].detach().cpu().numpy()
+    outputs = processor(images=images, input_boxes=input_boxes, return_tensors="pt")
+    if profiler is not None and profiler.enabled:
+        profiler.record_duration("model.build_inputs_processor", time.perf_counter() - t0)
+    return outputs
 
 
 def predict_prob_masks_from_inputs(
     model: SamModel,
     inputs: Dict[str, torch.Tensor],
     device: str,
-    output_size: Tuple[int, int],
+    output_size: Optional[Tuple[int, int]],
     use_amp: bool = True,
+    inputs_already_on_device: bool = False,
 ) -> torch.Tensor:
-    moved_inputs = _move_inputs_to_device(inputs, device)
+    moved_inputs = inputs if inputs_already_on_device else _move_inputs_to_device(inputs, device)
     return _run_prob_inference(
         model=model,
         inputs=moved_inputs,
@@ -574,23 +535,3 @@ def predict_prob_masks_from_inputs(
         device=device,
         use_amp=use_amp,
     )
-
-
-def predict_binary_mask(
-    model: SamModel,
-    processor: SamProcessor,
-    image: Image.Image,
-    input_box: List[int],
-    device: str,
-    use_amp: bool = True,
-    threshold: float = 0.5,
-) -> np.ndarray:
-    prob = predict_prob_mask(
-        model=model,
-        processor=processor,
-        image=image,
-        input_box=input_box,
-        device=device,
-        use_amp=use_amp,
-    )
-    return (prob > threshold).astype(np.uint8)
