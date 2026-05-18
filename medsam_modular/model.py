@@ -182,80 +182,10 @@ def _try_compile_model(model: SamModel, processor: SamProcessor, device: str, im
         "triton_patch": False,
     }
 
-    enable_compile = _env_bool("MEDSAM_ENABLE_COMPILE", True)
-    if not enable_compile:
-        report["error"] = "CompileDisabledByEnv"
-        return model, report
-
-    try:
-        torch_version = tuple(int(x) for x in torch.__version__.split(".")[:2])
-        has_torch_compile = torch_version >= (2, 0)
-    except Exception:
-        has_torch_compile = False
-
-    if not has_torch_compile:
-        report["error"] = "torch.compile not available"
-        return model, report
-
-    try:
-        import triton  # noqa: F401
-        has_triton = True
-    except Exception:
-        has_triton = False
-
-    if not has_triton:
-        report["error"] = "Triton not available"
-        return model, report
-
-    prefixes = _candidate_prefixes()
-    for prefix in prefixes:
-        _prepend_env_path("PATH", os.path.join(prefix, "bin"))
-        _prepend_env_path("CPATH", os.path.join(prefix, "include"))
-        _prepend_env_path("LIBRARY_PATH", os.path.join(prefix, "lib"))
-        _prepend_env_path("LIBRARY_PATH", os.path.join(prefix, "targets", "x86_64-linux", "lib"))
-        _prepend_env_path("LD_LIBRARY_PATH", os.path.join(prefix, "lib"))
-        _prepend_env_path("LD_LIBRARY_PATH", os.path.join(prefix, "targets", "x86_64-linux", "lib"))
-
-    best_ptxas, best_release, _all_candidates = _find_best_ptxas(prefixes)
-    report["ptxas_path"] = best_ptxas
-    report["ptxas_version"] = best_release
-
-    if best_ptxas:
-        os.environ["TRITON_PTXAS_PATH"] = best_ptxas
-        _prepend_env_path("PATH", os.path.dirname(best_ptxas))
-
-    target_ptx = _target_ptx_from_cuda_release(best_release)
-    report["target_ptx"] = target_ptx
-
-    if target_ptx is None:
-        report["error"] = f"No compatible PTX target for ptxas release={best_release}"
-        return model, report
-
-    strict_132 = _env_bool("MEDSAM_STRICT_PTXAS_13_2", False)
-    if strict_132 and (best_release is None or best_release < (13, 2)):
-        report["error"] = f"STRICT 13.2 enabled, found ptxas={best_release}"
-        return model, report
-
-    report["triton_patch"] = _patch_triton_ptx_cap(target_ptx)
-
-    compile_mode = os.getenv("MEDSAM_COMPILE_MODE", "max-autotune")
-    try:
-        compiled = torch.compile(
-            model,
-            backend="inductor",
-            mode=compile_mode,
-            fullgraph=False,
-            dynamic=True,
-        )
-        warmup_inputs = _build_compile_warmup_inputs(processor, device=device, image_size=image_size)
-        with torch.no_grad():
-            _ = compiled(**warmup_inputs)
-        report["compiled"] = True
-        report["backend"] = "inductor"
-        return compiled, report
-    except Exception as e:
-        report["error"] = f"{type(e).__name__}: {e}"
-        return model, report
+    # Triton/Inductor compile optimization is intentionally disabled in this project.
+    # Keep this function for a stable report contract consumed by runner.py.
+    report["error"] = "CompileDisabledByDesign"
+    return model, report
 
 
 def load_medsam(model_id: str, device: str, image_size: int, local_weight_path: str = "") -> Tuple[SamModel, SamProcessor, Dict[str, Any]]:
@@ -266,6 +196,14 @@ def load_medsam(model_id: str, device: str, image_size: int, local_weight_path: 
         load_state_dict_compat(model, Path(local_weight_path), map_location=device)
 
     model = model.to(device)
+
+    # Enable TensorFloat32 on CUDA and set matmul precision to avoid runtime warnings
+    # while keeping performance characteristics suitable for training/eval.
+    if device == "cuda":
+        torch.set_float32_matmul_precision("high")
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+
     model.eval()
     for p in model.parameters():
         p.requires_grad = False

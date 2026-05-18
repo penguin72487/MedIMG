@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -103,6 +104,13 @@ def _save_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def _fmt_metric(value: Any) -> str:
+    try:
+        return f"{float(value):.4f}"
+    except (TypeError, ValueError):
+        return "N/A"
+
+
 def _build_train_config(project_root: Path, data_paths: Dict[str, str], image_size: int, device: str, output_dir: Path) -> Dict[str, Any]:
     split_root = Path(os.getenv("MEDSAM_SPLIT_ROOT", str(project_root / "splits")))
     return {
@@ -141,24 +149,33 @@ def main() -> None:
     print("=" * 80)
     print("MedSAM Modular Runner")
     print("=" * 80)
-    print(f"device: {device}")
-    print(f"model_id: {model_id}")
-    print(f"image_size: {image_size}")
-    print(f"weight_path: {weight_path or '<huggingface pretrained>'}")
-    print(f"data_paths: {data_paths}")
+    print(f"device       : {device}")
+    print(f"model_id     : {model_id}")
+    print(f"image_size   : {image_size}")
+    print(f"weight_path  : {weight_path or '<huggingface pretrained>'}")
+    for k, v in data_paths.items():
+        print(f"  {k:8s}: {v}")
 
+    print("\n[Stage 1/3] 載入模型 ...")
+    t1 = time.time()
     model, processor, compile_report = load_medsam(
         model_id=model_id,
         device=device,
         image_size=image_size,
         local_weight_path=weight_path,
     )
-    print(f"compile_report: {compile_report}")
+    print(f"  compile    : {compile_report.get('compiled', False)}  ({time.time()-t1:.1f}s)")
+    if not compile_report.get('compiled', False):
+        err = compile_report.get('error', '')
+        if err:
+            print(f"  compile err: {err[:120].strip()} ...")
 
     require_compile = _env_bool("MEDSAM_REQUIRE_COMPILE", False)
     if require_compile and not bool(compile_report.get("compiled", False)):
         raise RuntimeError(f"torch.compile(inductor) required but unavailable: {compile_report}")
 
+    print("\n[Stage 2/3] 訓練 / 微調 ...")
+    t2 = time.time()
     model = maybe_finetune(
         model=model,
         processor=processor,
@@ -170,7 +187,10 @@ def main() -> None:
             output_dir=output_dir,
         ),
     )
+    print(f"  微調耗時: {time.time()-t2:.1f}s")
 
+    print("\n[Stage 3/3] 準備測試資料 ...")
+    t3 = time.time()
     split_root = Path(os.getenv("MEDSAM_SPLIT_ROOT", str(project_root / "splits")))
     test_sets = prepare_datasets_by_split(
         data_paths=data_paths,
@@ -178,6 +198,11 @@ def main() -> None:
         split_name="test",
         image_size=image_size,
     )
+    total_test = sum(len(ds) for ds in test_sets.values())
+    print(f"  資料準備耗時: {time.time()-t3:.1f}s")
+    for name, ds in test_sets.items():
+        print(f"  {name:8s}: {len(ds)} samples")
+    print(f"  共計    : {total_test} samples")
 
     ood_detector = OODDetector(
         threshold=float(os.getenv("MEDSAM_OOD_THRESHOLD", "0.5")),
@@ -187,12 +212,14 @@ def main() -> None:
     pred_cache = PredictionCache(output_dir / "pred_cache")
 
     all_stats: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    t_eval_start = time.time()
     for dataset_name, dataset in test_sets.items():
         if len(dataset) == 0:
-            print(f"⚠️ skip empty dataset: {dataset_name}")
+            print(f"\n  ⚠️ skip empty dataset: {dataset_name}")
             continue
 
         print(f"\n=== Evaluating {dataset_name} ({len(dataset)} samples) ===")
+        t_ds = time.time()
         baseline_results, baseline_stats = evaluate_dataset(
             dataset=dataset,
             dataset_name=dataset_name,
@@ -235,6 +262,9 @@ def main() -> None:
             "ood": ood_stats,
             "tta": tta_stats,
         }
+        print(f"  [{dataset_name}] 完成  ({time.time()-t_ds:.1f}s)  "
+              f"baseline_dice={_fmt_metric(baseline_stats.get('dice_mean'))}  "
+              f"tta_dice={_fmt_metric(tta_stats.get('dice_mean'))}")
 
         _save_json(output_dir / f"{dataset_name.lower()}_baseline_results.json", baseline_results)
         _save_json(output_dir / f"{dataset_name.lower()}_baseline_stats.json", baseline_stats)

@@ -1,4 +1,5 @@
 import json
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -6,6 +7,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
+from tqdm import tqdm
 
 from medsam_modular.data import prepare_datasets_by_split
 from medsam_modular.model import load_state_dict_compat, normalize_pred_masks_to_4d
@@ -150,8 +152,9 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
     use_fused_adamw = _env_bool_value(config.get("finetune_use_fused_adamw", "1"), default=True)
 
     print("=" * 80)
-    print("Start fine-tune")
+    print("[1/4] 準備資料集 ...")
     print("=" * 80)
+    t0 = time.time()
 
     train_dataset, val_dataset = _build_finetune_datasets(config=config, processor=processor)
 
@@ -161,6 +164,15 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
             [max_samples, len(train_dataset) - max_samples],
             generator=torch.Generator().manual_seed(42),
         )
+
+    print(f"  train samples : {len(train_dataset)}")
+    print(f"  val   samples : {len(val_dataset)}")
+    print(f"  batch size    : {batch_size}")
+    print(f"  epochs        : {epochs}  (patience={patience})")
+    print(f"  lr            : {lr}")
+    print(f"  grad_accum    : {grad_accum}")
+    print(f"  train backbone: {train_backbone}")
+    print(f"  資料準備耗時  : {time.time() - t0:.1f}s")
 
     train_loader = DataLoader(
         train_dataset,
@@ -188,6 +200,11 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
     base_model.train()
 
     params = [p for p in base_model.parameters() if p.requires_grad]
+    trainable_count = sum(p.numel() for p in params)
+    total_count = sum(p.numel() for p in base_model.parameters())
+    print(f"\n[2/4] 設定優化器 ...")
+    print(f"  可訓練參數: {trainable_count:,} / {total_count:,} ({100*trainable_count/total_count:.1f}%)")
+
     if not params:
         print("⚠️ 無可訓練參數，略過 fine-tune")
         return model
@@ -197,7 +214,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
         optimizer_kwargs["fused"] = use_fused_adamw
     optimizer = torch.optim.AdamW(params, **optimizer_kwargs)
 
-    scaler = torch.cuda.amp.GradScaler(enabled=(device == "cuda"))
+    scaler = torch.amp.GradScaler("cuda", enabled=(device == "cuda"))
     best_val_loss = float("inf")
     best_path = output_dir / "medsam_finetuned_best.pth"
     last_path = output_dir / "medsam_finetuned_last.pth"
@@ -205,12 +222,24 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
     wait = 0
     history: Dict[str, List[float]] = {"train_loss": [], "val_loss": []}
 
-    for epoch in range(1, epochs + 1):
+    print(f"\n[3/4] 開始訓練 (共 {epochs} epochs) ...")
+    epoch_bar = tqdm(range(1, epochs + 1), desc="Epoch", unit="ep", dynamic_ncols=True)
+
+    for epoch in epoch_bar:
         base_model.train()
         train_losses: List[float] = []
         optimizer.zero_grad(set_to_none=True)
+        epoch_t0 = time.time()
 
-        for step, batch in enumerate(train_loader, start=1):
+        train_bar = tqdm(
+            enumerate(train_loader, start=1),
+            total=len(train_loader),
+            desc=f"  Train",
+            leave=False,
+            dynamic_ncols=True,
+            unit="batch",
+        )
+        for step, batch in train_bar:
             batch = _move_batch_to_device(batch, device)
             model_inputs = {
                 "pixel_values": batch["pixel_values"],
@@ -220,7 +249,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
             }
 
             if device == "cuda":
-                with torch.cuda.amp.autocast(dtype=torch.float16):
+                with torch.amp.autocast("cuda", dtype=torch.float16):
                     outputs = base_model(**model_inputs)
                     loss = _compute_seg_loss(outputs, batch["gt_mask"]) / grad_accum
             else:
@@ -228,7 +257,9 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
                 loss = _compute_seg_loss(outputs, batch["gt_mask"]) / grad_accum
 
             scaler.scale(loss).backward()
-            train_losses.append(float(loss.item() * grad_accum))
+            cur_loss = float(loss.item() * grad_accum)
+            train_losses.append(cur_loss)
+            train_bar.set_postfix(loss=f"{cur_loss:.4f}")
 
             if step % grad_accum == 0 or step == len(train_loader):
                 if grad_clip > 0:
@@ -241,7 +272,14 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
         base_model.eval()
         val_losses: List[float] = []
         with torch.no_grad():
-            for batch in val_loader:
+            val_bar = tqdm(
+                val_loader,
+                desc=f"  Val  ",
+                leave=False,
+                dynamic_ncols=True,
+                unit="batch",
+            )
+            for batch in val_bar:
                 batch = _move_batch_to_device(batch, device)
                 model_inputs = {
                     "pixel_values": batch["pixel_values"],
@@ -251,13 +289,14 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
                 }
 
                 if device == "cuda":
-                    with torch.cuda.amp.autocast(dtype=torch.float16):
+                    with torch.amp.autocast("cuda", dtype=torch.float16):
                         outputs = base_model(**model_inputs)
                         val_loss = _compute_seg_loss(outputs, batch["gt_mask"])
                 else:
                     outputs = base_model(**model_inputs)
                     val_loss = _compute_seg_loss(outputs, batch["gt_mask"])
 
+                val_bar.set_postfix(loss=f"{float(val_loss.item()):.4f}")
                 val_losses.append(float(val_loss.item()))
 
         train_loss = float(np.mean(train_losses)) if train_losses else 0.0
@@ -265,9 +304,18 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
 
-        print(
-            f"Epoch {epoch:03d}/{epochs} | "
-            f"train_loss={train_loss:.6f} | val_loss={val_loss:.6f} | best={best_val_loss:.6f}"
+        elapsed = time.time() - epoch_t0
+        improved_mark = "★" if val_loss < (best_val_loss - min_delta) else " "
+        epoch_bar.set_postfix(
+            train=f"{train_loss:.4f}",
+            val=f"{val_loss:.4f}",
+            best=f"{best_val_loss:.4f}",
+            wait=wait,
+        )
+        tqdm.write(
+            f"Epoch {epoch:03d}/{epochs} {improved_mark} | "
+            f"train={train_loss:.6f}  val={val_loss:.6f}  best={best_val_loss:.6f}  "
+            f"wait={wait}/{patience}  ({elapsed:.1f}s)"
         )
 
         # 保存 last checkpoint
@@ -278,16 +326,18 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any]) -> Any:
             best_val_loss = val_loss
             wait = 0
             torch.save(base_model.state_dict(), best_path)
-            print(f"  ✅ New best checkpoint: {best_path}")
+            tqdm.write(f"  ✅ New best checkpoint saved  (val={val_loss:.6f})")
         else:
             wait += 1
             if wait >= patience:
-                print(f"  ⏹️ Early stopping triggered at epoch {epoch}")
+                tqdm.write(f"  ⏹️ Early stopping @ epoch {epoch}  (wait={wait}/{patience})")
                 break
 
+    epoch_bar.close()
+    print(f"\n[4/4] 載入最佳權重 ...")
     if best_path.exists():
         load_state_dict_compat(base_model, best_path, map_location=device)
-        print(f"✅ Loaded best fine-tuned weights: {best_path}")
+        print(f"  ✅ Loaded best weights: {best_path}  (best_val={best_val_loss:.6f})")
 
     stats_path = output_dir / "finetune_stats.json"
     stats_path.write_text(

@@ -11,6 +11,13 @@ import os
 import sys
 from pathlib import Path
 
+# 強制 stdout/stderr 無緩衝，確保終端機即時顯示
+os.environ.setdefault("PYTHONUNBUFFERED", "1")
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(line_buffering=True)
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(line_buffering=True)
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -165,6 +172,8 @@ def main() -> None:
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
+    output_dir = Path(args.output_dir) if args.output_dir else project_root / "results" / "modular"
+
     from medsam_modular.runner import main as runner_main  # noqa: PLC0415
 
     print("=" * 80)
@@ -172,6 +181,7 @@ def main() -> None:
     print(f"  模式: {'跳過微調（純評估）' if args.skip_finetune else '微調 + 評估'}")
     print(f"  影像尺寸: {args.image_size}")
     print(f"  輸出目錄: {args.output_dir or str(project_root / 'results' / 'modular')}")
+    print("  即時輸出提示: conda run 請使用 --no-capture-output")
     print("=" * 80)
 
     runner_main()
