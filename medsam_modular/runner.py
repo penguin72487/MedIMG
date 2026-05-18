@@ -171,7 +171,7 @@ def main() -> None:
         if err:
             print(f"  compile err: {err[:120].strip()} ...")
 
-    require_compile = _env_bool("MEDSAM_REQUIRE_COMPILE", False)
+    require_compile = _env_bool("MEDSAM_REQUIRE_COMPILE", True)
     if require_compile and not bool(compile_report.get("compiled", False)):
         raise RuntimeError(f"torch.compile(inductor) required but unavailable: {compile_report}")
 

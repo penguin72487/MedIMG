@@ -182,10 +182,43 @@ def _try_compile_model(model: SamModel, processor: SamProcessor, device: str, im
         "triton_patch": False,
     }
 
-    # Triton/Inductor compile optimization is intentionally disabled in this project.
-    # Keep this function for a stable report contract consumed by runner.py.
-    report["error"] = "CompileDisabledByDesign"
-    return model, report
+    enable_compile = _env_bool("MEDSAM_ENABLE_COMPILE", True)
+    if not enable_compile:
+        report["error"] = "CompileDisabledByEnv"
+        return model, report
+
+    try:
+        torch_version = tuple(int(x) for x in torch.__version__.split(".")[:2])
+        has_torch_compile = torch_version >= (2, 0)
+    except Exception:
+        has_torch_compile = False
+
+    if not has_torch_compile:
+        report["error"] = "torch.compile not available"
+        return model, report
+
+    # Default to aot_eager to avoid Triton/Inductor driver dependency issues.
+    compile_backend = os.getenv("MEDSAM_COMPILE_BACKEND", "aot_eager")
+    compile_mode = os.getenv("MEDSAM_COMPILE_MODE", "default")
+
+    try:
+        compiled = torch.compile(
+            model,
+            backend=compile_backend,
+            mode=compile_mode,
+            fullgraph=False,
+            dynamic=True,
+        )
+        warmup_inputs = _build_compile_warmup_inputs(processor, device=device, image_size=image_size)
+        with torch.no_grad():
+            _ = compiled(**warmup_inputs)
+        report["compiled"] = True
+        report["backend"] = compile_backend
+        report["error"] = ""
+        return compiled, report
+    except Exception as e:
+        report["error"] = f"{type(e).__name__}: {e}"
+        return model, report
 
 
 def load_medsam(model_id: str, device: str, image_size: int, local_weight_path: str = "") -> Tuple[SamModel, SamProcessor, Dict[str, Any]]:
