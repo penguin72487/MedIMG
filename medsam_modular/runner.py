@@ -137,12 +137,14 @@ def _fmt_metric(value: Any) -> str:
 
 def _build_train_config(project_root: Path, data_paths: Dict[str, str], image_size: int, device: str, output_dir: Path) -> Dict[str, Any]:
     split_root = Path(os.getenv("MEDSAM_SPLIT_ROOT", str(project_root / "splits")))
+    resume_weight_path = _resolve_resume_weight_path(project_root=project_root, output_dir=output_dir)
     return {
         "split_root": split_root,
         "image_size": image_size,
         "data_paths": data_paths,
         "device": device,
         "output_dir": output_dir,
+        "resume_weight_path": resume_weight_path,
         "skip_finetune": os.getenv("MEDSAM_SKIP_FINETUNE", "1"),
         "finetune_train_backbone": os.getenv("MEDSAM_FINETUNE_TRAIN_BACKBONE", "0"),
         "finetune_epochs": os.getenv("MEDSAM_FINETUNE_EPOCHS", "1000"),
@@ -313,9 +315,6 @@ def main() -> None:
 
     finetune_only = _env_bool("MEDSAM_FINETUNE_ONLY", False)
     skip_finetune = _env_bool("MEDSAM_SKIP_FINETUNE", True)
-    if not skip_finetune and resume_weight_path and Path(resume_weight_path).exists():
-        load_state_dict_compat(model, Path(resume_weight_path), map_location=device)
-        print(f"  🔁 續訓載入: {resume_weight_path}")
 
     print("\n[Stage 3/4] 訓練 / 微調 ...")
     t2 = time.time()

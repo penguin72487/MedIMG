@@ -233,6 +233,11 @@ def _normalize_state_dict_keys(sd: Dict[str, torch.Tensor]) -> Dict[str, torch.T
 def load_state_dict_compat(target_model: torch.nn.Module, path: Path, map_location: str) -> None:
     sd = torch.load(path, map_location=map_location)
     if isinstance(sd, dict):
+        # 支援封裝 checkpoint（含 metadata）與純 state_dict 兩種格式。
+        if "model_state_dict" in sd and isinstance(sd["model_state_dict"], dict):
+            sd = sd["model_state_dict"]
+        elif "state_dict" in sd and isinstance(sd["state_dict"], dict):
+            sd = sd["state_dict"]
         sd = _normalize_state_dict_keys(sd)
     base = target_model._orig_mod if hasattr(target_model, "_orig_mod") and getattr(target_model, "_orig_mod") is not None else target_model
     base.load_state_dict(sd, strict=False)

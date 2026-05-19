@@ -188,6 +188,23 @@ def _build_adamw_param_groups(model: torch.nn.Module, weight_decay: float) -> Li
     return groups
 
 
+def _build_checkpoint_payload(
+    *,
+    model: torch.nn.Module,
+    epoch: int,
+    best_val_loss: float,
+    wait: int,
+    history: Dict[str, List[float]],
+) -> Dict[str, Any]:
+    return {
+        "model_state_dict": model.state_dict(),
+        "epoch": int(epoch),
+        "best_val_loss": float(best_val_loss),
+        "wait": int(wait),
+        "history": history,
+    }
+
+
 def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler: Optional[PerformanceProfiler] = None) -> Any:
     def _get_bool(key: str, default: bool = False) -> bool:
         """從config字典讀取布林值"""
@@ -222,6 +239,8 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
     num_workers = int(config.get("finetune_workers", 4))
     max_samples = int(config.get("finetune_max_samples", 0))
     use_fused_adamw = _get_bool("finetune_use_fused_adamw", True)
+    resume_weight_path_raw = str(config.get("resume_weight_path", "")).strip()
+    resume_weight_path = Path(resume_weight_path_raw) if resume_weight_path_raw else None
     cuda_mem_gb = _cuda_total_memory_gb() if device == "cuda" else None
     low_vram_mode = bool(cuda_mem_gb is not None and cuda_mem_gb <= 12.5)
     if low_vram_mode:
@@ -322,9 +341,39 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
 
     wait = 0
     history: Dict[str, List[float]] = {"train_loss": [], "val_loss": []}
+    start_epoch = 1
+
+    if resume_weight_path is not None and resume_weight_path.exists():
+        ckpt = torch.load(resume_weight_path, map_location="cpu")
+        if isinstance(ckpt, dict):
+            if "best_val_loss" in ckpt:
+                try:
+                    best_val_loss = float(ckpt["best_val_loss"])
+                except (TypeError, ValueError):
+                    best_val_loss = float("inf")
+            if "wait" in ckpt:
+                try:
+                    wait = int(ckpt["wait"])
+                except (TypeError, ValueError):
+                    wait = 0
+            if "epoch" in ckpt:
+                try:
+                    start_epoch = int(ckpt["epoch"]) + 1
+                except (TypeError, ValueError):
+                    start_epoch = 1
+            if isinstance(ckpt.get("history"), dict):
+                hist = ckpt["history"]
+                if isinstance(hist.get("train_loss"), list) and isinstance(hist.get("val_loss"), list):
+                    history = {"train_loss": list(hist["train_loss"]), "val_loss": list(hist["val_loss"])}
+
+        load_state_dict_compat(base_model, resume_weight_path, map_location=device)
+        print(
+            f"  🔁 Resume checkpoint: {resume_weight_path} | "
+            f"start_epoch={start_epoch} best_val={best_val_loss:.6f} wait={wait}"
+        )
 
     print(f"\n[3/4] 開始訓練 (共 {epochs} epochs) ...")
-    epoch_bar = tqdm(range(1, epochs + 1), desc="Epoch", unit="ep", dynamic_ncols=True)
+    epoch_bar = tqdm(range(start_epoch, epochs + 1), desc="Epoch", unit="ep", dynamic_ncols=True)
 
     for epoch in epoch_bar:
         base_model.train()
@@ -432,15 +481,19 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
             f"wait={wait}/{patience}  ({elapsed:.1f}s)"
         )
 
-        # 後台保存 last checkpoint（GPU 訓練繼續）
-        async_saver.save_async(base_model.state_dict(), last_path)
-
         improved = val_loss < (best_val_loss - min_delta)
         if improved:
             best_val_loss = val_loss
             wait = 0
             async_saver.wait_for_save()
-            async_saver.save_async(base_model.state_dict(), best_path)
+            best_payload = _build_checkpoint_payload(
+                model=base_model,
+                epoch=epoch,
+                best_val_loss=best_val_loss,
+                wait=wait,
+                history=history,
+            )
+            async_saver.save_async(best_payload, best_path)
             tqdm.write(f"  ✅ New best checkpoint saved  (val={val_loss:.6f})")
         else:
             wait += 1
@@ -448,6 +501,16 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
                 async_saver.wait_for_save()
                 tqdm.write(f"  ⏹️ Early stopping @ epoch {epoch}  (wait={wait}/{patience})")
                 break
+
+        # 後台保存 last checkpoint（含更新後的 best loss / wait 狀態）
+        last_payload = _build_checkpoint_payload(
+            model=base_model,
+            epoch=epoch,
+            best_val_loss=best_val_loss,
+            wait=wait,
+            history=history,
+        )
+        async_saver.save_async(last_payload, last_path)
 
         if low_vram_mode and device == "cuda":
             torch.cuda.empty_cache()
