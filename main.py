@@ -108,7 +108,7 @@ def _parse_args() -> argparse.Namespace:
     train_group.add_argument("--min-delta",       type=float, default=1e-4, metavar="D",   help="Early stopping 最小改善量")
     train_group.add_argument("--grad-accum",      type=int,   default=2,    metavar="N",   help="梯度累積步數")
     train_group.add_argument("--grad-clip",       type=float, default=1.0,  metavar="V",   help="梯度裁剪最大範數")
-    train_group.add_argument("--workers",         type=int,   default=4,    metavar="N",   help="DataLoader worker 數量")
+    train_group.add_argument("--workers",         type=int,   default=16,   metavar="N",   help="DataLoader worker 數量")
     train_group.add_argument("--max-samples",     type=int,   default=0,    metavar="N",   help="每個資料集最多取樣數（0 = 不限）")
     train_group.add_argument(
         "--finetune-only",
@@ -129,6 +129,27 @@ def _parse_args() -> argparse.Namespace:
         default=0.5,
         metavar="T",
         help="OOD 偵測閾值",
+    )
+    eval_group.add_argument(
+        "--eval-workers",
+        type=int,
+        default=16,
+        metavar="N",
+        help="評估 DataLoader worker 數量（CPU 平行）",
+    )
+    eval_group.add_argument(
+        "--eval-batch-size",
+        type=int,
+        default=0,
+        metavar="N",
+        help="評估批次大小（0 表示依模式自動）",
+    )
+    eval_group.add_argument(
+        "--cpu-threads",
+        type=int,
+        default=16,
+        metavar="N",
+        help="CPU 運算執行緒數（torch.set_num_threads）",
     )
     eval_group.add_argument(
         "--ood-method",
@@ -250,6 +271,10 @@ def _apply_env(args: argparse.Namespace) -> None:
     os.environ["MEDSAM_COMPILE_DYNAMIC"]            = "1" if args.compile_dynamic else "0"
     os.environ["MEDSAM_TTA_FAST"]                   = "1" if args.tta_fast else "0"
     os.environ["MEDSAM_PROFILE"]                    = "1" if args.profile else "0"
+    os.environ["MEDSAM_EVAL_WORKERS"]               = str(args.eval_workers)
+    if args.eval_batch_size > 0:
+        os.environ["MEDSAM_EVAL_BATCH"] = str(args.eval_batch_size)
+    os.environ["MEDSAM_CPU_THREADS"]                = str(args.cpu_threads)
 
 
 def main() -> None:

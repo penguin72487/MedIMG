@@ -9,8 +9,9 @@ import torch
 
 from medsam_modular.cache import PredictionCache
 from medsam_modular.data import prepare_datasets_by_split
-from medsam_modular.eval import OODDetector, TTAPredictor, evaluate_dataset
-from medsam_modular.model import load_medsam
+from medsam_modular.eval import OODDetector, TTAPredictor, evaluate_dataset, evaluate_dataset_ood_tta
+from medsam_modular.io_async import get_global_async_writer, shutdown_global_async_writer
+from medsam_modular.model import load_medsam, load_state_dict_compat
 from medsam_modular.profiler import PerformanceProfiler, set_active_profiler
 from medsam_modular.train import maybe_finetune
 from medsam_modular.visualize import build_comparison_table, save_comparison_chart
@@ -88,12 +89,23 @@ def _resolve_data_paths(project_root: Path) -> Dict[str, str]:
     return resolved
 
 
-def _resolve_weight_path(project_root: Path) -> str:
-    env_path = os.getenv("MEDSAM_WEIGHT_PATH", "").strip()
-    if env_path and Path(env_path).exists():
-        return env_path
-
+def _resolve_baseline_weight_path(project_root: Path) -> str:
     candidates = [
+        project_root / "results" / "medsam_vit_b.pth",
+        project_root / "results" / "medsam_finetuned_best.pth",
+        project_root / "results" / "medsam_finetuned.pth",
+    ]
+    picked = next((p for p in candidates if p.exists()), None)
+    return str(picked) if picked is not None else ""
+
+
+def _resolve_resume_weight_path(project_root: Path, output_dir: Path) -> str:
+    candidates = [
+        output_dir / "medsam_finetuned_best.pth",
+        output_dir / "medsam_finetuned_last.pth",
+        output_dir / "medsam_finetuned.pth",
+        project_root / "results" / "medsam_finetuned_best.pth",
+        project_root / "results" / "medsam_finetuned_last.pth",
         project_root / "results" / "medsam_finetuned.pth",
         project_root / "results" / "medsam_vit_b.pth",
     ]
@@ -110,8 +122,8 @@ def _save_json(path: Path, payload: Any) -> None:
     except Exception:
         profiler = None
     t0 = time.perf_counter() if profiler is not None and profiler.enabled else 0.0
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    writer = get_global_async_writer()
+    writer.submit_text(path, json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     if profiler is not None and profiler.enabled:
         profiler.record_duration("io.save_json", time.perf_counter() - t0)
 
@@ -145,7 +157,7 @@ def _build_train_config(project_root: Path, data_paths: Dict[str, str], image_si
         "finetune_min_delta": os.getenv("MEDSAM_FINETUNE_MIN_DELTA", "1e-4"),
         "finetune_grad_accum": os.getenv("MEDSAM_FINETUNE_GRAD_ACCUM", "2"),
         "finetune_grad_clip": os.getenv("MEDSAM_FINETUNE_GRAD_CLIP", "1.0"),
-        "finetune_workers": os.getenv("MEDSAM_FINETUNE_WORKERS", "4"),
+        "finetune_workers": os.getenv("MEDSAM_FINETUNE_WORKERS", "16"),
         "finetune_max_samples": os.getenv("MEDSAM_FINETUNE_MAX_SAMPLES", "0"),
         "finetune_use_fused_adamw": os.getenv("MEDSAM_FINETUNE_USE_FUSED_ADAMW", "1"),
     }
@@ -156,11 +168,20 @@ def main() -> None:
     output_dir = Path(os.getenv("MEDSAM_OUTPUT_DIR", str(project_root / "results" / "modular")))
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    cpu_threads = max(1, int(os.getenv("MEDSAM_CPU_THREADS", "16")))
+    torch.set_num_threads(cpu_threads)
+    try:
+        torch.set_num_interop_threads(max(1, min(8, cpu_threads // 2)))
+    except RuntimeError:
+        # set_num_interop_threads may be called only once in some runtimes.
+        pass
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     image_size = int(os.getenv("MEDSAM_IMAGE_SIZE", "512"))
     model_id = os.getenv("MEDSAM_MODEL_ID", "facebook/sam-vit-base")
     data_paths = _resolve_data_paths(project_root)
-    weight_path = _resolve_weight_path(project_root)
+    baseline_weight_path = _resolve_baseline_weight_path(project_root)
+    resume_weight_path = _resolve_resume_weight_path(project_root, output_dir)
     profile_enabled = _env_bool("MEDSAM_PROFILE", True)
     profile_path_env = os.getenv("MEDSAM_PROFILE_PATH", "").strip()
     profile_path = Path(profile_path_env) if profile_path_env else (output_dir / "bottleneck_profile.json")
@@ -177,9 +198,11 @@ def main() -> None:
     print("MedSAM Modular Runner")
     print("=" * 80)
     print(f"device       : {device}")
+    print(f"cpu threads  : {cpu_threads}")
     print(f"model_id     : {model_id}")
     print(f"image_size   : {image_size}")
-    print(f"weight_path  : {weight_path or '<huggingface pretrained>'}")
+    print(f"baseline wt  : {baseline_weight_path or '<missing vit_b checkpoint>'}")
+    print(f"resume wt    : {resume_weight_path or '<none>'}")
     for k, v in data_paths.items():
         print(f"  {k:8s}: {v}")
 
@@ -190,7 +213,7 @@ def main() -> None:
             model_id=model_id,
             device=device,
             image_size=image_size,
-            local_weight_path=weight_path,
+            local_weight_path=baseline_weight_path,
         )
     compile_backend = compile_report.get("backend", "<none>")
     compile_mode = compile_report.get("compile_mode", "<none>")
@@ -207,30 +230,7 @@ def main() -> None:
     if require_compile and not bool(compile_report.get("compiled", False)):
         raise RuntimeError(f"torch.compile(inductor) required but unavailable: {compile_report}")
 
-    print("\n[Stage 2/3] 訓練 / 微調 ...")
-    t2 = time.time()
-    with profiler.section_and_flush("stage.finetune"):
-        model = maybe_finetune(
-            model=model,
-            processor=processor,
-            config=_build_train_config(
-                project_root=project_root,
-                data_paths=data_paths,
-                image_size=image_size,
-                device=device,
-                output_dir=output_dir,
-            ),
-            profiler=profiler,
-        )
-    print(f"  微調耗時: {time.time()-t2:.1f}s")
-
-    finetune_only = _env_bool("MEDSAM_FINETUNE_ONLY", False)
-    if finetune_only:
-        print("\n[Stage 3/3] 已啟用 finetune-only，略過測試評估。")
-        profiler.flush()
-        return
-
-    print("\n[Stage 3/3] 準備測試資料 ...")
+    print("\n[Stage 2/4] 準備測試資料 / 基線評估 ...")
     t3 = time.time()
     split_root = Path(os.getenv("MEDSAM_SPLIT_ROOT", str(project_root / "splits")))
     with profiler.section_and_flush("stage.prepare_test_data"):
@@ -250,39 +250,38 @@ def main() -> None:
         threshold=float(os.getenv("MEDSAM_OOD_THRESHOLD", "0.5")),
         method=os.getenv("MEDSAM_OOD_METHOD", "entropy"),
     )
-    
-    # TTA configuration via environment variables
-    tta_fusion_mode = os.getenv("MEDSAM_TTA_FUSION", "entropy_weighted")  # mean, median, entropy_weighted
+
+    tta_fusion_mode = os.getenv("MEDSAM_TTA_FUSION", "entropy_weighted")
     tta_fast_mode = os.getenv("MEDSAM_TTA_FAST", "0").lower() in ("1", "true", "yes")
     tta_augmentations = None
-    
-    # Custom augmentations via environment variable (comma-separated)
     tta_augs_str = os.getenv("MEDSAM_TTA_AUGMENTATIONS", "")
     if tta_augs_str:
         tta_augmentations = [aug.strip() for aug in tta_augs_str.split(",")]
-    
     tta_predictor = TTAPredictor(
         augmentations=tta_augmentations,
         fusion_mode=tta_fusion_mode,
         use_fast_mode=tta_fast_mode,
     )
-    pred_cache = PredictionCache(output_dir / "pred_cache")
-    
-    # Log TTA configuration
+
+    baseline_pred_cache = PredictionCache(output_dir / "pred_cache_baseline")
+    finetuned_pred_cache = PredictionCache(output_dir / "pred_cache_finetuned")
+
     print(f"\n=== TTA Configuration ===")
     print(f"  Fusion mode: {tta_fusion_mode}")
     print(f"  Fast mode: {tta_fast_mode}")
     print(f"  Augmentations: {tta_predictor.augmentations}")
     print(f"  Number of augmentations: {len(tta_predictor.augmentations)}")
 
-    all_stats: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    baseline_all_results: Dict[str, Any] = {}
+    baseline_all_stats: Dict[str, Dict[str, Any]] = {}
+    print("\n[Stage 2/4] 基線評估 (vit_b) ...")
     t_eval_start = time.time()
     for dataset_name, dataset in test_sets.items():
         if len(dataset) == 0:
             print(f"\n  ⚠️ skip empty dataset: {dataset_name}")
             continue
 
-        print(f"\n=== Evaluating {dataset_name} ({len(dataset)} samples) ===")
+        print(f"\n=== Baseline {dataset_name} ({len(dataset)} samples) ===")
         t_ds = time.time()
         with profiler.section_and_flush(f"eval.{dataset_name}.baseline.total"):
             baseline_results, baseline_stats = evaluate_dataset(
@@ -295,52 +294,95 @@ def main() -> None:
                 use_tta=False,
                 ood_detector=None,
                 tta_predictor=None,
-                pred_cache=pred_cache,
+                pred_cache=baseline_pred_cache,
                 profiler=profiler,
                 profile_prefix=f"eval.{dataset_name}.baseline",
             )
-        with profiler.section_and_flush(f"eval.{dataset_name}.ood.total"):
-            ood_results, ood_stats = evaluate_dataset(
+        baseline_all_results[dataset_name] = baseline_results
+        baseline_all_stats[dataset_name] = baseline_stats
+        baseline_dice = baseline_stats.get("mean_dice", baseline_stats.get("dice_mean"))
+        print(f"  [{dataset_name}] 完成  ({time.time()-t_ds:.1f}s)  baseline_dice={_fmt_metric(baseline_dice)}")
+        _save_json(output_dir / f"{dataset_name.lower()}_baseline_results.json", baseline_results)
+        _save_json(output_dir / f"{dataset_name.lower()}_baseline_stats.json", baseline_stats)
+        latest_profile = profiler.flush() or {}
+        limit_info = latest_profile.get("optimization_limit_analysis", {})
+        print(
+            f"  [{dataset_name}] optimization headroom: {limit_info.get('status', 'unknown')} | "
+            f"{limit_info.get('message', '')}"
+        )
+
+    finetune_only = _env_bool("MEDSAM_FINETUNE_ONLY", False)
+    skip_finetune = _env_bool("MEDSAM_SKIP_FINETUNE", True)
+    if not skip_finetune and resume_weight_path and Path(resume_weight_path).exists():
+        load_state_dict_compat(model, Path(resume_weight_path), map_location=device)
+        print(f"  🔁 續訓載入: {resume_weight_path}")
+
+    print("\n[Stage 3/4] 訓練 / 微調 ...")
+    t2 = time.time()
+    with profiler.section_and_flush("stage.finetune"):
+        model = maybe_finetune(
+            model=model,
+            processor=processor,
+            config=_build_train_config(
+                project_root=project_root,
+                data_paths=data_paths,
+                image_size=image_size,
+                device=device,
+                output_dir=output_dir,
+            ),
+            profiler=profiler,
+        )
+    print(f"  微調耗時: {time.time()-t2:.1f}s")
+
+    if finetune_only:
+        print("\n[Stage 4/4] 已啟用 finetune-only，略過後續 OOD/TTA 評估。")
+        profiler.flush()
+        shutdown_global_async_writer()
+        return
+
+    if skip_finetune and resume_weight_path and Path(resume_weight_path).exists():
+        load_state_dict_compat(model, Path(resume_weight_path), map_location=device)
+        print(f"  📌 評估使用權重: {resume_weight_path}")
+    else:
+        print(f"  📌 評估使用權重: <finetuned model>")
+
+    print("\n[Stage 4/4] OOD / TTA 評估 ...")
+    t_eval_start = time.time()
+    all_stats: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for dataset_name, dataset in test_sets.items():
+        if len(dataset) == 0:
+            print(f"\n  ⚠️ skip empty dataset: {dataset_name}")
+            continue
+
+        print(f"\n=== Evaluating {dataset_name} ({len(dataset)} samples) ===")
+        t_ds = time.time()
+        with profiler.section_and_flush(f"eval.{dataset_name}.ood_tta.total"):
+            ood_results, ood_stats, tta_results, tta_stats = evaluate_dataset_ood_tta(
                 dataset=dataset,
                 dataset_name=dataset_name,
                 model=model,
                 processor=processor,
                 device=device,
-                use_ood=True,
-                use_tta=False,
                 ood_detector=ood_detector,
-                tta_predictor=None,
-                pred_cache=pred_cache,
-                profiler=profiler,
-                profile_prefix=f"eval.{dataset_name}.ood",
-            )
-        with profiler.section_and_flush(f"eval.{dataset_name}.tta.total"):
-            tta_results, tta_stats = evaluate_dataset(
-                dataset=dataset,
-                dataset_name=dataset_name,
-                model=model,
-                processor=processor,
-                device=device,
-                use_ood=False,
-                use_tta=True,
-                ood_detector=None,
                 tta_predictor=tta_predictor,
-                pred_cache=None,
+                pred_cache=finetuned_pred_cache,
                 profiler=profiler,
-                profile_prefix=f"eval.{dataset_name}.tta",
+                profile_prefix=f"eval.{dataset_name}",
             )
 
+        baseline_stats = baseline_all_stats.get(dataset_name, {})
+        baseline_results = baseline_all_results.get(dataset_name, [])
         all_stats[dataset_name] = {
             "baseline": baseline_stats,
             "ood": ood_stats,
             "tta": tta_stats,
         }
+        baseline_dice = baseline_stats.get("mean_dice", baseline_stats.get("dice_mean"))
+        tta_dice = tta_stats.get("mean_dice", tta_stats.get("dice_mean"))
         print(f"  [{dataset_name}] 完成  ({time.time()-t_ds:.1f}s)  "
-              f"baseline_dice={_fmt_metric(baseline_stats.get('dice_mean'))}  "
-              f"tta_dice={_fmt_metric(tta_stats.get('dice_mean'))}")
+              f"baseline_dice={_fmt_metric(baseline_dice)}  "
+              f"tta_dice={_fmt_metric(tta_dice)}")
 
-        _save_json(output_dir / f"{dataset_name.lower()}_baseline_results.json", baseline_results)
-        _save_json(output_dir / f"{dataset_name.lower()}_baseline_stats.json", baseline_stats)
         _save_json(output_dir / f"{dataset_name.lower()}_ood_results.json", ood_results)
         _save_json(output_dir / f"{dataset_name.lower()}_ood_stats.json", ood_stats)
         _save_json(output_dir / f"{dataset_name.lower()}_tta_results.json", tta_results)
@@ -395,6 +437,7 @@ def main() -> None:
         print(f"  - status: {limit_info.get('status', 'unknown')}")
         print(f"  - confidence: {float(limit_info.get('confidence', 0.0)):.2f}")
         print(f"  - message: {limit_info.get('message', '')}")
+    shutdown_global_async_writer()
     set_active_profiler(None)
 
 

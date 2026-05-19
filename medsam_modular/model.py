@@ -23,6 +23,56 @@ from medsam_modular.profiler import get_active_profiler
 
 
 _SAM_NORM_CACHE: Dict[int, Tuple[torch.Tensor, torch.Tensor]] = {}
+_CUDA_GRAPH_RUNNERS: Dict[Tuple[int, Tuple[int, ...], Tuple[int, ...], Tuple[int, ...], Tuple[int, ...], bool], "_CudaGraphRunner"] = {}
+
+
+class _CudaGraphRunner:
+    def __init__(self, model: SamModel, sample_inputs: Dict[str, torch.Tensor], use_amp: bool):
+        self.model = model
+        self.use_amp = use_amp
+        self.device = str(sample_inputs["pixel_values"].device)
+        self.stream = torch.cuda.Stream(device=sample_inputs["pixel_values"].device)
+        self.graph = torch.cuda.CUDAGraph()
+        self.static_inputs = {
+            "pixel_values": sample_inputs["pixel_values"].clone(),
+            "input_boxes": sample_inputs["input_boxes"].clone(),
+            "original_sizes": sample_inputs["original_sizes"].clone(),
+            "reshaped_input_sizes": sample_inputs["reshaped_input_sizes"].clone(),
+        }
+        self.static_out: Optional[torch.Tensor] = None
+        self._captured = False
+        self._capture()
+
+    def _forward(self) -> torch.Tensor:
+        if self.use_amp:
+            with torch.amp.autocast("cuda", dtype=torch.float16):
+                outputs = self.model(**self.static_inputs)
+                probs = torch.sigmoid(outputs.pred_masks)
+        else:
+            outputs = self.model(**self.static_inputs)
+            probs = torch.sigmoid(outputs.pred_masks)
+        return _normalize_masks_to_4d(probs)
+
+    def _capture(self) -> None:
+        # Warmup on side stream.
+        with torch.cuda.stream(self.stream):
+            for _ in range(2):
+                _ = self._forward()
+        torch.cuda.current_stream().wait_stream(self.stream)
+
+        with torch.cuda.graph(self.graph):
+            self.static_out = self._forward()
+        self._captured = True
+
+    def run(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
+        if not self._captured or self.static_out is None:
+            raise RuntimeError("CUDA graph is not captured")
+        self.static_inputs["pixel_values"].copy_(inputs["pixel_values"])
+        self.static_inputs["input_boxes"].copy_(inputs["input_boxes"])
+        self.static_inputs["original_sizes"].copy_(inputs["original_sizes"])
+        self.static_inputs["reshaped_input_sizes"].copy_(inputs["reshaped_input_sizes"])
+        self.graph.replay()
+        return self.static_out
 
 
 def _ensure_triton_in_tree_backends() -> None:
@@ -301,8 +351,16 @@ def _try_compile_model(model: SamModel, processor: SamProcessor, device: str, im
 def load_medsam(model_id: str, device: str, image_size: int, local_weight_path: str = "") -> Tuple[SamModel, SamProcessor, Dict[str, Any]]:
     profiler = get_active_profiler()
     t_load = time.perf_counter() if profiler is not None and profiler.enabled else 0.0
-    model = SamModel.from_pretrained(model_id)
-    processor = SamProcessor.from_pretrained(model_id)
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+    try:
+        model = SamModel.from_pretrained(model_id, local_files_only=True)
+        processor = SamProcessor.from_pretrained(model_id, local_files_only=True)
+    except Exception as e:
+        raise RuntimeError(
+            "Local-only model loading failed. Please provide a local model directory via "
+            "--model-id or ensure the model is already cached locally."
+        ) from e
 
     if local_weight_path and Path(local_weight_path).exists():
         load_state_dict_compat(model, Path(local_weight_path), map_location=device)
@@ -528,6 +586,34 @@ def predict_prob_masks_from_inputs(
     inputs_already_on_device: bool = False,
 ) -> torch.Tensor:
     moved_inputs = inputs if inputs_already_on_device else _move_inputs_to_device(inputs, device)
+    enable_cuda_graph = _env_bool("MEDSAM_ENABLE_CUDA_GRAPH", True)
+    use_cuda_graph = (
+        enable_cuda_graph
+        and device == "cuda"
+        and output_size is None
+        and inputs_already_on_device
+        and all(k in moved_inputs for k in ("pixel_values", "input_boxes", "original_sizes", "reshaped_input_sizes"))
+    )
+
+    if use_cuda_graph:
+        try:
+            key = (
+                id(model),
+                tuple(moved_inputs["pixel_values"].shape),
+                tuple(moved_inputs["input_boxes"].shape),
+                tuple(moved_inputs["original_sizes"].shape),
+                tuple(moved_inputs["reshaped_input_sizes"].shape),
+                bool(use_amp),
+            )
+            runner = _CUDA_GRAPH_RUNNERS.get(key)
+            if runner is None:
+                runner = _CudaGraphRunner(model=model, sample_inputs=moved_inputs, use_amp=use_amp)
+                _CUDA_GRAPH_RUNNERS[key] = runner
+            return runner.run(moved_inputs)
+        except Exception:
+            # Fallback to regular eager path when graph capture/replay is unsupported.
+            pass
+
     return _run_prob_inference(
         model=model,
         inputs=moved_inputs,
