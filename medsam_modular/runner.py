@@ -134,9 +134,13 @@ def _build_train_config(project_root: Path, data_paths: Dict[str, str], image_si
         "output_dir": output_dir,
         "skip_finetune": os.getenv("MEDSAM_SKIP_FINETUNE", "1"),
         "finetune_train_backbone": os.getenv("MEDSAM_FINETUNE_TRAIN_BACKBONE", "0"),
-        "finetune_epochs": os.getenv("MEDSAM_FINETUNE_EPOCHS", "100"),
+        "finetune_epochs": os.getenv("MEDSAM_FINETUNE_EPOCHS", "1000"),
         "finetune_batch": os.getenv("MEDSAM_FINETUNE_BATCH", "8"),
         "finetune_lr": os.getenv("MEDSAM_FINETUNE_LR", "1e-4"),
+        "finetune_weight_decay": os.getenv("MEDSAM_FINETUNE_WEIGHT_DECAY", "1e-3"),
+        "finetune_adamw_beta1": os.getenv("MEDSAM_FINETUNE_ADAMW_BETA1", "0.9"),
+        "finetune_adamw_beta2": os.getenv("MEDSAM_FINETUNE_ADAMW_BETA2", "0.999"),
+        "finetune_adamw_eps": os.getenv("MEDSAM_FINETUNE_ADAMW_EPS", "1e-8"),
         "finetune_val_ratio": os.getenv("MEDSAM_FINETUNE_VAL_RATIO", "0.1"),
         "finetune_patience": os.getenv("MEDSAM_FINETUNE_PATIENCE", "20"),
         "finetune_min_delta": os.getenv("MEDSAM_FINETUNE_MIN_DELTA", "1e-4"),
@@ -220,6 +224,12 @@ def main() -> None:
             profiler=profiler,
         )
     print(f"  微調耗時: {time.time()-t2:.1f}s")
+
+    finetune_only = _env_bool("MEDSAM_FINETUNE_ONLY", False)
+    if finetune_only:
+        print("\n[Stage 3/3] 已啟用 finetune-only，略過測試評估。")
+        profiler.flush()
+        return
 
     print("\n[Stage 3/3] 準備測試資料 ...")
     t3 = time.time()

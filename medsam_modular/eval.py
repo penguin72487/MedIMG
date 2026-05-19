@@ -840,9 +840,6 @@ def evaluate_dataset(
 
     sample_index = 0
     for batch_samples in tqdm(iterable, total=total, desc=f"Evaluating {dataset_name}"):
-        if not isinstance(batch_samples, list):
-            batch_samples = [batch_samples]
-
         batch_start = time.perf_counter()
         images = [s["image"] for s in batch_samples]
         bboxes = [s["bbox"] for s in batch_samples]

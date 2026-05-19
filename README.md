@@ -21,5 +21,5 @@ Generated report includes:
 The profiling report is refreshed during execution after each major stage / dataset-mode block completes.
 
 ```shell
-conda run --no-capture-output -n medsam python -u main.py --tta-fusion entropy_weighted --compile-dynamic --compile-warmup-batches 1,8
+conda run --no-capture-output -n medsam python -u main.py --tta-fusion entropy_weighted --compile-dynamic --compile-warmup-batches 1,8 --finetune
 ```

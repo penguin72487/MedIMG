@@ -99,6 +99,10 @@ def _parse_args() -> argparse.Namespace:
     train_group.add_argument("--epochs",          type=int,   default=100,  metavar="N",   help="微調總 epoch 數")
     train_group.add_argument("--batch-size",      type=int,   default=8,    metavar="N",   help="訓練批次大小")
     train_group.add_argument("--lr",              type=float, default=1e-4, metavar="LR",  help="初始學習率")
+    train_group.add_argument("--weight-decay",    type=float, default=1e-3, metavar="WD",  help="AdamW weight decay")
+    train_group.add_argument("--adamw-beta1",     type=float, default=0.9,  metavar="B1",  help="AdamW beta1")
+    train_group.add_argument("--adamw-beta2",     type=float, default=0.999, metavar="B2", help="AdamW beta2")
+    train_group.add_argument("--adamw-eps",       type=float, default=1e-8, metavar="EPS", help="AdamW epsilon")
     train_group.add_argument("--val-ratio",       type=float, default=0.1,  metavar="R",   help="若無 val split 則切割訓練集的比例")
     train_group.add_argument("--patience",        type=int,   default=20,   metavar="N",   help="Early stopping patience")
     train_group.add_argument("--min-delta",       type=float, default=1e-4, metavar="D",   help="Early stopping 最小改善量")
@@ -106,6 +110,11 @@ def _parse_args() -> argparse.Namespace:
     train_group.add_argument("--grad-clip",       type=float, default=1.0,  metavar="V",   help="梯度裁剪最大範數")
     train_group.add_argument("--workers",         type=int,   default=4,    metavar="N",   help="DataLoader worker 數量")
     train_group.add_argument("--max-samples",     type=int,   default=0,    metavar="N",   help="每個資料集最多取樣數（0 = 不限）")
+    train_group.add_argument(
+        "--finetune-only",
+        action="store_true",
+        help="只執行微調並輸出權重，不進行後續測試評估",
+    )
     train_group.add_argument(
         "--no-fused-adamw",
         action="store_true",
@@ -224,6 +233,10 @@ def _apply_env(args: argparse.Namespace) -> None:
     os.environ["MEDSAM_FINETUNE_EPOCHS"]            = str(args.epochs)
     os.environ["MEDSAM_FINETUNE_BATCH"]             = str(args.batch_size)
     os.environ["MEDSAM_FINETUNE_LR"]                = str(args.lr)
+    os.environ["MEDSAM_FINETUNE_WEIGHT_DECAY"]      = str(args.weight_decay)
+    os.environ["MEDSAM_FINETUNE_ADAMW_BETA1"]       = str(args.adamw_beta1)
+    os.environ["MEDSAM_FINETUNE_ADAMW_BETA2"]       = str(args.adamw_beta2)
+    os.environ["MEDSAM_FINETUNE_ADAMW_EPS"]         = str(args.adamw_eps)
     os.environ["MEDSAM_FINETUNE_VAL_RATIO"]         = str(args.val_ratio)
     os.environ["MEDSAM_FINETUNE_PATIENCE"]          = str(args.patience)
     os.environ["MEDSAM_FINETUNE_MIN_DELTA"]         = str(args.min_delta)
@@ -231,6 +244,7 @@ def _apply_env(args: argparse.Namespace) -> None:
     os.environ["MEDSAM_FINETUNE_GRAD_CLIP"]         = str(args.grad_clip)
     os.environ["MEDSAM_FINETUNE_WORKERS"]           = str(args.workers)
     os.environ["MEDSAM_FINETUNE_MAX_SAMPLES"]       = str(args.max_samples)
+    os.environ["MEDSAM_FINETUNE_ONLY"]              = "1" if args.finetune_only else "0"
     os.environ["MEDSAM_FINETUNE_USE_FUSED_ADAMW"]   = "0" if args.no_fused_adamw else "1"
     os.environ["MEDSAM_REQUIRE_COMPILE"]            = "1" if args.require_compile else "0"
     os.environ["MEDSAM_COMPILE_DYNAMIC"]            = "1" if args.compile_dynamic else "0"

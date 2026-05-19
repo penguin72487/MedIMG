@@ -1,12 +1,14 @@
 import json
+import os
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
+import torch.nn.functional as F
 from tqdm import tqdm
 
 from medsam_modular.data import prepare_datasets_by_split
@@ -14,12 +16,46 @@ from medsam_modular.model import load_state_dict_compat, normalize_pred_masks_to
 from medsam_modular.profiler import PerformanceProfiler
 
 
-def _env_bool_value(raw: Any, default: bool = False) -> bool:
-    if isinstance(raw, bool):
-        return raw
-    if raw is None:
-        return default
-    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+class _AsyncCheckpointSaver:
+    """非同步檢查點保存器（GPU訓練繼續，I/O後台運行）"""
+    def __init__(self):
+        self._save_thread: Optional[threading.Thread] = None
+        self._pending_save = False
+
+    def save_async(self, state_dict: Dict[str, Any], path: Path) -> None:
+        """後台保存權重，訓練繼續不等待"""
+        if self._save_thread is not None:
+            self._save_thread.join()
+        
+        def _save_worker():
+            torch.save(state_dict, path)
+        
+        self._save_thread = threading.Thread(target=_save_worker, daemon=False)
+        self._save_thread.start()
+        self._pending_save = True
+
+    def wait_for_save(self) -> None:
+        """等待待定的儲存完成（在 epoch 結束時呼叫）"""
+        if self._save_thread is not None and self._pending_save:
+            self._save_thread.join()
+            self._pending_save = False
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    """讀取環境變數作為布林值"""
+    raw = os.getenv(name, "1" if default else "0").strip().lower()
+    return raw in {"1", "true", "yes", "y", "on"}
+
+
+def _cuda_total_memory_gb() -> Optional[float]:
+    if not torch.cuda.is_available():
+        return None
+    try:
+        device_index = torch.cuda.current_device()
+        props = torch.cuda.get_device_properties(device_index)
+        return float(props.total_memory) / (1024.0 ** 3)
+    except Exception:
+        return None
 
 
 class FinetuneProcessorDataset(Dataset):
@@ -130,8 +166,39 @@ def _compute_seg_loss(outputs: Any, gt_mask: torch.Tensor) -> torch.Tensor:
     return F.binary_cross_entropy_with_logits(logits, target)
 
 
+def _build_adamw_param_groups(model: torch.nn.Module, weight_decay: float) -> List[Dict[str, Any]]:
+    decay_params: List[torch.nn.Parameter] = []
+    no_decay_params: List[torch.nn.Parameter] = []
+
+    for name, p in model.named_parameters():
+        if not p.requires_grad:
+            continue
+        is_bias = name.endswith(".bias")
+        is_norm_or_scale = p.ndim <= 1
+        if is_bias or is_norm_or_scale:
+            no_decay_params.append(p)
+        else:
+            decay_params.append(p)
+
+    groups: List[Dict[str, Any]] = []
+    if decay_params:
+        groups.append({"params": decay_params, "weight_decay": weight_decay})
+    if no_decay_params:
+        groups.append({"params": no_decay_params, "weight_decay": 0.0})
+    return groups
+
+
 def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler: Optional[PerformanceProfiler] = None) -> Any:
-    skip = _env_bool_value(config.get("skip_finetune", "1"), default=True)
+    def _get_bool(key: str, default: bool = False) -> bool:
+        """從config字典讀取布林值"""
+        val = config.get(key, default)
+        if isinstance(val, bool):
+            return val
+        if val is None:
+            return default
+        return str(val).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+    skip = _get_bool("skip_finetune", True)
     if skip:
         print("⏭️ 跳過 fine-tune（skip_finetune 啟用）")
         return model
@@ -140,17 +207,30 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
     output_dir = Path(config["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    train_backbone = _env_bool_value(config.get("finetune_train_backbone", "0"), default=False)
+    train_backbone = _get_bool("finetune_train_backbone", False)
     epochs = int(config.get("finetune_epochs", 100))
     batch_size = int(config.get("finetune_batch", 8))
     lr = float(config.get("finetune_lr", 1e-4))
+    weight_decay = float(config.get("finetune_weight_decay", 1e-3))
+    adamw_beta1 = float(config.get("finetune_adamw_beta1", 0.9))
+    adamw_beta2 = float(config.get("finetune_adamw_beta2", 0.999))
+    adamw_eps = float(config.get("finetune_adamw_eps", 1e-8))
     patience = int(config.get("finetune_patience", 20))
     min_delta = float(config.get("finetune_min_delta", 1e-4))
     grad_accum = max(1, int(config.get("finetune_grad_accum", 2)))
     grad_clip = float(config.get("finetune_grad_clip", 1.0))
     num_workers = int(config.get("finetune_workers", 4))
     max_samples = int(config.get("finetune_max_samples", 0))
-    use_fused_adamw = _env_bool_value(config.get("finetune_use_fused_adamw", "1"), default=True)
+    use_fused_adamw = _get_bool("finetune_use_fused_adamw", True)
+    cuda_mem_gb = _cuda_total_memory_gb() if device == "cuda" else None
+    low_vram_mode = bool(cuda_mem_gb is not None and cuda_mem_gb <= 12.5)
+    if low_vram_mode:
+        safe_batch_12gb = int(config.get("finetune_safe_batch_12gb", 2))
+        safe_batch_12gb = max(1, safe_batch_12gb)
+        if batch_size > safe_batch_12gb:
+            print(f"⚠️ Low-VRAM mode ({cuda_mem_gb:.1f}GB): batch size {batch_size} -> {safe_batch_12gb}")
+            batch_size = safe_batch_12gb
+
     ft_total_start = time.perf_counter()
     train_data_move_total = 0.0
     train_forward_total = 0.0
@@ -177,6 +257,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
     print(f"  batch size    : {batch_size}")
     print(f"  epochs        : {epochs}  (patience={patience})")
     print(f"  lr            : {lr}")
+    print(f"  adamw         : wd={weight_decay}, betas=({adamw_beta1},{adamw_beta2}), eps={adamw_eps}")
     print(f"  grad_accum    : {grad_accum}")
     print(f"  train backbone: {train_backbone}")
     print(f"  資料準備耗時  : {time.time() - t0:.1f}s")
@@ -190,19 +271,30 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
         drop_last=False,
         collate_fn=_finetune_collate,
         persistent_workers=(num_workers > 0),
+        prefetch_factor=2 if num_workers > 0 else None,
     )
     val_loader = DataLoader(
         val_dataset,
-        batch_size=batch_size,
+        batch_size=batch_size if low_vram_mode else min(batch_size * 4, max(1, len(val_dataset) // 4)),
         shuffle=False,
         num_workers=num_workers,
         pin_memory=(device == "cuda"),
         drop_last=False,
         collate_fn=_finetune_collate,
         persistent_workers=(num_workers > 0),
+        prefetch_factor=2 if num_workers > 0 else None,
     )
 
-    base_model = model._orig_mod if hasattr(model, "_orig_mod") and getattr(model, "_orig_mod") is not None else model
+    compiled_wrapped = hasattr(model, "_orig_mod") and getattr(model, "_orig_mod") is not None
+    if compiled_wrapped:
+        base_model = model._orig_mod
+        # Fine-tune 時解除 compile 包裝，避免額外顯存佔用
+        model = base_model
+        if device == "cuda":
+            torch.cuda.empty_cache()
+    else:
+        base_model = model
+
     _configure_trainable_params(base_model, train_backbone=train_backbone)
     base_model.train()
 
@@ -212,19 +304,21 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
     print(f"\n[2/4] 設定優化器 ...")
     print(f"  可訓練參數: {trainable_count:,} / {total_count:,} ({100*trainable_count/total_count:.1f}%)")
 
-    if not params:
-        print("⚠️ 無可訓練參數，略過 fine-tune")
-        return model
-
-    optimizer_kwargs = {"lr": lr, "weight_decay": 1e-4}
+    param_groups = _build_adamw_param_groups(base_model, weight_decay=weight_decay)
+    optimizer_kwargs = {
+        "lr": lr,
+        "betas": (adamw_beta1, adamw_beta2),
+        "eps": adamw_eps,
+    }
     if device == "cuda":
         optimizer_kwargs["fused"] = use_fused_adamw
-    optimizer = torch.optim.AdamW(params, **optimizer_kwargs)
+    optimizer = torch.optim.AdamW(param_groups, **optimizer_kwargs)
 
     scaler = torch.amp.GradScaler("cuda", enabled=(device == "cuda"))
     best_val_loss = float("inf")
     best_path = output_dir / "medsam_finetuned_best.pth"
     last_path = output_dir / "medsam_finetuned_last.pth"
+    async_saver = _AsyncCheckpointSaver()
 
     wait = 0
     history: Dict[str, List[float]] = {"train_loss": [], "val_loss": []}
@@ -321,6 +415,9 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
 
+        if low_vram_mode and device == "cuda":
+            torch.cuda.empty_cache()
+
         elapsed = time.time() - epoch_t0
         improved_mark = "★" if val_loss < (best_val_loss - min_delta) else " "
         epoch_bar.set_postfix(
@@ -335,23 +432,29 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
             f"wait={wait}/{patience}  ({elapsed:.1f}s)"
         )
 
-        # 保存 last checkpoint
-        torch.save(base_model.state_dict(), last_path)
+        # 後台保存 last checkpoint（GPU 訓練繼續）
+        async_saver.save_async(base_model.state_dict(), last_path)
 
         improved = val_loss < (best_val_loss - min_delta)
         if improved:
             best_val_loss = val_loss
             wait = 0
-            torch.save(base_model.state_dict(), best_path)
+            async_saver.wait_for_save()
+            async_saver.save_async(base_model.state_dict(), best_path)
             tqdm.write(f"  ✅ New best checkpoint saved  (val={val_loss:.6f})")
         else:
             wait += 1
             if wait >= patience:
+                async_saver.wait_for_save()
                 tqdm.write(f"  ⏹️ Early stopping @ epoch {epoch}  (wait={wait}/{patience})")
                 break
 
+        if low_vram_mode and device == "cuda":
+            torch.cuda.empty_cache()
+
     epoch_bar.close()
     print(f"\n[4/4] 載入最佳權重 ...")
+    async_saver.wait_for_save()
     if best_path.exists():
         load_state_dict_compat(base_model, best_path, map_location=device)
         print(f"  ✅ Loaded best weights: {best_path}  (best_val={best_val_loss:.6f})")
