@@ -94,9 +94,8 @@ def _resolve_weight_path(project_root: Path) -> str:
         return env_path
 
     candidates = [
-        project_root / "results" / "medsam_finetuned_best.pth",
         project_root / "results" / "medsam_finetuned.pth",
-        project_root / "results" / "medsam_pretrained.pth",
+        project_root / "results" / "medsam_vit_b.pth",
     ]
     picked = next((p for p in candidates if p.exists()), None)
     return str(picked) if picked is not None else ""

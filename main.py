@@ -96,7 +96,7 @@ def _parse_args() -> argparse.Namespace:
         help="執行微調（關閉 --skip-finetune）",
     )
     train_group.add_argument("--train-backbone",  action="store_true", help="微調時同時訓練 image encoder backbone")
-    train_group.add_argument("--epochs",          type=int,   default=100,  metavar="N",   help="微調總 epoch 數")
+    train_group.add_argument("--epochs",          type=int,   default=1000, metavar="N",   help="微調總 epoch 數")
     train_group.add_argument("--batch-size",      type=int,   default=8,    metavar="N",   help="訓練批次大小")
     train_group.add_argument("--lr",              type=float, default=1e-4, metavar="LR",  help="初始學習率")
     train_group.add_argument("--weight-decay",    type=float, default=1e-3, metavar="WD",  help="AdamW weight decay")
