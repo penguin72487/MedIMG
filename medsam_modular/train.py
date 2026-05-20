@@ -159,11 +159,23 @@ def _move_batch_to_device(batch: Dict[str, Any], device: str) -> Dict[str, Any]:
     return moved
 
 
+def _dice_loss(probs: torch.Tensor, target: torch.Tensor, smooth: float = 1.0) -> torch.Tensor:
+    """L_Dice = 1 - (2 * Σ(g*s)) / (Σ(g²) + Σ(s²))  (paper Section 3.3)."""
+    flat_p = probs.reshape(probs.shape[0], -1)
+    flat_t = target.reshape(target.shape[0], -1).to(probs.dtype)
+    numerator = 2.0 * (flat_p * flat_t).sum(dim=1) + smooth
+    denominator = flat_p.pow(2).sum(dim=1) + flat_t.pow(2).sum(dim=1) + smooth
+    return (1.0 - numerator / denominator).mean()
+
+
 def _compute_seg_loss(outputs: Any, gt_mask: torch.Tensor) -> torch.Tensor:
+    """L = L_BCE + L_Dice  (paper Section 3.3)."""
     logits = normalize_pred_masks_to_4d(outputs.pred_masks)
     target = gt_mask.unsqueeze(1)
     target = F.interpolate(target, size=logits.shape[-2:], mode="nearest")
-    return F.binary_cross_entropy_with_logits(logits, target)
+    l_bce = F.binary_cross_entropy_with_logits(logits, target)
+    l_dice = _dice_loss(torch.sigmoid(logits), target)
+    return l_bce + l_dice
 
 
 def _build_adamw_param_groups(model: torch.nn.Module, weight_decay: float) -> List[Dict[str, Any]]:

@@ -179,9 +179,9 @@ def _parse_args() -> argparse.Namespace:
     eval_group.add_argument(
         "--tta-chunk-size",
         type=int,
-        default=0,
+        default=8,
         metavar="N",
-        help="TTA 分塊推論大小（0 表示自動；12GB GPU 建議 2-4）",
+        help="TTA 分塊推論大小（預設: 8；12GB 顯卡較穩定。設為 0 可啟用自動調參）",
     )
     eval_group.add_argument(
         "--tta-fixed-batch",

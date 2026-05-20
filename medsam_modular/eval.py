@@ -1,6 +1,5 @@
 import time
 import os
-import math
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -34,6 +33,7 @@ def _build_stats_from_store(
     mean_precision, std_precision = _mean_std(metrics_store["precision"])
     mean_recall, std_recall = _mean_std(metrics_store["recall"])
     mean_f1, std_f1 = _mean_std(metrics_store["f1"])
+    mean_bce, std_bce = _mean_std(metrics_store.get("bce", [0.0]))
 
     stats: Dict[str, Any] = {
         "dataset": dataset_name,
@@ -48,6 +48,8 @@ def _build_stats_from_store(
         "std_recall": std_recall,
         "mean_f1": mean_f1,
         "std_f1": std_f1,
+        "mean_bce": mean_bce,
+        "std_bce": std_bce,
         "total_time_sec": float(total_time),
         "avg_inference_time_ms": float(np.mean(inference_times) * 1000.0),
         "avg_data_time_ms": float(np.mean(data_times) * 1000.0),
@@ -241,115 +243,60 @@ class TTAPredictor:
         """
         if use_fast_mode:
             # Fast mode: only essential augmentations
-            self.augmentations = augmentations or ["none", "hflip", "vflip", "hvflip"]
+            raw_augmentations = augmentations or ["none", "hflip", "vflip", "hvflip"]
         else:
-            # Full mode: fixed 8 augmentations.
+            # Full mode: fixed augmentations (elastic_deform removed for speed).
             base_augs = [
                 "none",
                 "hflip",
                 "vflip",
                 "hvflip",
                 "rotate_90",
-                "rotate_180",
                 "rotate_270",
-                "elastic_deform",
             ]
-            self.augmentations = augmentations or base_augs
+            raw_augmentations = augmentations or base_augs
+
+        self.augmentations = self._canonicalize_augmentations(raw_augmentations)
         
         self.fusion_mode = fusion_mode
         env_fixed_batch = int(os.getenv("MEDSAM_TTA_FIXED_BATCH", "0"))
         self.fixed_batch_size = max(0, env_fixed_batch)
         cuda_mem_gb = _cuda_total_memory_gb()
         default_chunk = 4 if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else 8
-        self.infer_chunk_size = max(1, int(os.getenv("MEDSAM_TTA_CHUNK_SIZE", str(default_chunk))))
-        self._chunk_size_tuned = False
-        self._elastic_disp_cache: Dict[Tuple[int, int], torch.Tensor] = {}
-        self._elastic_kernel_cache: Dict[Tuple[float], torch.Tensor] = {}
-        self._elastic_grid_cache: Dict[Tuple[int, int, str], torch.Tensor] = {}
+        chunk_env_raw = os.getenv("MEDSAM_TTA_CHUNK_SIZE", "").strip()
+        if chunk_env_raw:
+            self.infer_chunk_size = max(1, int(chunk_env_raw))
+        else:
+            self.infer_chunk_size = max(1, int(default_chunk))
+
+        autotune_raw = os.getenv("MEDSAM_TTA_AUTOTUNE", "1").strip().lower()
+        self._autotune_enabled = autotune_raw in {"1", "true", "yes", "y", "on"}
+
+        # If user fixed chunk size or disabled autotune, skip first-sample tuner.
+        self._chunk_size_tuned = bool(chunk_env_raw) or (not self._autotune_enabled)
         self._norm_cache: Dict[int, Tuple[torch.Tensor, torch.Tensor]] = {}
         self._aug_to_id = {name: idx for idx, name in enumerate(self.augmentations)}
         assert fusion_mode in ["mean", "median", "entropy_weighted"], \
             f"fusion_mode must be 'mean', 'median', or 'entropy_weighted', got {fusion_mode}"
 
-    def _get_gaussian_kernel_2d(self, sigma: float) -> torch.Tensor:
-        sigma = float(max(0.1, sigma))
-        key = (round(sigma, 4),)
-        cached = self._elastic_kernel_cache.get(key)
-        if cached is not None:
-            return cached
-
-        radius = max(1, int(math.ceil(3.0 * sigma)))
-        size = radius * 2 + 1
-        x = torch.arange(size, dtype=torch.float32) - float(radius)
-        kernel_1d = torch.exp(-(x * x) / (2.0 * sigma * sigma))
-        kernel_1d = kernel_1d / kernel_1d.sum()
-        kernel_2d = torch.outer(kernel_1d, kernel_1d)
-        kernel_2d = kernel_2d / kernel_2d.sum()
-        kernel_2d = kernel_2d.view(1, 1, size, size).contiguous()
-        self._elastic_kernel_cache[key] = kernel_2d
-        return kernel_2d
-
-    def _get_base_grid(self, h: int, w: int, device: str) -> torch.Tensor:
-        key = (h, w, device)
-        cached = self._elastic_grid_cache.get(key)
-        if cached is not None:
-            return cached
-
-        ys = torch.linspace(-1.0, 1.0, steps=h, device=device, dtype=torch.float32)
-        xs = torch.linspace(-1.0, 1.0, steps=w, device=device, dtype=torch.float32)
-        grid_y, grid_x = torch.meshgrid(ys, xs, indexing="ij")
-        base_grid = torch.stack((grid_x, grid_y), dim=-1).unsqueeze(0).contiguous()
-        self._elastic_grid_cache[key] = base_grid
-        return base_grid
-
-    def _get_elastic_displacement(self, h: int, w: int, alpha: float, sigma: float) -> torch.Tensor:
-        key = (h, w)
-        cached = self._elastic_disp_cache.get(key)
-        if cached is not None:
-            return cached
-
-        gen = torch.Generator(device="cpu")
-        gen.manual_seed(42 + h * 1009 + w * 9176)
-
-        dx = torch.randn((1, 1, h, w), generator=gen, dtype=torch.float32)
-        dy = torch.randn((1, 1, h, w), generator=gen, dtype=torch.float32)
-
-        kernel = self._get_gaussian_kernel_2d(sigma)
-        pad = int((kernel.shape[-1] - 1) // 2)
-        dx = F.conv2d(dx, kernel, padding=pad)
-        dy = F.conv2d(dy, kernel, padding=pad)
-
-        dx = (dx / (dx.abs().amax() + 1e-6)) * float(alpha)
-        dy = (dy / (dy.abs().amax() + 1e-6)) * float(alpha)
-
-        scale_x = 2.0 / float(max(1, w - 1))
-        scale_y = 2.0 / float(max(1, h - 1))
-        dx_norm = dx * scale_x
-        dy_norm = dy * scale_y
-        disp = torch.cat([dx_norm, dy_norm], dim=1).permute(0, 2, 3, 1).contiguous()
-        self._elastic_disp_cache[key] = disp
-        return disp
-
-    def _elastic_deform_tensor(self, image_t: torch.Tensor, alpha: float = 30.0, sigma: float = 4.0) -> torch.Tensor:
-        """Apply elastic deformation via torch.grid_sample on GPU/CPU tensor path."""
-        if image_t.dim() != 3:
-            raise ValueError(f"Expected CHW tensor, got shape {tuple(image_t.shape)}")
-
-        _, h, w = image_t.shape
-        device = str(image_t.device)
-        base_grid = self._get_base_grid(h, w, device=device)
-        disp = self._get_elastic_displacement(h, w, alpha=alpha, sigma=sigma).to(image_t.device, dtype=torch.float32)
-        grid = (base_grid + disp).clamp(-1.0, 1.0)
-
-        src = image_t.unsqueeze(0).to(torch.float32)
-        warped = F.grid_sample(
-            src,
-            grid,
-            mode="bilinear",
-            padding_mode="reflection",
-            align_corners=True,
-        )
-        return warped.squeeze(0).to(dtype=image_t.dtype).contiguous()
+    def _canonicalize_augmentations(self, augmentations: List[str]) -> List[str]:
+        """Deduplicate equivalent augmentations to avoid redundant compute."""
+        canonical_map = {
+            "rotate_180": "hvflip",  # exactly equivalent spatial transform
+        }
+        removed_aliases = {"elastic_deform"}
+        normalized: List[str] = []
+        seen = set()
+        for name in augmentations:
+            aug = canonical_map.get(str(name).strip(), str(name).strip())
+            if aug in removed_aliases:
+                continue
+            if not aug:
+                continue
+            if aug not in seen:
+                normalized.append(aug)
+                seen.add(aug)
+        return normalized or ["none"]
 
     def _get_sam_target_edge(self, processor: Any) -> int:
         image_processor = getattr(processor, "image_processor", None)
@@ -488,12 +435,8 @@ class TTAPredictor:
             aug_count = 0
             
             for aug_name in self.augmentations:
-                if aug_name == "elastic_deform":
-                    all_pixel_values.append(self._elastic_deform_tensor(base_tensor))
-                    all_input_boxes.append(base_box)
-                else:
-                    all_pixel_values.append(self._apply_tensor_aug(base_tensor, aug_name))
-                    all_input_boxes.append(self._augment_square_bbox(base_box, aug_name, target_edge))
+                all_pixel_values.append(self._apply_tensor_aug(base_tensor, aug_name))
+                all_input_boxes.append(self._augment_square_bbox(base_box, aug_name, target_edge))
                 
                 all_original_sizes.append(torch.tensor([h, w], dtype=torch.int64, device=device))
                 all_reshaped_sizes.append(torch.tensor([target_edge, target_edge], dtype=torch.int64, device=device))
@@ -538,7 +481,7 @@ class TTAPredictor:
             if idx.numel() == 0:
                 continue
             src = preds_t.index_select(0, idx)
-            if aug_name == "none" or aug_name == "elastic_deform":
+            if aug_name == "none":
                 mapped = src
             elif aug_name == "hflip":
                 mapped = src.flip(-1)
@@ -555,6 +498,38 @@ class TTAPredictor:
             else:
                 raise ValueError(f"Unsupported augmentation: {aug_name}")
             out.index_copy_(0, idx, mapped)
+        return out
+
+    def _deaugment_ordered_tensor(self, preds_t: torch.Tensor) -> torch.Tensor:
+        """Fast deaugment path for ordered augment dimension [B, A, H, W]."""
+        if preds_t.dim() != 4:
+            raise ValueError(f"Expected [B,A,H,W], got shape {tuple(preds_t.shape)}")
+
+        bsz, aug_n = int(preds_t.shape[0]), int(preds_t.shape[1])
+        if aug_n <= 0:
+            return preds_t
+
+        out = preds_t.clone()
+        ordered_augs = self.augmentations[:aug_n]
+        for aug_pos, aug_name in enumerate(ordered_augs):
+            src = preds_t[:, aug_pos]
+            if aug_name == "none":
+                mapped = src
+            elif aug_name == "hflip":
+                mapped = src.flip(-1)
+            elif aug_name == "vflip":
+                mapped = src.flip(-2)
+            elif aug_name == "hvflip":
+                mapped = src.flip(-2).flip(-1)
+            elif aug_name == "rotate_90":
+                mapped = torch.rot90(src, k=3, dims=(-2, -1))
+            elif aug_name == "rotate_180":
+                mapped = torch.rot90(src, k=2, dims=(-2, -1))
+            elif aug_name == "rotate_270":
+                mapped = torch.rot90(src, k=1, dims=(-2, -1))
+            else:
+                raise ValueError(f"Unsupported augmentation: {aug_name}")
+            out[:, aug_pos].copy_(mapped)
         return out
 
     def _fuse_predictions(
@@ -591,24 +566,36 @@ class TTAPredictor:
             profiler.record_duration(f"tta.fuse.{self.fusion_mode}", time.perf_counter() - t0)
         return fused_t, avg_uncertainty
 
-    def _deaugment_mask_tensor(self, mask_t: torch.Tensor, aug_name: str) -> torch.Tensor:
-        if aug_name == "none":
-            return mask_t
-        if aug_name == "hflip":
-            return mask_t.flip(-1)
-        if aug_name == "vflip":
-            return mask_t.flip(-2)
-        if aug_name == "hvflip":
-            return mask_t.flip(-2).flip(-1)
-        if aug_name == "rotate_90":
-            return torch.rot90(mask_t, k=3, dims=(-2, -1))
-        if aug_name == "rotate_180":
-            return torch.rot90(mask_t, k=2, dims=(-2, -1))
-        if aug_name == "rotate_270":
-            return torch.rot90(mask_t, k=1, dims=(-2, -1))
-        if aug_name == "elastic_deform":
-            return mask_t
-        raise ValueError(f"Unsupported augmentation: {aug_name}")
+    def _resize_batch_grouped(
+        self,
+        fused_batch: torch.Tensor,
+        output_sizes_list: List[Tuple[int, int]],
+    ) -> List[torch.Tensor]:
+        """Resize predictions by grouping samples with same target size to reduce kernel launches."""
+        if fused_batch.dim() != 3:
+            raise ValueError(f"Expected [B,H,W], got shape {tuple(fused_batch.shape)}")
+        if int(fused_batch.shape[0]) != len(output_sizes_list):
+            raise ValueError("Batch size and output_sizes_list length mismatch")
+
+        grouped: Dict[Tuple[int, int], List[int]] = {}
+        for idx, size in enumerate(output_sizes_list):
+            grouped.setdefault((int(size[0]), int(size[1])), []).append(idx)
+
+        out: List[Optional[torch.Tensor]] = [None] * int(fused_batch.shape[0])
+        for (out_h, out_w), idxs in grouped.items():
+            idx_t = torch.as_tensor(idxs, device=fused_batch.device, dtype=torch.long)
+            chunk = fused_batch.index_select(0, idx_t)
+            if int(chunk.shape[-2]) != out_h or int(chunk.shape[-1]) != out_w:
+                chunk = F.interpolate(
+                    chunk.unsqueeze(1),
+                    size=(out_h, out_w),
+                    mode="bilinear",
+                    align_corners=False,
+                ).squeeze(1)
+            for local_i, sample_i in enumerate(idxs):
+                out[sample_i] = chunk[local_i]
+
+        return [t for t in out if t is not None]
 
     def _auto_tune_chunk_size(
         self,
@@ -621,8 +608,12 @@ class TTAPredictor:
         """Auto-tune chunk_size on first sample to find optimal value for this GPU."""
         if self._chunk_size_tuned:
             return
+        if not self._autotune_enabled:
+            self._chunk_size_tuned = True
+            return
         
-        test_sizes = [4, 8, 12, 16, 24, 32, 48, 64, 96, 128]
+        # test_sizes = [4, 8, 12, 16, 24, 32, 48, 64, 96, 128]
+        test_sizes = [32]
         best_size = self.infer_chunk_size
         best_speed = 0.0
         
@@ -709,14 +700,14 @@ class TTAPredictor:
         Returns:
             (prob_mask_tensor, avg_uncertainty)
         """
-        results = self.predict_batch(
+        probs, uncertainties = self.predict_batch(
             model=model,
             processor=processor,
             images=[image],
             bboxes=[bbox],
             device=device,
         )
-        return results[0]
+        return probs[0], float(uncertainties[0])
 
     def predict_batch(
         self,
@@ -725,7 +716,7 @@ class TTAPredictor:
         images: List[Image.Image],
         bboxes: List[List[int]],
         device: str,
-    ) -> List[Tuple[torch.Tensor, float]]:
+    ) -> Tuple[List[torch.Tensor], List[float]]:
         """
         Predict with TTA for multiple images in a single batched forward pass.
         
@@ -737,10 +728,12 @@ class TTAPredictor:
             device: Device to run on ("cuda" or "cpu")
         
         Returns:
-            List of (prob_mask_tensor, avg_uncertainty) tuples, one per image
+            (probability_masks, avg_uncertainties)
+            probability_masks: list of [H,W] probability tensors
+            avg_uncertainties: list of float uncertainties
         """
         if not images:
-            return []
+            return [], []
         
         # Auto-tune on first call
         if not self._chunk_size_tuned:
@@ -806,53 +799,98 @@ class TTAPredictor:
                 chunk_size = max(1, chunk_size // 2)
 
         pred_batch_t = torch.cat(pred_chunks, dim=0)
-        
-        # Collect predictions per sample and fuse
+
+        # Ignore optional pad entries; only true augmentations should contribute.
+        valid_total = int(sum(int(c) for c in true_aug_counts))
+        pred_batch_t = pred_batch_t[:valid_total]
+        aug_ids = aug_ids[:valid_total]
+
         n_samples = len(images)
-        results: List[Tuple[torch.Tensor, float]] = []
+        result_probs: List[torch.Tensor] = []
+        result_uncertainties: List[float] = []
 
-        aug_offsets: List[int] = []
-        offset = 0
-        for count in true_aug_counts:
-            aug_offsets.append(offset)
-            offset += int(count)
+        # Fast path: all samples share same augmentation count and ordered augmentation ids.
+        aug_count = int(true_aug_counts[0]) if (n_samples > 0 and true_aug_counts) else 0
+        can_vectorize = (
+            n_samples > 0
+            and aug_count > 0
+            and all(int(c) == aug_count for c in true_aug_counts)
+            and valid_total == n_samples * aug_count
+        )
 
-        for sample_idx in range(n_samples):
-            true_aug_count = true_aug_counts[sample_idx]
-            start = aug_offsets[sample_idx]
-            end = start + int(true_aug_count)
+        if can_vectorize:
+            pred_4d = pred_batch_t.view(n_samples, aug_count, pred_batch_t.shape[-2], pred_batch_t.shape[-1])
+            aug_2d = aug_ids.view(n_samples, aug_count)
+            expected_aug_ids = torch.arange(aug_count, device=aug_ids.device, dtype=aug_ids.dtype).unsqueeze(0).expand(n_samples, -1)
+            ordered = bool(torch.equal(aug_2d, expected_aug_ids))
 
-            t_deaug = time.perf_counter() if profiler is not None and profiler.enabled else 0.0
-            sample_pred_t = pred_batch_t[start:end]
-            sample_aug_ids = aug_ids[start:end]
-            stacked_t = self._deaugment_grouped_batch(sample_pred_t, sample_aug_ids)
-            if profiler is not None and profiler.enabled:
-                profiler.record_duration("tta.deaugment", time.perf_counter() - t_deaug)
+            if ordered:
+                t_deaug = time.perf_counter() if profiler is not None and profiler.enabled else 0.0
+                deaug_4d = self._deaugment_ordered_tensor(pred_4d)
+                if profiler is not None and profiler.enabled:
+                    profiler.record_duration("tta.deaugment", time.perf_counter() - t_deaug)
 
-            # Compute uncertainties
-            prob_t = stacked_t.to(torch.float32).clamp(1e-6, 1.0 - 1e-6)
-            entropy_t = -(prob_t * torch.log(prob_t) + (1.0 - prob_t) * torch.log1p(-prob_t))
-            uncertainties_t = entropy_t.reshape(entropy_t.shape[0], -1).mean(dim=1).to(torch.float32)
+                prob_4d = deaug_4d.to(torch.float32).clamp(1e-6, 1.0 - 1e-6)
+                entropy_4d = -(prob_4d * torch.log(prob_4d) + (1.0 - prob_4d) * torch.log1p(-prob_4d))
+                uncertainties_ba = entropy_4d.flatten(2).mean(dim=2).to(torch.float32)
 
-            # Fuse predictions
-            fused_t, uncertainties_mean = self._fuse_predictions(stacked_t, uncertainties_t)
-            
-            # Interpolate to original size
-            out_h, out_w = output_sizes_list[sample_idx]
-            if int(fused_t.shape[-2]) != out_h or int(fused_t.shape[-1]) != out_w:
-                fused_t = F.interpolate(
-                    fused_t.unsqueeze(0).unsqueeze(0),
-                    size=(out_h, out_w),
-                    mode="bilinear",
-                    align_corners=False,
-                ).squeeze(0).squeeze(0)
+                if self.fusion_mode == "mean":
+                    fused_batch = deaug_4d.to(torch.float32).mean(dim=1)
+                elif self.fusion_mode == "median":
+                    fused_batch = torch.median(deaug_4d.to(torch.float32), dim=1).values
+                elif self.fusion_mode == "entropy_weighted":
+                    if aug_count == 1:
+                        fused_batch = deaug_4d[:, 0].to(torch.float32)
+                    else:
+                        weights = torch.softmax(-uncertainties_ba, dim=1)
+                        fused_batch = torch.sum(deaug_4d.to(torch.float32) * weights[:, :, None, None], dim=1)
+                else:
+                    raise ValueError(f"Unknown fusion mode: {self.fusion_mode}")
 
-            results.append((fused_t, uncertainties_mean))
+                uncertainty_mean_batch = uncertainties_ba.mean(dim=1)
+
+                resized_probs = self._resize_batch_grouped(fused_batch, output_sizes_list)
+                for sample_idx in range(n_samples):
+                    result_probs.append(resized_probs[sample_idx])
+                    result_uncertainties.append(float(uncertainty_mean_batch[sample_idx].item()))
+            else:
+                can_vectorize = False
+
+        if not can_vectorize:
+            aug_offsets: List[int] = []
+            offset = 0
+            for count in true_aug_counts:
+                aug_offsets.append(offset)
+                offset += int(count)
+
+            fused_list: List[torch.Tensor] = []
+            for sample_idx in range(n_samples):
+                true_aug_count = true_aug_counts[sample_idx]
+                start = aug_offsets[sample_idx]
+                end = start + int(true_aug_count)
+
+                t_deaug = time.perf_counter() if profiler is not None and profiler.enabled else 0.0
+                sample_pred_t = pred_batch_t[start:end]
+                sample_aug_ids = aug_ids[start:end]
+                stacked_t = self._deaugment_grouped_batch(sample_pred_t, sample_aug_ids)
+                if profiler is not None and profiler.enabled:
+                    profiler.record_duration("tta.deaugment", time.perf_counter() - t_deaug)
+
+                prob_t = stacked_t.to(torch.float32).clamp(1e-6, 1.0 - 1e-6)
+                entropy_t = -(prob_t * torch.log(prob_t) + (1.0 - prob_t) * torch.log1p(-prob_t))
+                uncertainties_t = entropy_t.reshape(entropy_t.shape[0], -1).mean(dim=1).to(torch.float32)
+
+                fused_t, uncertainties_mean = self._fuse_predictions(stacked_t, uncertainties_t)
+                fused_list.append(fused_t)
+                result_uncertainties.append(float(uncertainties_mean))
+
+            fused_batch = torch.stack(fused_list, dim=0)
+            result_probs.extend(self._resize_batch_grouped(fused_batch, output_sizes_list))
 
         if profiler is not None and profiler.enabled:
             profiler.record_duration("tta.predict_total", time.perf_counter() - t_predict_total)
 
-        return results
+        return result_probs, result_uncertainties
 
 
 def compute_metrics_tensor(pred_mask: torch.Tensor, gt_mask: torch.Tensor) -> Dict[str, float]:
@@ -911,6 +949,64 @@ def compute_metrics_batch_tensor(pred_masks: torch.Tensor, gt_masks: torch.Tenso
         "fp": fp.to(torch.int64),
         "fn": fn.to(torch.int64),
     }
+
+
+def compute_bce_batch_tensor(prob_masks: torch.Tensor, gt_masks: torch.Tensor) -> torch.Tensor:
+    """Compute per-sample Binary Cross-Entropy (paper Section 3.3).
+
+    L_BCE = -(1/N) * Σ [g * log(p) + (1-g) * log(1-p)]
+
+    Args:
+        prob_masks: [B, H, W] float32 probability values in [0, 1]
+        gt_masks:   [B, H, W] float32 binary ground-truth masks
+    Returns:
+        [B] tensor of per-sample BCE values
+    """
+    p = prob_masks.to(torch.float32).clamp(1e-7, 1.0 - 1e-7)
+    g = gt_masks.to(torch.float32)
+    reduce_dims = tuple(range(1, p.dim()))
+    return -(g * p.log() + (1.0 - g) * (1.0 - p).log()).mean(dim=reduce_dims)
+
+
+def _tta_predict_with_oom_recovery(
+    *,
+    tta_predictor: TTAPredictor,
+    model: Any,
+    processor: Any,
+    images: List[Image.Image],
+    bboxes: List[List[int]],
+    device: str,
+) -> Tuple[List[torch.Tensor], List[float]]:
+    """Run TTA with adaptive sample micro-batching to avoid CUDA OOM."""
+    n = len(images)
+    if n == 0:
+        return [], []
+
+    micro_bs = n
+    while True:
+        probs_all: List[torch.Tensor] = []
+        uncs_all: List[float] = []
+        try:
+            for start in range(0, n, micro_bs):
+                end = min(start + micro_bs, n)
+                probs, uncs = tta_predictor.predict_batch(
+                    model=model,
+                    processor=processor,
+                    images=images[start:end],
+                    bboxes=bboxes[start:end],
+                    device=device,
+                )
+                probs_all.extend(probs)
+                uncs_all.extend([float(u) for u in uncs])
+            return probs_all, uncs_all
+        except RuntimeError as e:
+            msg = str(e).lower()
+            is_oom = "out of memory" in msg or ("cuda" in msg and "memory" in msg)
+            if not is_oom or micro_bs <= 1:
+                raise
+            if device == "cuda":
+                torch.cuda.empty_cache()
+            micro_bs = max(1, micro_bs // 2)
 
 
 def _mean_std(values: List[float]) -> Tuple[float, float]:
@@ -1013,7 +1109,7 @@ def evaluate_dataset(
     profiler: Optional[PerformanceProfiler] = None,
     profile_prefix: str = "",
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    metrics_keys = ["dice", "jaccard", "precision", "recall", "f1"]
+    metrics_keys = ["dice", "jaccard", "precision", "recall", "f1", "bce"]
     metrics_store: Dict[str, List[float]] = {k: [] for k in metrics_keys}
 
     results: List[Dict[str, Any]] = []
@@ -1028,7 +1124,15 @@ def evaluate_dataset(
     start = time.perf_counter()
 
     default_eval_workers = "16"
-    default_eval_batch = "8" if (device == "cuda" and not use_tta) else "1"
+    # TTA path benefits from small batching; keep baseline higher and TTA moderate to avoid OOM.
+    if device == "cuda":
+        cuda_mem_gb = _cuda_total_memory_gb()
+        if not use_tta:
+            default_eval_batch = "8"
+        else:
+            default_eval_batch = "2" if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else "4"
+    else:
+        default_eval_batch = "1"
     eval_workers = max(0, int(os.getenv("MEDSAM_EVAL_WORKERS", default_eval_workers)))
     eval_batch_size = max(1, int(os.getenv("MEDSAM_EVAL_BATCH", default_eval_batch)))
     eval_prefetch = max(2, int(os.getenv("MEDSAM_EVAL_PREFETCH", "4")))
@@ -1074,18 +1178,20 @@ def evaluate_dataset(
             pred_masks_t: List[torch.Tensor] = []
             prob_for_ood_t: List[torch.Tensor] = []
             t_tta = time.perf_counter()
-            tta_results = tta_predictor.predict_batch(
+            tta_prob_t, tta_uncertainties = _tta_predict_with_oom_recovery(
+                tta_predictor=tta_predictor,
                 model=model,
                 processor=processor,
                 images=images,
                 bboxes=bboxes,
                 device=device,
             )
-            for i, (prob_t, uncertainty) in enumerate(tta_results):
+            for i, prob_t in enumerate(tta_prob_t):
                 pred_masks_t.append((prob_t > 0.5).to(torch.uint8))
                 prob_for_ood_t.append(prob_t)
-                batch_uncertainties[i] = float(uncertainty)
-                uncertainties.append(float(uncertainty))
+                u = float(tta_uncertainties[i])
+                batch_uncertainties[i] = u
+                uncertainties.append(u)
             if profiler is not None and profiler.enabled:
                 profiler.record_duration(f"{profile_prefix or f'eval.{dataset_name}'}.tta_predict", time.perf_counter() - t_tta)
         else:
@@ -1107,9 +1213,11 @@ def evaluate_dataset(
 
         pred_batch_t = torch.stack(pred_masks_t, dim=0)
         gt_batch_t = torch.stack(gt_masks_t, dim=0)
+        prob_batch_t = torch.stack(prob_for_ood_t, dim=0)
 
         t_metric = time.perf_counter()
         batch_metrics = compute_metrics_batch_tensor(pred_batch_t, gt_batch_t)
+        batch_metrics["bce"] = compute_bce_batch_tensor(prob_batch_t, gt_batch_t)
         metric_elapsed = time.perf_counter() - t_metric
         metrics_times.extend([metric_elapsed / max(1, len(batch_samples))] * len(batch_samples))
         if profiler is not None and profiler.enabled:
@@ -1117,7 +1225,7 @@ def evaluate_dataset(
 
         t_ood = time.perf_counter()
         if use_ood and ood_detector is not None:
-            ood_batch = ood_detector.detect_batch_tensor(torch.stack(prob_for_ood_t, dim=0))
+            ood_batch = ood_detector.detect_batch_tensor(prob_batch_t)
         else:
             ood_batch = [
                 {"ood_score": 0.0, "is_ood": False, "confidence": 0.0}
@@ -1150,6 +1258,7 @@ def evaluate_dataset(
                     "precision": float(m["precision"]),
                     "recall": float(m["recall"]),
                     "f1": float(m["f1"]),
+                    "bce": float(m["bce"]),
                     "ood_score": ood_score,
                     "is_ood": is_ood,
                     "confidence": confidence,
@@ -1210,7 +1319,7 @@ def evaluate_dataset_ood_tta(
     profiler: Optional[PerformanceProfiler] = None,
     profile_prefix: str = "",
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
-    metrics_keys = ["dice", "jaccard", "precision", "recall", "f1"]
+    metrics_keys = ["dice", "jaccard", "precision", "recall", "f1", "bce"]
 
     ood_metrics_store: Dict[str, List[float]] = {k: [] for k in metrics_keys}
     tta_metrics_store: Dict[str, List[float]] = {k: [] for k in metrics_keys}
@@ -1228,7 +1337,11 @@ def evaluate_dataset_ood_tta(
 
     start = time.perf_counter()
     default_eval_workers = "16"
-    default_eval_batch = "1"
+    if device == "cuda":
+        cuda_mem_gb = _cuda_total_memory_gb()
+        default_eval_batch = "2" if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else "4"
+    else:
+        default_eval_batch = "1"
     eval_workers = max(0, int(os.getenv("MEDSAM_EVAL_WORKERS", default_eval_workers)))
     eval_batch_size = max(1, int(os.getenv("MEDSAM_EVAL_BATCH", default_eval_batch)))
     eval_prefetch = max(2, int(os.getenv("MEDSAM_EVAL_PREFETCH", "4")))
@@ -1283,31 +1396,33 @@ def evaluate_dataset_ood_tta(
         inference_times_ood.extend([(time.perf_counter() - t_ood_inf) / max(1, len(batch_samples))] * len(batch_samples))
 
         t_tta_inf = time.perf_counter()
-        tta_batch_uncertainties: List[float] = [0.0] * len(batch_samples)
-        tta_pred_masks_t: List[torch.Tensor] = []
-        tta_prob_t: List[torch.Tensor] = []
-        tta_batch = tta_predictor.predict_batch(
+        tta_prob_t, tta_batch_uncertainties = _tta_predict_with_oom_recovery(
+            tta_predictor=tta_predictor,
             model=model,
             processor=processor,
             images=images,
             bboxes=bboxes,
             device=device,
         )
-        for i, (prob_t, uncertainty) in enumerate(tta_batch):
-            tta_pred_masks_t.append((prob_t > 0.5).to(torch.uint8))
-            tta_prob_t.append(prob_t)
-            tta_batch_uncertainties[i] = float(uncertainty)
-            uncertainties.append(float(uncertainty))
+        tta_pred_masks_t = [(prob_t > 0.5).to(torch.uint8) for prob_t in tta_prob_t]
+        uncertainties.extend([float(u) for u in tta_batch_uncertainties])
         inference_times_tta.extend([(time.perf_counter() - t_tta_inf) / max(1, len(batch_samples))] * len(batch_samples))
 
         t_ood = time.perf_counter()
-        ood_batch = ood_detector.detect_batch_tensor(torch.stack(ood_prob_t, dim=0))
+        ood_prob_stack = torch.stack(ood_prob_t, dim=0)
+        tta_prob_stack = torch.stack(tta_prob_t, dim=0)
+        ood_pred_stack = torch.stack(ood_pred_masks_t, dim=0)
+        tta_pred_stack = torch.stack(tta_pred_masks_t, dim=0)
+        ood_batch = ood_detector.detect_batch_tensor(ood_prob_stack)
         ood_elapsed = time.perf_counter() - t_ood
         ood_times.extend([ood_elapsed / max(1, len(batch_samples))] * len(batch_samples))
 
         t_metric = time.perf_counter()
-        ood_batch_metrics = compute_metrics_batch_tensor(torch.stack(ood_pred_masks_t, dim=0), torch.stack(gt_masks_t, dim=0))
-        tta_batch_metrics = compute_metrics_batch_tensor(torch.stack(tta_pred_masks_t, dim=0), torch.stack(gt_masks_t, dim=0))
+        gt_stack = torch.stack(gt_masks_t, dim=0)
+        ood_batch_metrics = compute_metrics_batch_tensor(ood_pred_stack, gt_stack)
+        ood_batch_metrics["bce"] = compute_bce_batch_tensor(ood_prob_stack, gt_stack)
+        tta_batch_metrics = compute_metrics_batch_tensor(tta_pred_stack, gt_stack)
+        tta_batch_metrics["bce"] = compute_bce_batch_tensor(tta_prob_stack, gt_stack)
         metric_elapsed = time.perf_counter() - t_metric
         metrics_times.extend([metric_elapsed / max(1, len(batch_samples))] * len(batch_samples))
 
@@ -1334,6 +1449,7 @@ def evaluate_dataset_ood_tta(
                     "precision": float(ood_m["precision"]),
                     "recall": float(ood_m["recall"]),
                     "f1": float(ood_m["f1"]),
+                    "bce": float(ood_m["bce"]),
                     "ood_score": ood_score,
                     "is_ood": is_ood,
                     "confidence": confidence,
@@ -1349,6 +1465,7 @@ def evaluate_dataset_ood_tta(
                     "precision": float(tta_m["precision"]),
                     "recall": float(tta_m["recall"]),
                     "f1": float(tta_m["f1"]),
+                    "bce": float(tta_m["bce"]),
                     "ood_score": 0.0,
                     "is_ood": False,
                     "confidence": 0.0,
