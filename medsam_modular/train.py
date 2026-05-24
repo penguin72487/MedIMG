@@ -58,6 +58,17 @@ def _cuda_total_memory_gb() -> Optional[float]:
         return None
 
 
+def _cpu_count() -> int:
+    return max(1, int(os.cpu_count() or 1))
+
+
+def _auto_train_workers(device: str) -> int:
+    cores = _cpu_count()
+    if device == "cuda":
+        return max(2, min(16, cores // 2))
+    return max(1, min(8, cores - 1))
+
+
 class FinetuneProcessorDataset(Dataset):
     def __init__(self, base_dataset: Dataset, processor: Any):
         self.base_dataset = base_dataset
@@ -248,7 +259,8 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
     min_delta = float(config.get("finetune_min_delta", 1e-4))
     grad_accum = max(1, int(config.get("finetune_grad_accum", 2)))
     grad_clip = float(config.get("finetune_grad_clip", 1.0))
-    num_workers = int(config.get("finetune_workers", 4))
+    raw_workers = int(config.get("finetune_workers", 0))
+    num_workers = _auto_train_workers(device) if raw_workers <= 0 else raw_workers
     max_samples = int(config.get("finetune_max_samples", 0))
     use_fused_adamw = _get_bool("finetune_use_fused_adamw", True)
     resume_weight_path_raw = str(config.get("resume_weight_path", "")).strip()

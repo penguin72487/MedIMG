@@ -112,6 +112,17 @@ def _cuda_total_memory_gb() -> Optional[float]:
         return None
 
 
+def _cpu_count() -> int:
+    return max(1, int(os.cpu_count() or 1))
+
+
+def _auto_eval_workers(device: str) -> int:
+    cores = _cpu_count()
+    if device == "cuda":
+        return max(2, min(16, cores // 2))
+    return max(1, min(8, cores - 1))
+
+
 class OODDetector:
     def __init__(self, threshold: float = 0.5, method: str = "entropy"):
         self.threshold = threshold
@@ -611,9 +622,14 @@ class TTAPredictor:
         if not self._autotune_enabled:
             self._chunk_size_tuned = True
             return
-        
-        # test_sizes = [4, 8, 12, 16, 24, 32, 48, 64, 96, 128]
-        test_sizes = [32]
+
+        cuda_mem_gb = _cuda_total_memory_gb() if device == "cuda" else None
+        if device != "cuda":
+            test_sizes = [1, 2, 4, 8]
+        elif cuda_mem_gb is not None and cuda_mem_gb <= 12.5:
+            test_sizes = [4, 8, 12, 16, 24, 32]
+        else:
+            test_sizes = [8, 12, 16, 24, 32, 48, 64]
         best_size = self.infer_chunk_size
         best_speed = 0.0
         
@@ -655,7 +671,10 @@ class TTAPredictor:
                         device=device,
                         output_size=None,
                         use_amp=True,
-                        inputs_already_on_device=True,
+                        # NOTE:
+                        # TTA long runs may hit non-finite outputs when reusing CUDA graph replay.
+                        # Force eager path here for numerical stability.
+                        inputs_already_on_device=False,
                     )[:, 0]
                     pred_chunks.append(pred_chunk)
                 
@@ -783,7 +802,8 @@ class TTAPredictor:
                         device=device,
                         output_size=None,
                         use_amp=True,
-                        inputs_already_on_device=True,
+                        # Keep autotune behavior aligned with predict_batch inference path.
+                        inputs_already_on_device=False,
                     )[:, 0]
                     if profiler is not None and profiler.enabled:
                         profiler.record_duration("tta.chunk_inference", time.perf_counter() - t_chunk)
@@ -1123,7 +1143,7 @@ def evaluate_dataset(
 
     start = time.perf_counter()
 
-    default_eval_workers = "16"
+    default_eval_workers = str(_auto_eval_workers(device))
     # TTA path benefits from small batching; keep baseline higher and TTA moderate to avoid OOM.
     if device == "cuda":
         cuda_mem_gb = _cuda_total_memory_gb()
@@ -1336,7 +1356,7 @@ def evaluate_dataset_ood_tta(
     post_times: List[float] = []
 
     start = time.perf_counter()
-    default_eval_workers = "16"
+    default_eval_workers = str(_auto_eval_workers(device))
     if device == "cuda":
         cuda_mem_gb = _cuda_total_memory_gb()
         default_eval_batch = "2" if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else "4"

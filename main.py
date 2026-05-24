@@ -71,8 +71,16 @@ def _parse_args() -> argparse.Namespace:
     )
     model_group.add_argument(
         "--compile-dynamic",
+        dest="compile_dynamic",
         action="store_true",
-        help="啟用 torch.compile dynamic shape（預設: CUDA 下關閉以提升固定形狀推論效能）",
+        default=None,
+        help="啟用 torch.compile dynamic shape（預設: 自動依裝置決定）",
+    )
+    model_group.add_argument(
+        "--no-compile-dynamic",
+        dest="compile_dynamic",
+        action="store_false",
+        help="停用 torch.compile dynamic shape（覆蓋自動設定）",
     )
     model_group.add_argument(
         "--compile-warmup-batches",
@@ -108,7 +116,7 @@ def _parse_args() -> argparse.Namespace:
     train_group.add_argument("--min-delta",       type=float, default=1e-4, metavar="D",   help="Early stopping 最小改善量")
     train_group.add_argument("--grad-accum",      type=int,   default=2,    metavar="N",   help="梯度累積步數")
     train_group.add_argument("--grad-clip",       type=float, default=1.0,  metavar="V",   help="梯度裁剪最大範數")
-    train_group.add_argument("--workers",         type=int,   default=16,   metavar="N",   help="DataLoader worker 數量")
+    train_group.add_argument("--workers",         type=int,   default=0,    metavar="N",   help="DataLoader worker 數量（0=自動）")
     train_group.add_argument("--max-samples",     type=int,   default=0,    metavar="N",   help="每個資料集最多取樣數（0 = 不限）")
     train_group.add_argument(
         "--finetune-only",
@@ -133,9 +141,9 @@ def _parse_args() -> argparse.Namespace:
     eval_group.add_argument(
         "--eval-workers",
         type=int,
-        default=16,
+        default=0,
         metavar="N",
-        help="評估 DataLoader worker 數量（CPU 平行）",
+        help="評估 DataLoader worker 數量（CPU 平行，0=自動）",
     )
     eval_group.add_argument(
         "--eval-batch-size",
@@ -147,9 +155,9 @@ def _parse_args() -> argparse.Namespace:
     eval_group.add_argument(
         "--cpu-threads",
         type=int,
-        default=16,
+        default=0,
         metavar="N",
-        help="CPU 運算執行緒數（torch.set_num_threads）",
+        help="CPU 運算執行緒數（torch.set_num_threads，0=自動）",
     )
     eval_group.add_argument(
         "--ood-method",
@@ -268,7 +276,10 @@ def _apply_env(args: argparse.Namespace) -> None:
     os.environ["MEDSAM_FINETUNE_ONLY"]              = "1" if args.finetune_only else "0"
     os.environ["MEDSAM_FINETUNE_USE_FUSED_ADAMW"]   = "0" if args.no_fused_adamw else "1"
     os.environ["MEDSAM_REQUIRE_COMPILE"]            = "1" if args.require_compile else "0"
-    os.environ["MEDSAM_COMPILE_DYNAMIC"]            = "1" if args.compile_dynamic else "0"
+    if args.compile_dynamic is True:
+        os.environ["MEDSAM_COMPILE_DYNAMIC"] = "1"
+    elif args.compile_dynamic is False:
+        os.environ["MEDSAM_COMPILE_DYNAMIC"] = "0"
     os.environ["MEDSAM_TTA_FAST"]                   = "1" if args.tta_fast else "0"
     os.environ["MEDSAM_PROFILE"]                    = "1" if args.profile else "0"
     os.environ["MEDSAM_EVAL_WORKERS"]               = str(args.eval_workers)

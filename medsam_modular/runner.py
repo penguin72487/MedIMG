@@ -25,6 +25,18 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw in _TRUE_SET
 
 
+def _cpu_count() -> int:
+    return max(1, int(os.cpu_count() or 1))
+
+
+def _auto_cpu_threads(device: str) -> int:
+    cores = _cpu_count()
+    if device == "cuda":
+        # Reserve headroom for DataLoader/I/O workers while keeping tensor ops responsive.
+        return max(2, min(12, cores // 2))
+    return max(1, cores - 1)
+
+
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -170,7 +182,9 @@ def main() -> None:
     output_dir = Path(os.getenv("MEDSAM_OUTPUT_DIR", str(project_root / "results" / "modular")))
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    cpu_threads = max(1, int(os.getenv("MEDSAM_CPU_THREADS", "16")))
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    raw_cpu_threads = int(os.getenv("MEDSAM_CPU_THREADS", "0"))
+    cpu_threads = _auto_cpu_threads(device) if raw_cpu_threads <= 0 else max(1, raw_cpu_threads)
     torch.set_num_threads(cpu_threads)
     try:
         torch.set_num_interop_threads(max(1, min(8, cpu_threads // 2)))
@@ -178,7 +192,6 @@ def main() -> None:
         # set_num_interop_threads may be called only once in some runtimes.
         pass
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
     image_size = int(os.getenv("MEDSAM_IMAGE_SIZE", "512"))
     model_id = os.getenv("MEDSAM_MODEL_ID", "facebook/sam-vit-base")
     data_paths = _resolve_data_paths(project_root)
@@ -191,6 +204,7 @@ def main() -> None:
     profiler.configure_output(profile_path)
     set_active_profiler(profiler)
     profiler.set_metadata("device", device)
+    profiler.set_metadata("cpu_threads", cpu_threads)
     profiler.set_metadata("model_id", model_id)
     profiler.set_metadata("image_size", image_size)
     profiler.set_metadata("data_paths", data_paths)
