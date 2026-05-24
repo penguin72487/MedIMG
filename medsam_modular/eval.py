@@ -9,6 +9,11 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+try:
+    from scipy import ndimage
+except Exception:
+    ndimage = None
+
 from medsam_modular.cache import PredictionCache, make_cache_key
 from medsam_modular.model import build_inputs_batch, predict_prob_masks_from_inputs
 from medsam_modular.profiler import PerformanceProfiler, get_active_profiler
@@ -27,13 +32,19 @@ def _build_stats_from_store(
     total_time: float,
     ood_scores: Optional[List[float]] = None,
     uncertainties: Optional[List[float]] = None,
+    ood_eval_scores: Optional[List[float]] = None,
+    ood_eval_labels: Optional[List[int]] = None,
 ) -> Dict[str, Any]:
     mean_dice, std_dice = _mean_std(metrics_store["dice"])
     mean_jaccard, std_jaccard = _mean_std(metrics_store["jaccard"])
     mean_precision, std_precision = _mean_std(metrics_store["precision"])
     mean_recall, std_recall = _mean_std(metrics_store["recall"])
+    mean_sensitivity, std_sensitivity = _mean_std(metrics_store.get("sensitivity", metrics_store["recall"]))
     mean_f1, std_f1 = _mean_std(metrics_store["f1"])
     mean_bce, std_bce = _mean_std(metrics_store.get("bce", [0.0]))
+    mean_hd95, std_hd95 = _mean_std(metrics_store.get("hd95", [float("nan")]))
+    mean_assd, std_assd = _mean_std(metrics_store.get("assd", [float("nan")]))
+    mean_ece, std_ece = _mean_std(metrics_store.get("ece", [float("nan")]))
 
     stats: Dict[str, Any] = {
         "dataset": dataset_name,
@@ -46,10 +57,18 @@ def _build_stats_from_store(
         "std_precision": std_precision,
         "mean_recall": mean_recall,
         "std_recall": std_recall,
+        "mean_sensitivity": mean_sensitivity,
+        "std_sensitivity": std_sensitivity,
         "mean_f1": mean_f1,
         "std_f1": std_f1,
         "mean_bce": mean_bce,
         "std_bce": std_bce,
+        "mean_hd95": mean_hd95,
+        "std_hd95": std_hd95,
+        "mean_assd": mean_assd,
+        "std_assd": std_assd,
+        "mean_ece": mean_ece,
+        "std_ece": std_ece,
         "total_time_sec": float(total_time),
         "avg_inference_time_ms": float(np.mean(inference_times) * 1000.0),
         "avg_data_time_ms": float(np.mean(data_times) * 1000.0),
@@ -64,6 +83,10 @@ def _build_stats_from_store(
         stats["std_ood_score"] = float(np.std(ood_scores))
         stats["num_ood_detected"] = int(sum(1 for r in results if r.get("is_ood", False)))
         stats["ood_ratio"] = float(stats["num_ood_detected"] / max(1, len(results)))
+
+    if ood_eval_scores and ood_eval_labels:
+        det_metrics = _compute_ood_detection_stats(ood_eval_scores, ood_eval_labels)
+        stats.update(det_metrics)
 
     if uncertainties:
         stats["mean_uncertainty"] = float(np.mean(uncertainties))
@@ -543,14 +566,24 @@ class TTAPredictor:
             out[:, aug_pos].copy_(mapped)
         return out
 
-    def _fuse_predictions(
+    def _combine_fusion(
         self,
         preds: torch.Tensor,
         uncertainties: torch.Tensor,
-    ) -> Tuple[torch.Tensor, float]:
-        """Fuse multiple predictions using specified strategy."""
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Fuse predictions along the augmentation dimension.
+
+        Supports either [A, H, W] for one sample or [B, A, H, W] for a batch.
+        """
         profiler = get_active_profiler()
         t0 = time.perf_counter() if profiler is not None and profiler.enabled else 0.0
+        if preds.dim() == 3:
+            aug_dim = 0
+        elif preds.dim() == 4:
+            aug_dim = 1
+        else:
+            raise ValueError(f"Expected [A,H,W] or [B,A,H,W], got shape {tuple(preds.shape)}")
+
         stacked_t = preds.to(torch.float32)
         uncertainties_t = torch.nan_to_num(
             uncertainties.to(device=stacked_t.device, dtype=torch.float32),
@@ -558,24 +591,36 @@ class TTAPredictor:
             posinf=1.0,
             neginf=1.0,
         )
-        avg_uncertainty = float(uncertainties_t.mean().item())
+        avg_uncertainty = uncertainties_t.mean(dim=aug_dim)
 
         if self.fusion_mode == "mean":
-            fused_t = stacked_t.mean(dim=0)
+            fused_t = stacked_t.mean(dim=aug_dim)
         elif self.fusion_mode == "median":
-            fused_t = torch.median(stacked_t, dim=0).values
+            fused_t = torch.median(stacked_t, dim=aug_dim).values
         elif self.fusion_mode == "entropy_weighted":
-            if uncertainties_t.numel() == 1:
-                fused_t = stacked_t[0]
+            if stacked_t.shape[aug_dim] == 1:
+                fused_t = stacked_t.select(aug_dim, 0)
             else:
-                weights = torch.softmax(-uncertainties_t, dim=0)
-                fused_t = torch.sum(stacked_t * weights[:, None, None], dim=0)
+                weights = torch.softmax(-uncertainties_t, dim=aug_dim)
+                if aug_dim == 0:
+                    fused_t = torch.sum(stacked_t * weights[:, None, None], dim=0)
+                else:
+                    fused_t = torch.sum(stacked_t * weights[:, :, None, None], dim=1)
         else:
             raise ValueError(f"Unknown fusion mode: {self.fusion_mode}")
 
         if profiler is not None and profiler.enabled:
             profiler.record_duration(f"tta.fuse.{self.fusion_mode}", time.perf_counter() - t0)
         return fused_t, avg_uncertainty
+
+    def _fuse_predictions(
+        self,
+        preds: torch.Tensor,
+        uncertainties: torch.Tensor,
+    ) -> Tuple[torch.Tensor, float]:
+        """Fuse multiple predictions using specified strategy."""
+        fused_t, avg_uncertainty = self._combine_fusion(preds, uncertainties)
+        return fused_t, float(avg_uncertainty.item())
 
     def _resize_batch_grouped(
         self,
@@ -854,20 +899,7 @@ class TTAPredictor:
                 entropy_4d = -(prob_4d * torch.log(prob_4d) + (1.0 - prob_4d) * torch.log1p(-prob_4d))
                 uncertainties_ba = entropy_4d.flatten(2).mean(dim=2).to(torch.float32)
 
-                if self.fusion_mode == "mean":
-                    fused_batch = deaug_4d.to(torch.float32).mean(dim=1)
-                elif self.fusion_mode == "median":
-                    fused_batch = torch.median(deaug_4d.to(torch.float32), dim=1).values
-                elif self.fusion_mode == "entropy_weighted":
-                    if aug_count == 1:
-                        fused_batch = deaug_4d[:, 0].to(torch.float32)
-                    else:
-                        weights = torch.softmax(-uncertainties_ba, dim=1)
-                        fused_batch = torch.sum(deaug_4d.to(torch.float32) * weights[:, :, None, None], dim=1)
-                else:
-                    raise ValueError(f"Unknown fusion mode: {self.fusion_mode}")
-
-                uncertainty_mean_batch = uncertainties_ba.mean(dim=1)
+                fused_batch, uncertainty_mean_batch = self._combine_fusion(deaug_4d, uncertainties_ba)
 
                 resized_probs = self._resize_batch_grouped(fused_batch, output_sizes_list)
                 for sample_idx in range(n_samples):
@@ -926,6 +958,7 @@ def compute_metrics_tensor(pred_mask: torch.Tensor, gt_mask: torch.Tensor) -> Di
     jaccard = tp / (tp + fp + fn + eps)
     precision = tp / (tp + fp + eps)
     recall = tp / (tp + fn + eps)
+    sensitivity = recall
     f1 = (2.0 * precision * recall) / (precision + recall + eps)
 
     return {
@@ -933,6 +966,7 @@ def compute_metrics_tensor(pred_mask: torch.Tensor, gt_mask: torch.Tensor) -> Di
         "jaccard": float(jaccard.item()),
         "precision": float(precision.item()),
         "recall": float(recall.item()),
+        "sensitivity": float(sensitivity.item()),
         "f1": float(f1.item()),
         "tp": int(tp.item()),
         "fp": int(fp.item()),
@@ -957,6 +991,7 @@ def compute_metrics_batch_tensor(pred_masks: torch.Tensor, gt_masks: torch.Tenso
     jaccard = tp / (tp + fp + fn + eps)
     precision = tp / (tp + fp + eps)
     recall = tp / (tp + fn + eps)
+    sensitivity = recall
     f1 = (2.0 * precision * recall) / (precision + recall + eps)
 
     return {
@@ -964,6 +999,7 @@ def compute_metrics_batch_tensor(pred_masks: torch.Tensor, gt_masks: torch.Tenso
         "jaccard": jaccard,
         "precision": precision,
         "recall": recall,
+        "sensitivity": sensitivity,
         "f1": f1,
         "tp": tp.to(torch.int64),
         "fp": fp.to(torch.int64),
@@ -986,6 +1022,169 @@ def compute_bce_batch_tensor(prob_masks: torch.Tensor, gt_masks: torch.Tensor) -
     g = gt_masks.to(torch.float32)
     reduce_dims = tuple(range(1, p.dim()))
     return -(g * p.log() + (1.0 - g) * (1.0 - p).log()).mean(dim=reduce_dims)
+
+
+def _surface_boundary(mask: np.ndarray) -> np.ndarray:
+    if ndimage is None:
+        return mask
+    eroded = ndimage.binary_erosion(mask, structure=np.ones((3, 3), dtype=bool), border_value=0)
+    boundary = np.logical_xor(mask, eroded)
+    if not boundary.any():
+        return mask
+    return boundary
+
+
+def _compute_surface_metrics_np(pred_mask: np.ndarray, gt_mask: np.ndarray) -> Tuple[float, float]:
+    pred = pred_mask.astype(bool)
+    gt = gt_mask.astype(bool)
+
+    if not pred.any() and not gt.any():
+        return 0.0, 0.0
+
+    fallback = float(np.hypot(pred.shape[0], pred.shape[1]))
+    if (not pred.any()) or (not gt.any()):
+        return fallback, fallback
+
+    if ndimage is None:
+        return float("nan"), float("nan")
+
+    pred_b = _surface_boundary(pred)
+    gt_b = _surface_boundary(gt)
+
+    dt_gt = ndimage.distance_transform_edt(~gt_b)
+    dt_pred = ndimage.distance_transform_edt(~pred_b)
+    d_pred_to_gt = dt_gt[pred_b]
+    d_gt_to_pred = dt_pred[gt_b]
+
+    if d_pred_to_gt.size == 0 and d_gt_to_pred.size == 0:
+        return 0.0, 0.0
+
+    all_d = np.concatenate([d_pred_to_gt, d_gt_to_pred], axis=0)
+    hd95 = float(np.percentile(all_d, 95)) if all_d.size > 0 else 0.0
+
+    mean_a = float(d_pred_to_gt.mean()) if d_pred_to_gt.size > 0 else 0.0
+    mean_b = float(d_gt_to_pred.mean()) if d_gt_to_pred.size > 0 else 0.0
+    assd = 0.5 * (mean_a + mean_b)
+    return hd95, assd
+
+
+def compute_surface_metrics_batch_tensor(pred_masks: torch.Tensor, gt_masks: torch.Tensor) -> Dict[str, torch.Tensor]:
+    if pred_masks.shape != gt_masks.shape:
+        raise ValueError(f"pred_masks and gt_masks shape mismatch: {tuple(pred_masks.shape)} vs {tuple(gt_masks.shape)}")
+
+    pred_np = pred_masks.detach().to(device="cpu", dtype=torch.bool).numpy()
+    gt_np = gt_masks.detach().to(device="cpu", dtype=torch.bool).numpy()
+
+    hd95_vals: List[float] = []
+    assd_vals: List[float] = []
+    for i in range(pred_np.shape[0]):
+        hd95, assd = _compute_surface_metrics_np(pred_np[i], gt_np[i])
+        hd95_vals.append(float(hd95))
+        assd_vals.append(float(assd))
+
+    return {
+        "hd95": torch.tensor(hd95_vals, device=pred_masks.device, dtype=torch.float32),
+        "assd": torch.tensor(assd_vals, device=pred_masks.device, dtype=torch.float32),
+    }
+
+
+def compute_ece_batch_tensor(prob_masks: torch.Tensor, gt_masks: torch.Tensor, n_bins: int = 15) -> torch.Tensor:
+    p = prob_masks.to(torch.float32).clamp(1e-7, 1.0 - 1e-7)
+    g = gt_masks.to(torch.float32)
+
+    if p.dim() != 3 or g.dim() != 3:
+        raise ValueError(f"Expected [B,H,W] tensors for ECE, got {tuple(p.shape)} and {tuple(g.shape)}")
+
+    p_flat = p.reshape(p.shape[0], -1)
+    g_flat = g.reshape(g.shape[0], -1)
+
+    edges = torch.linspace(0.0, 1.0, n_bins + 1, device=p.device, dtype=torch.float32)
+    ece = torch.zeros((p.shape[0],), device=p.device, dtype=torch.float32)
+
+    for b in range(n_bins):
+        left = edges[b]
+        right = edges[b + 1]
+        if b == 0:
+            in_bin = (p_flat >= left) & (p_flat <= right)
+        else:
+            in_bin = (p_flat > left) & (p_flat <= right)
+
+        bin_count = in_bin.sum(dim=1).to(torch.float32)
+        nonzero = bin_count > 0
+        if not bool(nonzero.any().item()):
+            continue
+
+        bin_prob = torch.where(in_bin, p_flat, torch.zeros_like(p_flat)).sum(dim=1)
+        bin_acc = torch.where(in_bin, g_flat, torch.zeros_like(g_flat)).sum(dim=1)
+        conf = torch.zeros_like(bin_count)
+        acc = torch.zeros_like(bin_count)
+        conf[nonzero] = bin_prob[nonzero] / bin_count[nonzero]
+        acc[nonzero] = bin_acc[nonzero] / bin_count[nonzero]
+
+        weight = bin_count / float(p_flat.shape[1])
+        ece += torch.abs(acc - conf) * weight
+
+    return ece
+
+
+def _compute_ood_detection_stats(ood_scores: List[float], ood_labels: List[int]) -> Dict[str, Any]:
+    scores = np.asarray(ood_scores, dtype=np.float64)
+    labels = np.asarray(ood_labels, dtype=np.int64)
+
+    if scores.shape[0] != labels.shape[0] or scores.size == 0:
+        return {
+            "ood_eval_num_samples": int(0),
+            "ood_eval_num_positive": int(0),
+            "ood_eval_num_negative": int(0),
+            "ood_auroc": float("nan"),
+            "ood_fpr95": float("nan"),
+        }
+
+    pos = labels == 1
+    neg = labels == 0
+    n_pos = int(pos.sum())
+    n_neg = int(neg.sum())
+
+    if n_pos == 0 or n_neg == 0:
+        return {
+            "ood_eval_num_samples": int(scores.size),
+            "ood_eval_num_positive": n_pos,
+            "ood_eval_num_negative": n_neg,
+            "ood_auroc": float("nan"),
+            "ood_fpr95": float("nan"),
+        }
+
+    order = np.argsort(scores)
+    scores_sorted = scores[order]
+    ranks_sorted = np.arange(1, scores.size + 1, dtype=np.float64)
+
+    tie_start = 0
+    while tie_start < scores.size:
+        tie_end = tie_start
+        while tie_end + 1 < scores.size and scores_sorted[tie_end + 1] == scores_sorted[tie_start]:
+            tie_end += 1
+        if tie_end > tie_start:
+            avg_rank = 0.5 * (tie_start + 1 + tie_end + 1)
+            ranks_sorted[tie_start : tie_end + 1] = avg_rank
+        tie_start = tie_end + 1
+
+    ranks = np.empty_like(ranks_sorted)
+    ranks[order] = ranks_sorted
+    sum_ranks_pos = float(ranks[pos].sum())
+    auroc = (sum_ranks_pos - (n_pos * (n_pos + 1) / 2.0)) / float(n_pos * n_neg)
+
+    pos_scores = scores[pos]
+    neg_scores = scores[neg]
+    threshold = float(np.percentile(pos_scores, 5.0))
+    fpr95 = float(np.mean(neg_scores >= threshold))
+
+    return {
+        "ood_eval_num_samples": int(scores.size),
+        "ood_eval_num_positive": n_pos,
+        "ood_eval_num_negative": n_neg,
+        "ood_auroc": float(auroc),
+        "ood_fpr95": float(fpr95),
+    }
 
 
 def _tta_predict_with_oom_recovery(
@@ -1030,6 +1229,8 @@ def _tta_predict_with_oom_recovery(
 
 
 def _mean_std(values: List[float]) -> Tuple[float, float]:
+    if not values:
+        return float("nan"), float("nan")
     return float(np.mean(values)), float(np.std(values))
 
 
@@ -1129,11 +1330,13 @@ def evaluate_dataset(
     profiler: Optional[PerformanceProfiler] = None,
     profile_prefix: str = "",
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    metrics_keys = ["dice", "jaccard", "precision", "recall", "f1", "bce"]
+    metrics_keys = ["dice", "jaccard", "precision", "recall", "sensitivity", "f1", "bce", "hd95", "assd", "ece"]
     metrics_store: Dict[str, List[float]] = {k: [] for k in metrics_keys}
 
     results: List[Dict[str, Any]] = []
     ood_scores: List[float] = []
+    ood_eval_scores: List[float] = []
+    ood_eval_labels: List[int] = []
     uncertainties: List[float] = []
     inference_times: List[float] = []
     data_times: List[float] = []
@@ -1183,6 +1386,13 @@ def evaluate_dataset(
         images = [s["image"] for s in batch_samples]
         bboxes = [s["bbox"] for s in batch_samples]
         sample_names = [str(s.get("name", f"sample_{sample_index + i}")) for i, s in enumerate(batch_samples)]
+        batch_ood_labels: List[Optional[int]] = []
+        for s in batch_samples:
+            raw_label = s.get("ood_label", s.get("is_ood_gt", s.get("is_ood", None)))
+            if raw_label is None:
+                batch_ood_labels.append(None)
+            else:
+                batch_ood_labels.append(int(bool(raw_label)))
         gt_masks_t = [
             (s["mask"] if isinstance(s["mask"], torch.Tensor) else torch.as_tensor(s["mask"]))
             .to(device=device, dtype=torch.float32, non_blocking=(device == "cuda"))
@@ -1238,6 +1448,10 @@ def evaluate_dataset(
         t_metric = time.perf_counter()
         batch_metrics = compute_metrics_batch_tensor(pred_batch_t, gt_batch_t)
         batch_metrics["bce"] = compute_bce_batch_tensor(prob_batch_t, gt_batch_t)
+        surface_metrics = compute_surface_metrics_batch_tensor(pred_batch_t, gt_batch_t)
+        batch_metrics["hd95"] = surface_metrics["hd95"]
+        batch_metrics["assd"] = surface_metrics["assd"]
+        batch_metrics["ece"] = compute_ece_batch_tensor(prob_batch_t, gt_batch_t)
         metric_elapsed = time.perf_counter() - t_metric
         metrics_times.extend([metric_elapsed / max(1, len(batch_samples))] * len(batch_samples))
         if profiler is not None and profiler.enabled:
@@ -1264,6 +1478,10 @@ def evaluate_dataset(
             confidence = float(ood["confidence"])
             if use_ood and ood_detector is not None:
                 ood_scores.append(ood_score)
+                ood_label = batch_ood_labels[i]
+                if ood_label is not None:
+                    ood_eval_scores.append(ood_score)
+                    ood_eval_labels.append(int(ood_label))
 
             m = {k: float(batch_metrics[k][i].item()) for k in metrics_keys}
             for k in metrics_keys:
@@ -1277,10 +1495,15 @@ def evaluate_dataset(
                     "jaccard": float(m["jaccard"]),
                     "precision": float(m["precision"]),
                     "recall": float(m["recall"]),
+                    "sensitivity": float(m["sensitivity"]),
                     "f1": float(m["f1"]),
                     "bce": float(m["bce"]),
+                    "hd95": float(m["hd95"]),
+                    "assd": float(m["assd"]),
+                    "ece": float(m["ece"]),
                     "ood_score": ood_score,
                     "is_ood": is_ood,
+                    "ood_label": batch_ood_labels[i],
                     "confidence": confidence,
                     "uncertainty": float(batch_uncertainties[i]),
                 }
@@ -1305,6 +1528,8 @@ def evaluate_dataset(
         total_time=total_time,
         ood_scores=ood_scores,
         uncertainties=uncertainties,
+        ood_eval_scores=ood_eval_scores,
+        ood_eval_labels=ood_eval_labels,
     )
 
     if profiler is not None and profiler.enabled:
@@ -1339,13 +1564,15 @@ def evaluate_dataset_ood_tta(
     profiler: Optional[PerformanceProfiler] = None,
     profile_prefix: str = "",
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
-    metrics_keys = ["dice", "jaccard", "precision", "recall", "f1", "bce"]
+    metrics_keys = ["dice", "jaccard", "precision", "recall", "sensitivity", "f1", "bce", "hd95", "assd", "ece"]
 
     ood_metrics_store: Dict[str, List[float]] = {k: [] for k in metrics_keys}
     tta_metrics_store: Dict[str, List[float]] = {k: [] for k in metrics_keys}
     ood_results: List[Dict[str, Any]] = []
     tta_results: List[Dict[str, Any]] = []
     ood_scores: List[float] = []
+    ood_eval_scores: List[float] = []
+    ood_eval_labels: List[int] = []
     uncertainties: List[float] = []
 
     inference_times_ood: List[float] = []
@@ -1392,6 +1619,13 @@ def evaluate_dataset_ood_tta(
         images = [s["image"] for s in batch_samples]
         bboxes = [s["bbox"] for s in batch_samples]
         sample_names = [str(s.get("name", f"sample_{sample_index + i}")) for i, s in enumerate(batch_samples)]
+        batch_ood_labels: List[Optional[int]] = []
+        for s in batch_samples:
+            raw_label = s.get("ood_label", s.get("is_ood_gt", s.get("is_ood", None)))
+            if raw_label is None:
+                batch_ood_labels.append(None)
+            else:
+                batch_ood_labels.append(int(bool(raw_label)))
         gt_masks_t = [
             (s["mask"] if isinstance(s["mask"], torch.Tensor) else torch.as_tensor(s["mask"]))
             .to(device=device, dtype=torch.float32, non_blocking=(device == "cuda"))
@@ -1441,8 +1675,16 @@ def evaluate_dataset_ood_tta(
         gt_stack = torch.stack(gt_masks_t, dim=0)
         ood_batch_metrics = compute_metrics_batch_tensor(ood_pred_stack, gt_stack)
         ood_batch_metrics["bce"] = compute_bce_batch_tensor(ood_prob_stack, gt_stack)
+        ood_surface_metrics = compute_surface_metrics_batch_tensor(ood_pred_stack, gt_stack)
+        ood_batch_metrics["hd95"] = ood_surface_metrics["hd95"]
+        ood_batch_metrics["assd"] = ood_surface_metrics["assd"]
+        ood_batch_metrics["ece"] = compute_ece_batch_tensor(ood_prob_stack, gt_stack)
         tta_batch_metrics = compute_metrics_batch_tensor(tta_pred_stack, gt_stack)
         tta_batch_metrics["bce"] = compute_bce_batch_tensor(tta_prob_stack, gt_stack)
+        tta_surface_metrics = compute_surface_metrics_batch_tensor(tta_pred_stack, gt_stack)
+        tta_batch_metrics["hd95"] = tta_surface_metrics["hd95"]
+        tta_batch_metrics["assd"] = tta_surface_metrics["assd"]
+        tta_batch_metrics["ece"] = compute_ece_batch_tensor(tta_prob_stack, gt_stack)
         metric_elapsed = time.perf_counter() - t_metric
         metrics_times.extend([metric_elapsed / max(1, len(batch_samples))] * len(batch_samples))
 
@@ -1453,6 +1695,9 @@ def evaluate_dataset_ood_tta(
             is_ood = bool(ood_info["is_ood"])
             confidence = float(ood_info["confidence"])
             ood_scores.append(ood_score)
+            if batch_ood_labels[i] is not None:
+                ood_eval_scores.append(ood_score)
+                ood_eval_labels.append(int(batch_ood_labels[i]))
 
             ood_m = {k: float(ood_batch_metrics[k][i].item()) for k in metrics_keys}
             tta_m = {k: float(tta_batch_metrics[k][i].item()) for k in metrics_keys}
@@ -1468,10 +1713,15 @@ def evaluate_dataset_ood_tta(
                     "jaccard": float(ood_m["jaccard"]),
                     "precision": float(ood_m["precision"]),
                     "recall": float(ood_m["recall"]),
+                    "sensitivity": float(ood_m["sensitivity"]),
                     "f1": float(ood_m["f1"]),
                     "bce": float(ood_m["bce"]),
+                    "hd95": float(ood_m["hd95"]),
+                    "assd": float(ood_m["assd"]),
+                    "ece": float(ood_m["ece"]),
                     "ood_score": ood_score,
                     "is_ood": is_ood,
+                    "ood_label": batch_ood_labels[i],
                     "confidence": confidence,
                     "uncertainty": 0.0,
                 }
@@ -1484,10 +1734,15 @@ def evaluate_dataset_ood_tta(
                     "jaccard": float(tta_m["jaccard"]),
                     "precision": float(tta_m["precision"]),
                     "recall": float(tta_m["recall"]),
+                    "sensitivity": float(tta_m["sensitivity"]),
                     "f1": float(tta_m["f1"]),
                     "bce": float(tta_m["bce"]),
+                    "hd95": float(tta_m["hd95"]),
+                    "assd": float(tta_m["assd"]),
+                    "ece": float(tta_m["ece"]),
                     "ood_score": 0.0,
                     "is_ood": False,
+                    "ood_label": batch_ood_labels[i],
                     "confidence": 0.0,
                     "uncertainty": float(tta_batch_uncertainties[i]),
                 }
@@ -1509,6 +1764,8 @@ def evaluate_dataset_ood_tta(
         total_time=total_time,
         ood_scores=ood_scores,
         uncertainties=None,
+        ood_eval_scores=ood_eval_scores,
+        ood_eval_labels=ood_eval_labels,
     )
     tta_stats = _build_stats_from_store(
         dataset_name=dataset_name,

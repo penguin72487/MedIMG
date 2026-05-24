@@ -11,6 +11,11 @@ import os
 import sys
 from pathlib import Path
 
+
+DEFAULT_MODEL_ID = "facebook/sam-vit-base"
+DEFAULT_IMAGE_SIZE = 512
+DEFAULT_OUTPUT_DIR = Path("results") / "modular"
+
 # 強制 stdout/stderr 無緩衝，確保終端機即時顯示
 os.environ.setdefault("PYTHONUNBUFFERED", "1")
 if hasattr(sys.stdout, "reconfigure"):
@@ -33,9 +38,9 @@ def _parse_args() -> argparse.Namespace:
         metavar="DIR",
         help="所有資料集的根目錄（TN3K / TG3K / DDTI / TN5000 放在其下）",
     )
-    data_group.add_argument("--tn3k-path",  default="", metavar="DIR", help="TN3K 資料集路徑（覆蓋 --data-root）")
-    data_group.add_argument("--tg3k-path",  default="", metavar="DIR", help="TG3K 資料集路徑（覆蓋 --data-root）")
-    data_group.add_argument("--ddti-path",  default="", metavar="DIR", help="DDTI 資料集路徑（覆蓋 --data-root）")
+    data_group.add_argument("--tn3k-path", default="", metavar="DIR", help="TN3K 資料集路徑（覆蓋 --data-root）")
+    data_group.add_argument("--tg3k-path", default="", metavar="DIR", help="TG3K 資料集路徑（覆蓋 --data-root）")
+    data_group.add_argument("--ddti-path", default="", metavar="DIR", help="DDTI 資料集路徑（覆蓋 --data-root）")
     data_group.add_argument("--tn5000-path", default="", metavar="DIR", help="TN5000 資料集路徑（覆蓋 --data-root）")
     data_group.add_argument(
         "--split-root",
@@ -48,7 +53,7 @@ def _parse_args() -> argparse.Namespace:
     model_group = parser.add_argument_group("模型")
     model_group.add_argument(
         "--model-id",
-        default="facebook/sam-vit-base",
+        default=DEFAULT_MODEL_ID,
         help="HuggingFace model ID 或本地路徑",
     )
     model_group.add_argument(
@@ -60,7 +65,7 @@ def _parse_args() -> argparse.Namespace:
     model_group.add_argument(
         "--image-size",
         type=int,
-        default=512,
+        default=DEFAULT_IMAGE_SIZE,
         metavar="N",
         help="輸入影像解析度（正方形邊長）",
     )
@@ -199,7 +204,6 @@ def _parse_args() -> argparse.Namespace:
         help="固定 TTA batch 大小（0 表示不額外 padding，較省 VRAM）",
     )
 
-
     # ── 輸出 ──────────────────────────────────────────────────────────────────
     out_group = parser.add_argument_group("輸出")
     out_group.add_argument(
@@ -231,61 +235,82 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _set_env(key: str, value: str) -> None:
+    if value:
+        os.environ[key] = value
+
+
+def _set_env_int(key: str, value: int, *, skip_zero: bool = True) -> None:
+    if not skip_zero or value > 0:
+        os.environ[key] = str(value)
+
+
+def _set_env_flag(key: str, enabled: bool) -> None:
+    os.environ[key] = "1" if enabled else "0"
+
+
 def _apply_env(args: argparse.Namespace) -> None:
     """將 CLI 參數轉換成 runner.py 讀取的環境變數。"""
 
-    def _set(key: str, val: str) -> None:
-        if val:
-            os.environ[key] = val
+    for key, value in {
+        "MEDSAM_DATA_ROOT": args.data_root,
+        "MEDSAM_TN3K_PATH": args.tn3k_path,
+        "MEDSAM_TG3K_PATH": args.tg3k_path,
+        "MEDSAM_DDTI_PATH": args.ddti_path,
+        "MEDSAM_TN5000_PATH": args.tn5000_path,
+        "MEDSAM_SPLIT_ROOT": args.split_root,
+        "MEDSAM_MODEL_ID": args.model_id,
+        "MEDSAM_WEIGHT_PATH": args.weight_path,
+        "MEDSAM_OUTPUT_DIR": args.output_dir,
+        "MEDSAM_OOD_METHOD": args.ood_method,
+        "MEDSAM_TTA_FUSION": args.tta_fusion,
+        "MEDSAM_TTA_AUGMENTATIONS": args.tta_augmentations,
+        "MEDSAM_PROFILE_PATH": args.profile_output,
+        "MEDSAM_COMPILE_WARMUP_BATCHES": args.compile_warmup_batches,
+    }.items():
+        _set_env(key, value)
 
-    _set("MEDSAM_DATA_ROOT",           args.data_root)
-    _set("MEDSAM_TN3K_PATH",           args.tn3k_path)
-    _set("MEDSAM_TG3K_PATH",           args.tg3k_path)
-    _set("MEDSAM_DDTI_PATH",           args.ddti_path)
-    _set("MEDSAM_TN5000_PATH",         args.tn5000_path)
-    _set("MEDSAM_SPLIT_ROOT",          args.split_root)
-    _set("MEDSAM_MODEL_ID",            args.model_id)
-    _set("MEDSAM_WEIGHT_PATH",         args.weight_path)
-    _set("MEDSAM_IMAGE_SIZE",          str(args.image_size))
-    _set("MEDSAM_OUTPUT_DIR",          args.output_dir)
-    _set("MEDSAM_OOD_THRESHOLD",       str(args.ood_threshold))
-    _set("MEDSAM_OOD_METHOD",          args.ood_method)
-    _set("MEDSAM_TTA_FUSION",          args.tta_fusion)
-    _set("MEDSAM_TTA_AUGMENTATIONS",   args.tta_augmentations)
-    _set("MEDSAM_PROFILE_PATH",        args.profile_output)
-    _set("MEDSAM_TTA_CHUNK_SIZE",      str(args.tta_chunk_size) if args.tta_chunk_size > 0 else "")
-    _set("MEDSAM_TTA_FIXED_BATCH",     str(args.tta_fixed_batch) if args.tta_fixed_batch > 0 else "")
-    _set("MEDSAM_COMPILE_WARMUP_BATCHES", args.compile_warmup_batches)
+    for key, value in {
+        "MEDSAM_IMAGE_SIZE": args.image_size,
+        "MEDSAM_OOD_THRESHOLD": args.ood_threshold,
+        "MEDSAM_FINETUNE_EPOCHS": args.epochs,
+        "MEDSAM_FINETUNE_BATCH": args.batch_size,
+        "MEDSAM_FINETUNE_LR": args.lr,
+        "MEDSAM_FINETUNE_WEIGHT_DECAY": args.weight_decay,
+        "MEDSAM_FINETUNE_ADAMW_BETA1": args.adamw_beta1,
+        "MEDSAM_FINETUNE_ADAMW_BETA2": args.adamw_beta2,
+        "MEDSAM_FINETUNE_ADAMW_EPS": args.adamw_eps,
+        "MEDSAM_FINETUNE_VAL_RATIO": args.val_ratio,
+        "MEDSAM_FINETUNE_PATIENCE": args.patience,
+        "MEDSAM_FINETUNE_MIN_DELTA": args.min_delta,
+        "MEDSAM_FINETUNE_GRAD_ACCUM": args.grad_accum,
+        "MEDSAM_FINETUNE_GRAD_CLIP": args.grad_clip,
+        "MEDSAM_FINETUNE_WORKERS": args.workers,
+        "MEDSAM_FINETUNE_MAX_SAMPLES": args.max_samples,
+        "MEDSAM_EVAL_WORKERS": args.eval_workers,
+        "MEDSAM_CPU_THREADS": args.cpu_threads,
+    }.items():
+        _set_env_int(key, value, skip_zero=False)
 
-    os.environ["MEDSAM_SKIP_FINETUNE"]              = "1" if args.skip_finetune else "0"
-    os.environ["MEDSAM_FINETUNE_TRAIN_BACKBONE"]    = "1" if args.train_backbone else "0"
-    os.environ["MEDSAM_FINETUNE_EPOCHS"]            = str(args.epochs)
-    os.environ["MEDSAM_FINETUNE_BATCH"]             = str(args.batch_size)
-    os.environ["MEDSAM_FINETUNE_LR"]                = str(args.lr)
-    os.environ["MEDSAM_FINETUNE_WEIGHT_DECAY"]      = str(args.weight_decay)
-    os.environ["MEDSAM_FINETUNE_ADAMW_BETA1"]       = str(args.adamw_beta1)
-    os.environ["MEDSAM_FINETUNE_ADAMW_BETA2"]       = str(args.adamw_beta2)
-    os.environ["MEDSAM_FINETUNE_ADAMW_EPS"]         = str(args.adamw_eps)
-    os.environ["MEDSAM_FINETUNE_VAL_RATIO"]         = str(args.val_ratio)
-    os.environ["MEDSAM_FINETUNE_PATIENCE"]          = str(args.patience)
-    os.environ["MEDSAM_FINETUNE_MIN_DELTA"]         = str(args.min_delta)
-    os.environ["MEDSAM_FINETUNE_GRAD_ACCUM"]        = str(args.grad_accum)
-    os.environ["MEDSAM_FINETUNE_GRAD_CLIP"]         = str(args.grad_clip)
-    os.environ["MEDSAM_FINETUNE_WORKERS"]           = str(args.workers)
-    os.environ["MEDSAM_FINETUNE_MAX_SAMPLES"]       = str(args.max_samples)
-    os.environ["MEDSAM_FINETUNE_ONLY"]              = "1" if args.finetune_only else "0"
-    os.environ["MEDSAM_FINETUNE_USE_FUSED_ADAMW"]   = "0" if args.no_fused_adamw else "1"
-    os.environ["MEDSAM_REQUIRE_COMPILE"]            = "1" if args.require_compile else "0"
+    for key, enabled in {
+        "MEDSAM_SKIP_FINETUNE": args.skip_finetune,
+        "MEDSAM_FINETUNE_TRAIN_BACKBONE": args.train_backbone,
+        "MEDSAM_FINETUNE_ONLY": args.finetune_only,
+        "MEDSAM_FINETUNE_USE_FUSED_ADAMW": not args.no_fused_adamw,
+        "MEDSAM_REQUIRE_COMPILE": args.require_compile,
+        "MEDSAM_TTA_FAST": args.tta_fast,
+        "MEDSAM_PROFILE": args.profile,
+    }.items():
+        _set_env_flag(key, enabled)
+
     if args.compile_dynamic is True:
         os.environ["MEDSAM_COMPILE_DYNAMIC"] = "1"
     elif args.compile_dynamic is False:
         os.environ["MEDSAM_COMPILE_DYNAMIC"] = "0"
-    os.environ["MEDSAM_TTA_FAST"]                   = "1" if args.tta_fast else "0"
-    os.environ["MEDSAM_PROFILE"]                    = "1" if args.profile else "0"
-    os.environ["MEDSAM_EVAL_WORKERS"]               = str(args.eval_workers)
-    if args.eval_batch_size > 0:
-        os.environ["MEDSAM_EVAL_BATCH"] = str(args.eval_batch_size)
-    os.environ["MEDSAM_CPU_THREADS"]                = str(args.cpu_threads)
+
+    _set_env_int("MEDSAM_TTA_CHUNK_SIZE", args.tta_chunk_size)
+    _set_env_int("MEDSAM_TTA_FIXED_BATCH", args.tta_fixed_batch)
+    _set_env_int("MEDSAM_EVAL_BATCH", args.eval_batch_size)
 
 
 def main() -> None:
@@ -297,7 +322,7 @@ def main() -> None:
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
-    output_dir = Path(args.output_dir) if args.output_dir else project_root / "results" / "modular"
+    output_dir = Path(args.output_dir) if args.output_dir else project_root / DEFAULT_OUTPUT_DIR
 
     from medsam_modular.runner import main as runner_main  # noqa: PLC0415
 
@@ -305,7 +330,7 @@ def main() -> None:
     print("  MedSAM Pipeline")
     print(f"  模式: {'跳過微調（純評估）' if args.skip_finetune else '微調 + 評估'}")
     print(f"  影像尺寸: {args.image_size}")
-    print(f"  輸出目錄: {args.output_dir or str(project_root / 'results' / 'modular')}")
+    print(f"  輸出目錄: {output_dir}")
     print("  即時輸出提示: conda run 請使用 --no-capture-output")
     print("=" * 80)
 
