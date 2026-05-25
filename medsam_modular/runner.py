@@ -15,7 +15,18 @@ from medsam_modular.eval import OODDetector, TTAPredictor, evaluate_dataset, eva
 from medsam_modular.io_async import get_global_async_writer, shutdown_global_async_writer
 from medsam_modular.model import load_medsam, load_state_dict_compat
 from medsam_modular.train import maybe_finetune
-from medsam_modular.visualize import build_comparison_table, save_comparison_chart
+from medsam_modular.visualize import (
+    build_comparison_table,
+    save_calibration_ece_chart,
+    save_cache_throughput_trend_chart,
+    save_comparison_chart,
+    save_cost_breakdown_chart,
+    save_delta_chart,
+    save_method_overview_chart,
+    save_ood_detection_chart,
+    save_quality_throughput_frontier,
+    save_tta_cache_hit_chart,
+)
 
 
 _TRUE_SET = {"1", "true", "yes", "y", "on"}
@@ -202,6 +213,68 @@ def _load_existing_baseline_stats(test_sets: Dict[str, Any], output_dir: Path) -
         except Exception:
             continue
     return baseline_all_stats
+
+
+def _all_have_baseline_stats(all_stats: Dict[str, Dict[str, Dict[str, Any]]]) -> bool:
+    if not all_stats:
+        return False
+    for _, modes in all_stats.items():
+        baseline = modes.get("baseline")
+        if not isinstance(baseline, dict) or not baseline:
+            return False
+    return True
+
+
+def _run_stage8_plotting(
+    *,
+    all_stats: Dict[str, Dict[str, Dict[str, Any]]],
+    output_dir: Path,
+    project_root: Path,
+    profiler: Any,
+) -> Tuple[Path, Path, Path, Dict[str, Path], Optional[Path]]:
+    comparison_path = output_dir / "comparison_table.csv"
+    chart_path = output_dir / "performance_comparison.png"
+    top_chart_path = (project_root / "results") / chart_path.name
+    stage8_paths: Dict[str, Path] = {}
+    stage8_history_path: Optional[Path] = None
+
+    if not _all_have_baseline_stats(all_stats):
+        print("\n[Stage 8/8] baseline stats 缺失，略過 comparison table/chart 產生。")
+    else:
+        with profiler.section_and_flush("stage.build_comparison"):
+            comparison_table = build_comparison_table(all_stats)
+        with profiler.section_and_flush("stage.save_comparison_csv"):
+            comparison_table.to_csv(comparison_path, index=False)
+        with profiler.section_and_flush("stage.save_comparison_chart"):
+            chart_path = save_comparison_chart(all_stats, output_dir)
+
+    with profiler.section_and_flush("stage.save_stage8_method_overview"):
+        stage8_paths["method_overview"] = save_method_overview_chart(all_stats, output_dir)
+    with profiler.section_and_flush("stage.save_stage8_delta"):
+        stage8_paths["delta_vs_baseline"] = save_delta_chart(all_stats, output_dir)
+    with profiler.section_and_flush("stage.save_stage8_cost_breakdown"):
+        stage8_paths["cost_breakdown"] = save_cost_breakdown_chart(all_stats, output_dir)
+    with profiler.section_and_flush("stage.save_stage8_frontier"):
+        stage8_paths["quality_throughput_frontier"] = save_quality_throughput_frontier(all_stats, output_dir)
+    with profiler.section_and_flush("stage.save_stage8_calibration"):
+        stage8_paths["calibration_ece"] = save_calibration_ece_chart(all_stats, output_dir)
+    with profiler.section_and_flush("stage.save_stage8_ood_detection"):
+        stage8_paths["ood_detection_quality"] = save_ood_detection_chart(all_stats, output_dir)
+    with profiler.section_and_flush("stage.save_stage8_tta_cache"):
+        stage8_paths["tta_cache_hits"] = save_tta_cache_hit_chart(all_stats, output_dir)
+    with profiler.section_and_flush("stage.save_stage8_cache_throughput_trend"):
+        trend_path, history_path = save_cache_throughput_trend_chart(all_stats, output_dir)
+        stage8_paths["cache_throughput_trend"] = trend_path
+        stage8_history_path = history_path
+
+    top_results_dir = project_root / "results"
+    top_results_dir.mkdir(parents=True, exist_ok=True)
+    top_chart_path = top_results_dir / chart_path.name
+    with profiler.section_and_flush("stage.copy_chart"):
+        if chart_path.exists() and chart_path.resolve() != top_chart_path.resolve():
+            shutil.copy2(chart_path, top_chart_path)
+
+    return comparison_path, chart_path, top_chart_path, stage8_paths, stage8_history_path
 
 
 def _fmt_metric(value: Any) -> str:
@@ -414,6 +487,40 @@ def main() -> None:
     resume_weight_path = _resolve_resume_weight_path(project_root, output_dir)
     profiler = _NullProfiler()
 
+    run_only_stage8 = _env_bool("MEDSAM_RUN_ONLY_STAGE8", False)
+    if run_only_stage8:
+        print("\n[Mode] stage8-only enabled: load summary and generate plots only.")
+        summary_path = output_dir / "summary.json"
+        if not summary_path.exists():
+            raise RuntimeError(f"Stage8-only requires summary file: {summary_path}")
+        all_stats = json.loads(summary_path.read_text(encoding="utf-8"))
+        if not isinstance(all_stats, dict) or not all_stats:
+            raise RuntimeError(f"Invalid summary content for Stage8-only: {summary_path}")
+
+        print("\n[Stage 8/8] 產生 comparison table / chart ...")
+        comparison_path, chart_path, top_chart_path, stage8_paths, stage8_history_path = _run_stage8_plotting(
+            all_stats=all_stats,
+            output_dir=output_dir,
+            project_root=project_root,
+            profiler=profiler,
+        )
+
+        print("\nOutputs:")
+        if comparison_path.exists():
+            print(f"- comparison_table: {comparison_path}")
+        if chart_path.exists():
+            print(f"- comparison_chart: {chart_path}")
+            print(f"- comparison_chart_top: {top_chart_path}")
+        for key in sorted(stage8_paths.keys()):
+            path = stage8_paths[key]
+            if path.exists():
+                print(f"- stage8_{key}: {path}")
+        if stage8_history_path is not None and stage8_history_path.exists():
+            print(f"- stage8_run_history: {stage8_history_path}")
+        print(f"- summary: {summary_path}")
+        shutdown_global_async_writer()
+        return
+
     print("=" * 80)
     print("MedSAM Modular Runner")
     print("=" * 80)
@@ -434,7 +541,7 @@ def main() -> None:
     for k, v in data_paths.items():
         print(f"  {k:8s}: {v}")
 
-    print("\n[Stage 1/7] 載入模型 ...")
+    print("\n[Stage 1/8] 載入模型 ...")
     t1 = time.time()
     with profiler.section_and_flush("stage.load_model"):
         model, processor, compile_report = load_medsam(
@@ -458,7 +565,7 @@ def main() -> None:
     if require_compile and not bool(compile_report.get("compiled", False)):
         raise RuntimeError(f"torch.compile(inductor) required but unavailable: {compile_report}")
 
-    print("\n[Stage 2/7] 準備測試資料 ...")
+    print("\n[Stage 2/8] 準備測試資料 ...")
     t3 = time.time()
     split_root = _resolve_split_root(project_root)
     with profiler.section_and_flush("stage.prepare_test_data"):
@@ -508,7 +615,7 @@ def main() -> None:
     if run_only_stage7:
         skip_finetune = True
         finetune_only = False
-        print("\n[Mode] stage7-only enabled: skip Stage 3~6 and run Stage 7 only.")
+        print("\n[Mode] stage7-only enabled: skip Stage 3~6 and run Stage 7 only (Stage 8 plotting skipped).")
 
     split_root = _resolve_split_root(project_root)
 
@@ -518,7 +625,7 @@ def main() -> None:
     full_finetuned_best_path = output_dir / "medsam_finetuned_best.pth"
 
     if not skip_finetune:
-        print("\n[Stage 3/7] baseline 偵測 train split OOD ...")
+        print("\n[Stage 3/8] baseline 偵測 train split OOD ...")
         ood_subset_by_name, ood_subset_summary = _detect_ood_train_subset(
             model=model,
             processor=processor,
@@ -537,7 +644,7 @@ def main() -> None:
         print(f"  OOD train subset: {total_ood}/{total_all} samples")
 
         if total_ood > 0:
-            print("\n[Stage 4/7] OOD 子集微調（使用 TTA 增強資料）...")
+            print("\n[Stage 4/8] OOD 子集微調（使用 TTA 增強資料）...")
             if baseline_weight_path and Path(baseline_weight_path).exists():
                 load_state_dict_compat(model, Path(baseline_weight_path), map_location=device)
 
@@ -566,9 +673,9 @@ def main() -> None:
                 )
             print(f"  OOD 微調耗時: {time.time()-t2:.1f}s")
         else:
-            print("\n[Stage 4/7] OOD 子集為空，略過 OOD 微調。")
+            print("\n[Stage 4/8] OOD 子集為空，略過 OOD 微調。")
 
-        print("\n[Stage 5/7] 全資料微調（輸出 medsam_finetuned_best.pth）...")
+        print("\n[Stage 5/8] 全資料微調（輸出 medsam_finetuned_best.pth）...")
         if ood_finetuned_best_path.exists():
             load_state_dict_compat(model, ood_finetuned_best_path, map_location=device)
             print(f"  📌 全資料微調起始權重: {ood_finetuned_best_path}")
@@ -600,24 +707,24 @@ def main() -> None:
             )
         print(f"  全資料微調耗時: {time.time()-t2:.1f}s")
     else:
-        print("\n[Stage 3/7] 已設定 skip_finetune，略過 OOD 與全資料微調。")
+        print("\n[Stage 3/8] 已設定 skip_finetune，略過 OOD 與全資料微調。")
 
     if finetune_only:
-        print("\n[Stage 6/7] 已啟用 finetune-only，略過後續 baseline / OOD / TTA 評估。")
+        print("\n[Stage 6/8] 已啟用 finetune-only，略過後續 baseline / OOD / TTA 評估。")
         shutdown_global_async_writer()
         return
 
     baseline_all_results: Dict[str, Any] = {}
     baseline_all_stats: Dict[str, Dict[str, Any]] = {}
     if run_only_stage7:
-        print("\n[Stage 6/7] stage7-only：略過 baseline 評估，嘗試載入既有 baseline stats ...")
+        print("\n[Stage 6/8] stage7-only：略過 baseline 評估，嘗試載入既有 baseline stats ...")
         baseline_all_stats = _load_existing_baseline_stats(test_sets=test_sets, output_dir=output_dir)
         if baseline_all_stats:
             print(f"  已載入 baseline stats: {', '.join(sorted(baseline_all_stats.keys()))}")
         else:
             print("  ⚠️ 找不到 baseline stats，Stage 7 仍會執行，但 comparison 可能不完整。")
     else:
-        print("\n[Stage 6/7] 基線評估 (vit_b) ...")
+        print("\n[Stage 6/8] 基線評估 (vit_b) ...")
         t_eval_start = time.time()
         baseline_weight = Path(baseline_weight_path) if baseline_weight_path else None
         if baseline_weight is not None and baseline_weight.exists():
@@ -657,7 +764,7 @@ def main() -> None:
 
     all_stats_ood_finetuned: Dict[str, Dict[str, Dict[str, Any]]] = {}
     if ood_finetuned_best_path.exists():
-        print("\n[Stage 7/7] 測試 OOD finetuned 模型：先 OOD 判斷，再 TTA inference ...")
+        print("\n[Stage 7/8] 測試 OOD finetuned 模型：先 OOD 判斷，再 TTA inference ...")
         load_state_dict_compat(model, ood_finetuned_best_path, map_location=device)
         print(f"  📌 OOD finetuned 評估權重: {ood_finetuned_best_path}")
         all_stats_ood_finetuned = _evaluate_test_ood_tta(
@@ -675,7 +782,7 @@ def main() -> None:
         )
         _save_json(output_dir / "summary_ood_finetuned.json", all_stats_ood_finetuned)
     else:
-        print("\n[Stage 7/7] 找不到 medsam_OOD_finetuned_best.pth，略過 OOD finetuned 模型測試。")
+        print("\n[Stage 7/8] 找不到 medsam_OOD_finetuned_best.pth，略過 OOD finetuned 模型測試。")
 
     if skip_finetune and resume_weight_path and Path(resume_weight_path).exists():
         load_state_dict_compat(model, Path(resume_weight_path), map_location=device)
@@ -686,7 +793,7 @@ def main() -> None:
     else:
         print("  📌 評估使用權重: <finetuned model in-memory>")
 
-    print("\n[Stage 7/7] 測試全資料 finetuned 模型：OOD 判斷 + TTA inference ...")
+    print("\n[Stage 7/8] 測試全資料 finetuned 模型：OOD 判斷 + TTA inference ...")
     all_stats = _evaluate_test_ood_tta(
         model=model,
         processor=processor,
@@ -719,24 +826,24 @@ def main() -> None:
     if not all_stats:
         raise RuntimeError("No test datasets were loaded. Check dataset paths and split files.")
 
+    _save_json(output_dir / "summary.json", all_stats)
+
     comparison_path = output_dir / "comparison_table.csv"
     chart_path = output_dir / "performance_comparison.png"
-    if run_only_stage7 and not baseline_all_stats:
-        print("\n[Stage 7/7] baseline stats 缺失，略過 comparison table/chart 產生。")
+    top_chart_path = (project_root / "results") / chart_path.name
+    stage8_paths: Dict[str, Path] = {}
+    stage8_history_path: Optional[Path] = None
+
+    if run_only_stage7:
+        print("\n[Stage 8/8] stage7-only：略過繪圖階段。")
     else:
-        with profiler.section_and_flush("stage.build_comparison"):
-            comparison_table = build_comparison_table(all_stats)
-        with profiler.section_and_flush("stage.save_comparison_csv"):
-            comparison_table.to_csv(comparison_path, index=False)
-        with profiler.section_and_flush("stage.save_comparison_chart"):
-            chart_path = save_comparison_chart(all_stats, output_dir)
-    top_results_dir = project_root / "results"
-    top_results_dir.mkdir(parents=True, exist_ok=True)
-    top_chart_path = top_results_dir / chart_path.name
-    with profiler.section_and_flush("stage.copy_chart"):
-        if chart_path.resolve() != top_chart_path.resolve():
-            shutil.copy2(chart_path, top_chart_path)
-    _save_json(output_dir / "summary.json", all_stats)
+        print("\n[Stage 8/8] 產生 comparison table / chart ...")
+        comparison_path, chart_path, top_chart_path, stage8_paths, stage8_history_path = _run_stage8_plotting(
+            all_stats=all_stats,
+            output_dir=output_dir,
+            project_root=project_root,
+            profiler=profiler,
+        )
 
     print("\nOutputs:")
     if comparison_path.exists():
@@ -744,6 +851,12 @@ def main() -> None:
     if chart_path.exists():
         print(f"- comparison_chart: {chart_path}")
         print(f"- comparison_chart_top: {top_chart_path}")
+    for key in sorted(stage8_paths.keys()):
+        path = stage8_paths[key]
+        if path.exists():
+            print(f"- stage8_{key}: {path}")
+    if stage8_history_path is not None and stage8_history_path.exists():
+        print(f"- stage8_run_history: {stage8_history_path}")
     print(f"- summary: {output_dir / 'summary.json'}")
     if all_stats_ood_finetuned:
         print(f"- summary_ood_finetuned: {output_dir / 'summary_ood_finetuned.json'}")

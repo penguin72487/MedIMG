@@ -44,7 +44,7 @@ conda run --no-capture-output -n medsam python -u main.py --ood-threshold 0.35
 
 ### 只跑 Stage 7
 
-若你只想跑 Stage 7/7（略過 Stage 3~6）：
+若你只想跑 Stage 7/8（略過 Stage 3~6 與 Stage 8 繪圖）：
 
 ```shell
 conda run --no-capture-output -n medsam python -u main.py --stage7-only
@@ -55,6 +55,22 @@ conda run --no-capture-output -n medsam python -u main.py --stage7-only
 ```json
 {
 	"run_only_stage7": true
+}
+```
+
+### 只跑 Stage 8（只繪圖）
+
+若你只想用既有 `summary.json` 產生 Stage 8 圖表：
+
+```shell
+conda run --no-capture-output -n medsam python -u main.py --stage8-only
+```
+
+或在 `medsam_config.json` 設定：
+
+```json
+{
+	"run_only_stage8": true
 }
 ```
 

@@ -38,6 +38,7 @@
   "finetune_max_samples": 0,
   "finetune_use_fused_adamw": true,
   "run_only_stage7": false,
+  "run_only_stage8": false,
   "ood_threshold": 0.5,
   "ood_method": "entropy",
   "eval_workers": 0,
@@ -63,5 +64,6 @@
   "eval_autobatch_safety": "",
   "ood_max_side": 64,
   "tta_autotune": true,
-  "eval_prefetch": 4
+  "eval_prefetch": 4,
+  "eval_ece_max_pixels": 0
 }

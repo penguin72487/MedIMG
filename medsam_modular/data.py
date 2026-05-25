@@ -359,6 +359,7 @@ class TN5000Dataset(Dataset):
         image = image.resize((self.image_size, self.image_size), Image.BILINEAR)
 
         mask = np.zeros((self.image_size, self.image_size), dtype=np.uint8)
+        gt_boxes: List[List[int]] = []
         sx = self.image_size / max(sample["width"], 1)
         sy = self.image_size / max(sample["height"], 1)
 
@@ -369,6 +370,7 @@ class TN5000Dataset(Dataset):
             y2 = int(np.clip(round((ymax - 1) * sy), 0, self.image_size - 1))
             if x2 >= x1 and y2 >= y1:
                 mask[y1 : y2 + 1, x1 : x2 + 1] = 1
+                gt_boxes.append([x1, y1, x2, y2])
 
         bbox = compute_bbox_from_mask_np(mask)
         if profiler is not None and profiler.enabled:
@@ -377,6 +379,7 @@ class TN5000Dataset(Dataset):
             "image": image,
             "mask": torch.tensor(mask.astype(np.float32), dtype=torch.float32),
             "bbox": bbox,
+            "gt_boxes": gt_boxes,
             "name": sample["image_id"],
         }
 

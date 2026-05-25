@@ -1,0 +1,42 @@
+[
+  {
+    "timestamp": "2026-05-25T14:12:56Z",
+    "tta_throughput_samples_per_sec": 4.762282601382495,
+    "tta_cache_hits": 0,
+    "tta_cache_misses": 2255,
+    "tta_unc_cache_hits": 0,
+    "tta_cache_hit_ratio": 0.0
+  },
+  {
+    "timestamp": "2026-05-25T14:15:32Z",
+    "tta_throughput_samples_per_sec": 4.762282601382495,
+    "tta_cache_hits": 0,
+    "tta_cache_misses": 2255,
+    "tta_unc_cache_hits": 0,
+    "tta_cache_hit_ratio": 0.0
+  },
+  {
+    "timestamp": "2026-05-25T14:15:53Z",
+    "tta_throughput_samples_per_sec": 4.762282601382495,
+    "tta_cache_hits": 0,
+    "tta_cache_misses": 2255,
+    "tta_unc_cache_hits": 0,
+    "tta_cache_hit_ratio": 0.0
+  },
+  {
+    "timestamp": "2026-05-25T14:32:26Z",
+    "tta_throughput_samples_per_sec": 29.639225823554895,
+    "tta_cache_hits": 2255,
+    "tta_cache_misses": 0,
+    "tta_unc_cache_hits": 2255,
+    "tta_cache_hit_ratio": 1.0
+  },
+  {
+    "timestamp": "2026-05-25T14:45:19Z",
+    "tta_throughput_samples_per_sec": 13.551109663538346,
+    "tta_cache_hits": 2255,
+    "tta_cache_misses": 0,
+    "tta_unc_cache_hits": 2255,
+    "tta_cache_hit_ratio": 1.0
+  }
+]
