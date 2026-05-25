@@ -1,0 +1,8 @@
+{
+  "skipped": true,
+  "total_samples_processed": 0,
+  "epochs": [],
+  "total_loss": [],
+  "avg_loss_per_epoch": [],
+  "save_path": "results/medsam_finetuned.pth"
+}

@@ -257,5 +257,5 @@ tempCodeRunnerFile.py
 # macOS
 .AppleDouble/
 .LSOverride/
-results/*
 TG3K/*
+*.npy

@@ -1,0 +1,107 @@
+{
+  "run_name": "medsam_pipeline",
+  "enabled": true,
+  "total_wall_sec": 13.378102124996076,
+  "total_profiled_sec": 26.483228270000836,
+  "total_exclusive_sec": 26.483228270000836,
+  "metadata": {
+    "device": "cuda",
+    "cpu_threads": 16,
+    "model_id": "facebook/sam-vit-base",
+    "image_size": 1024,
+    "data_paths": {
+      "TN3K": "/root/MedIMG/TN3K",
+      "TG3K": "/root/MedIMG/TG3K",
+      "DDTI": "/root/MedIMG/DDTI",
+      "TN5000": "/root/MedIMG/TN5000"
+    },
+    "cuda_startup_allocated_mb": 0.0,
+    "cuda_startup_reserved_mb": 0.0,
+    "cuda_startup_max_allocated_mb": 0.0
+  },
+  "counters": {},
+  "sections": {
+    "stage.load_model": {
+      "total_sec": 13.087829137999506,
+      "exclusive_sec": 13.087829137999506,
+      "count": 1,
+      "avg_ms": 13087.829137999506,
+      "exclusive_avg_ms": 13087.829137999506,
+      "min_ms": 13087.829137999506,
+      "max_ms": 13087.829137999506,
+      "ratio": 0.4941931174163116
+    },
+    "model.load_medsam": {
+      "total_sec": 13.08780668899999,
+      "exclusive_sec": 13.08780668899999,
+      "count": 1,
+      "avg_ms": 13087.80668899999,
+      "exclusive_avg_ms": 13087.80668899999,
+      "min_ms": 13087.80668899999,
+      "max_ms": 13087.80668899999,
+      "ratio": 0.4941922697477688
+    },
+    "stage.prepare_test_data": {
+      "total_sec": 0.289168265000626,
+      "exclusive_sec": 0.289168265000626,
+      "count": 1,
+      "avg_ms": 289.168265000626,
+      "exclusive_avg_ms": 289.168265000626,
+      "min_ms": 289.168265000626,
+      "max_ms": 289.168265000626,
+      "ratio": 0.010918920535385955
+    },
+    "model.device_move": {
+      "total_sec": 0.018424178000714164,
+      "exclusive_sec": 0.018424178000714164,
+      "count": 1,
+      "avg_ms": 18.424178000714164,
+      "exclusive_avg_ms": 18.424178000714164,
+      "min_ms": 18.424178000714164,
+      "max_ms": 18.424178000714164,
+      "ratio": 0.0006956923005336306
+    }
+  },
+  "top_bottlenecks": [
+    {
+      "section": "stage.load_model",
+      "total_sec": 13.087829137999506,
+      "exclusive_sec": 13.087829137999506,
+      "ratio": 0.4941931174163116,
+      "avg_ms": 13087.829137999506,
+      "exclusive_avg_ms": 13087.829137999506
+    },
+    {
+      "section": "model.load_medsam",
+      "total_sec": 13.08780668899999,
+      "exclusive_sec": 13.08780668899999,
+      "ratio": 0.4941922697477688,
+      "avg_ms": 13087.80668899999,
+      "exclusive_avg_ms": 13087.80668899999
+    },
+    {
+      "section": "stage.prepare_test_data",
+      "total_sec": 0.289168265000626,
+      "exclusive_sec": 0.289168265000626,
+      "ratio": 0.010918920535385955,
+      "avg_ms": 289.168265000626,
+      "exclusive_avg_ms": 289.168265000626
+    },
+    {
+      "section": "model.device_move",
+      "total_sec": 0.018424178000714164,
+      "exclusive_sec": 0.018424178000714164,
+      "ratio": 0.0006956923005336306,
+      "avg_ms": 18.424178000714164,
+      "exclusive_avg_ms": 18.424178000714164
+    }
+  ],
+  "recommendations": {
+    "stage.prepare_test_data": "資料載入占比高：可增加 MEDSAM_EVAL_WORKERS、檢查磁碟 I/O、開啟快取。"
+  },
+  "optimization_limit_analysis": {
+    "status": "mixed",
+    "message": "目前瓶頸分散在多個子流程，還有優化空間，但需依 top bottlenecks 逐項處理。",
+    "confidence": 0.55
+  }
+}
