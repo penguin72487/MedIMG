@@ -59,18 +59,6 @@ class PredictionCache:
                 self._ram.popitem(last=False)
 
 
-def make_cache_key(
-    dataset_name: str,
-    sample_name: str,
-    bbox: list,
-    mode: str,
-    image_size: int = 0,
-    model_hash: str = "",
-    tta_aug_set: str = "",
-    fusion: str = "",
-) -> str:
+def make_cache_key(dataset_name: str, sample_name: str, bbox: list, mode: str, image_size: int = 0) -> str:
     size_tag = f"|sz{image_size}" if image_size > 0 else ""
-    model_tag = f"|mh:{model_hash}" if model_hash else ""
-    aug_tag = f"|aug:{tta_aug_set}" if tta_aug_set else ""
-    fusion_tag = f"|fuse:{fusion}" if fusion else ""
-    return f"{dataset_name}|{sample_name}|{tuple(int(v) for v in bbox)}|{mode}{size_tag}{model_tag}{aug_tag}{fusion_tag}"
+    return f"{dataset_name}|{sample_name}|{tuple(int(v) for v in bbox)}|{mode}{size_tag}"

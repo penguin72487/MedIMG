@@ -1,7 +1,7 @@
 import time
 import os
-import hashlib
 from typing import Any, Dict, List, Optional, Tuple
+
 
 import numpy as np
 from PIL import Image
@@ -9,6 +9,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import cv2
 
 from medsam_modular.cache import PredictionCache, make_cache_key
 from medsam_modular.config import ENV_DEFAULTS
@@ -220,6 +221,7 @@ def _run_eval_probe(
         _ = compute_metrics_batch_tensor(pred_batch_t, gt_batch_t)
         _ = compute_bce_batch_tensor(prob_batch_t, gt_batch_t)
         _ = compute_ece_batch_tensor(prob_batch_t, gt_batch_t)
+        _ = compute_ece_batch_tensor(prob_batch_t, gt_batch_t)
 
 
 def _benchmark_probe_throughput(
@@ -291,6 +293,8 @@ def _benchmark_probe_throughput(
         _ = compute_metrics_batch_tensor(tta_pred_stack, gt_batch_t)
         _ = compute_bce_batch_tensor(prob_batch_t, gt_batch_t)
         _ = compute_bce_batch_tensor(tta_prob_stack, gt_batch_t)
+        _ = compute_ece_batch_tensor(prob_batch_t, gt_batch_t)
+        _ = compute_ece_batch_tensor(tta_prob_stack, gt_batch_t)
         _ = compute_ece_batch_tensor(prob_batch_t, gt_batch_t)
         _ = compute_ece_batch_tensor(tta_prob_stack, gt_batch_t)
 
@@ -507,118 +511,126 @@ def _iter_with_oom_backoff(batch_samples: List[Dict[str, Any]], min_chunk: int =
     return [batch_samples[:half], batch_samples[half:]]
 
 
+import cv2
+import numpy as np
+import torch
+from typing import Dict, Any, List
+
 class OODDetector:
-    def __init__(self, threshold: float = 0.5, method: str = "entropy"):
+    def __init__(
+        self, 
+        threshold: float = 0.7, 
+        method: str = "advanced",
+        iou_threshold: float = 0.70,      
+        min_lesion_ratio: float = 0.0003
+    ):
         self.threshold = threshold
         self.method = method
-        self.max_side = max(8, int(_env("MEDSAM_OOD_MAX_SIDE", "64")))
+        self.iou_threshold = iou_threshold
+        self.min_lesion_ratio = min_lesion_ratio
 
-    def _score_from_tensor(self, p: torch.Tensor) -> Tuple[float, float]:
-        p = p.to(dtype=torch.float32)
-        if p.numel() == 0:
-            return 0.0, 1.0
+    def detect(self, mask_prob: np.ndarray) -> Dict[str, Any]:
+        """核心檢測邏輯 (Numpy based)"""
+        mask_prob = np.asarray(mask_prob, dtype=np.float64)
+        if mask_prob.ndim > 2:
+            mask_prob = mask_prob.squeeze()
+            
+        h, w = mask_prob.shape[:2]
+        total_pixels = h * w
 
-        if p.dim() == 2:
-            h, w = int(p.shape[0]), int(p.shape[1])
-            max_dim = max(h, w)
-            if max_dim > self.max_side:
-                scale = float(self.max_side) / float(max_dim)
-                new_w = max(1, int(round(w * scale)))
-                new_h = max(1, int(round(h * scale)))
-                p = F.interpolate(
-                    p.unsqueeze(0).unsqueeze(0),
-                    size=(new_h, new_w),
-                    mode="area",
-                ).squeeze(0).squeeze(0)
+        if self.method == "advanced":
+            # 防線 1：攔截預測崩塌
+            if mask_prob.max() < 0.5:
+                return {"ood_score": 1.0, "is_ood": True, "confidence": 0.0, "reason": "崩塌 (全黑預測)"}
 
-        p = p.reshape(-1)
-        hard_binary = torch.all((p <= 0.0) | (p >= 1.0))
-        if bool(hard_binary.item()):
-            if self.method == "confidence":
-                score_t = p.new_tensor(-1.0)
-                confidence_t = p.new_tensor(1.0)
-            elif self.method == "variance":
-                score_t = torch.var(p)
-                confidence_t = torch.clamp(1.0 - score_t, min=0.0)
-            else:
-                score_t = p.new_tensor(0.0)
-                confidence_t = p.new_tensor(1.0)
-            return float(score_t.item()), float(confidence_t.item())
+            # 局部活躍區域熵運算
+            p_2d = np.clip(mask_prob, 1e-7, 1.0 - 1e-7)
+            entropy_map = - (p_2d * np.log2(p_2d) + (1 - p_2d) * np.log2(1 - p_2d))
+            active_region = entropy_map > 0.05
+            entropy_score = float(np.mean(entropy_map[active_region])) if np.any(active_region) else 0.0
 
-        p = p.clamp(1e-6, 1.0 - 1e-6)
-        if self.method == "confidence":
-            score_t = -(torch.abs(p - 0.5) * 2.0).mean()
-        elif self.method == "variance":
-            score_t = torch.var(p)
-        else:
-            score_t = -(p * p.log() + (1.0 - p) * (1.0 - p).log()).mean()
+            # 防線 2：全局熵過高
+            if entropy_score > self.threshold:
+                return {
+                    "ood_score": entropy_score, 
+                    "is_ood": True, 
+                    "confidence": max(0.0, 1.0 - entropy_score), 
+                    "reason": f"全局熵過高 ({entropy_score:.2f})"
+                }
 
-        confidence_t = torch.clamp(1.0 - score_t, min=0.0)
-        return float(score_t.item()), float(confidence_t.item())
+            # 防線 3：結構解體檢測 (連通域分析)
+            binary_mask = (mask_prob > 0.5).astype(np.uint8)
+            num_labels, _, stats, _ = cv2.connectedComponentsWithStats(binary_mask, connectivity=8)
+            
+            dynamic_min_area = max(1, int(total_pixels * self.min_lesion_ratio))
+            
+            valid_fragments = 0
+            for i in range(1, num_labels):
+                if stats[i, cv2.CC_STAT_AREA] >= dynamic_min_area:
+                    valid_fragments += 1
 
-    def _score_batch_from_tensor(self, mask_prob_batch: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        if mask_prob_batch.dim() == 2:
-            mask_prob_batch = mask_prob_batch.unsqueeze(0)
-        if mask_prob_batch.dim() != 3:
-            raise ValueError(f"Expected [B,H,W] tensor, got shape {tuple(mask_prob_batch.shape)}")
+            if valid_fragments >= 3:
+                frag_score = min(1.0, valid_fragments * 0.2)
+                return {
+                    "ood_score": frag_score, 
+                    "is_ood": True, 
+                    "confidence": max(0.0, 1.0 - frag_score), 
+                    "reason": f"結構解體 (大型碎塊數: {valid_fragments})"
+                }
 
-        p = mask_prob_batch.to(dtype=torch.float32)
-        if p.numel() == 0:
-            zeros = torch.zeros((p.shape[0],), dtype=torch.float32, device=p.device)
-            ones = torch.ones((p.shape[0],), dtype=torch.float32, device=p.device)
-            return zeros, ones
+            return {
+                "ood_score": entropy_score, 
+                "is_ood": False, 
+                "confidence": max(0.0, 1.0 - entropy_score), 
+                "reason": "安全通過"
+            }
 
-        h, w = int(p.shape[-2]), int(p.shape[-1])
-        max_dim = max(h, w)
-        if max_dim > self.max_side:
-            scale = float(self.max_side) / float(max_dim)
-            new_w = max(1, int(round(w * scale)))
-            new_h = max(1, int(round(h * scale)))
-            p = F.interpolate(p.unsqueeze(1), size=(new_h, new_w), mode="area").squeeze(1)
-
-        flat = p.reshape(p.shape[0], -1)
-        hard_binary = torch.all((flat <= 0.0) | (flat >= 1.0), dim=1)
-        clamped = flat.clamp(1e-6, 1.0 - 1e-6)
+        # --- 基礎模式 ---
+        p = mask_prob.reshape(-1)
+        p = np.clip(p, 1e-10, 1.0 - 1e-10)
 
         if self.method == "confidence":
-            soft_score = -(torch.abs(clamped - 0.5) * 2.0).mean(dim=1)
-            hard_score = torch.full_like(soft_score, -1.0)
-            hard_conf = torch.ones_like(soft_score)
+            score = -float(np.mean(np.abs(p - 0.5) * 2.0))
+            reason = "信心度過低"
         elif self.method == "variance":
-            soft_score = torch.var(clamped, dim=1)
-            hard_score = torch.var(flat, dim=1)
-            hard_conf = torch.clamp(1.0 - hard_score, min=0.0)
+            score = float(np.var(p))
+            reason = "變異數檢測"
+        elif self.method == "entropy":
+            score = float(-np.mean(p * np.log2(p) + (1 - p) * np.log2(1 - p)))
+            reason = "基礎熵檢測"
         else:
-            soft_score = -(clamped * clamped.log() + (1.0 - clamped) * (1.0 - clamped).log()).mean(dim=1)
-            hard_score = torch.zeros_like(soft_score)
-            hard_conf = torch.ones_like(soft_score)
+            raise ValueError(f"未知的檢測方法: {self.method}")
 
-        confidence = torch.clamp(1.0 - soft_score, min=0.0)
-        score = torch.where(hard_binary, hard_score, soft_score)
-        confidence = torch.where(hard_binary, hard_conf, confidence)
-        return score, confidence
-
-    def detect_tensor(self, mask_prob: torch.Tensor) -> Dict[str, Any]:
-        p = mask_prob
-        if p.dim() > 2:
-            p = p.squeeze()
-        score, confidence = self._score_from_tensor(p)
+        is_ood = score > self.threshold
+        confidence = float(max(0.0, 1.0 - score))
+        
         return {
-            "ood_score": score,
-            "is_ood": bool(score > self.threshold),
+            "ood_score": score, 
+            "is_ood": is_ood, 
             "confidence": confidence,
+            "reason": reason if is_ood else "安全通過"
         }
 
+    def detect_tensor(self, mask_prob: torch.Tensor) -> Dict[str, Any]:
+        """處理單張 PyTorch Tensor"""
+        p_np = mask_prob.detach().cpu().numpy()
+        return self.detect(p_np)
+
     def detect_batch_tensor(self, mask_prob_batch: torch.Tensor) -> List[Dict[str, Any]]:
-        scores, confidences = self._score_batch_from_tensor(mask_prob_batch)
-        return [
-            {
-                "ood_score": float(scores[i].item()),
-                "is_ood": bool(scores[i].item() > self.threshold),
-                "confidence": float(confidences[i].item()),
-            }
-            for i in range(scores.shape[0])
-        ]
+        """處理一整批 (Batch) 的 PyTorch Tensor"""
+        p_np = mask_prob_batch.detach().cpu().numpy()
+        
+        # 確保維度正確 (移除 channel 維度)
+        if p_np.ndim == 4:  # [B, C, H, W] -> [B, H, W]
+            p_np = p_np.squeeze(1)
+        elif p_np.ndim == 2: # [H, W] -> [1, H, W]
+            p_np = np.expand_dims(p_np, axis=0)
+            
+        results = []
+        for i in range(p_np.shape[0]):
+            results.append(self.detect(p_np[i]))
+            
+        return results
 
 
 class TTAPredictor:
@@ -1326,12 +1338,7 @@ def compute_metrics_tensor(pred_mask: torch.Tensor, gt_mask: torch.Tensor) -> Di
     }
 
 
-def compute_metrics_batch_tensor(
-    pred_masks: torch.Tensor,
-    gt_masks: torch.Tensor,
-    *,
-    include_counts: bool = False,
-) -> Dict[str, torch.Tensor]:
+def compute_metrics_batch_tensor(pred_masks: torch.Tensor, gt_masks: torch.Tensor) -> Dict[str, torch.Tensor]:
     pred = pred_masks.to(dtype=torch.bool)
     gt = gt_masks.to(dtype=torch.bool)
 
@@ -1351,19 +1358,17 @@ def compute_metrics_batch_tensor(
     sensitivity = recall
     f1 = (2.0 * precision * recall) / (precision + recall + eps)
 
-    out: Dict[str, torch.Tensor] = {
+    return {
         "dice": dice,
         "jaccard": jaccard,
         "precision": precision,
         "recall": recall,
         "sensitivity": sensitivity,
         "f1": f1,
+        "tp": tp.to(torch.int64),
+        "fp": fp.to(torch.int64),
+        "fn": fn.to(torch.int64),
     }
-    if include_counts:
-        out["tp"] = tp.to(torch.int64)
-        out["fp"] = fp.to(torch.int64)
-        out["fn"] = fn.to(torch.int64)
-    return out
 
 
 def compute_bce_batch_tensor(prob_masks: torch.Tensor, gt_masks: torch.Tensor) -> torch.Tensor:
@@ -1390,173 +1395,36 @@ def compute_ece_batch_tensor(prob_masks: torch.Tensor, gt_masks: torch.Tensor, n
     if p.dim() != 3 or g.dim() != 3:
         raise ValueError(f"Expected [B,H,W] tensors for ECE, got {tuple(p.shape)} and {tuple(g.shape)}")
 
-    bsz = int(p.shape[0])
-    p_flat = p.reshape(bsz, -1)
-    g_flat = g.reshape(bsz, -1)
+    p_flat = p.reshape(p.shape[0], -1)
+    g_flat = g.reshape(g.shape[0], -1)
 
-    max_pixels = max(0, int(_env("MEDSAM_EVAL_ECE_MAX_PIXELS", "0")))
-    if max_pixels > 0 and p_flat.shape[1] > max_pixels:
-        # Deterministic strided subsampling keeps reproducibility while reducing ECE cost.
-        step = max(1, int(np.ceil(float(p_flat.shape[1]) / float(max_pixels))))
-        p_flat = p_flat[:, ::step]
-        g_flat = g_flat[:, ::step]
+    edges = torch.linspace(0.0, 1.0, n_bins + 1, device=p.device, dtype=torch.float32)
+    ece = torch.zeros((p.shape[0],), device=p.device, dtype=torch.float32)
 
-    numel_per_sample = float(p_flat.shape[1])
+    for b in range(n_bins):
+        left = edges[b]
+        right = edges[b + 1]
+        if b == 0:
+            in_bin = (p_flat >= left) & (p_flat <= right)
+        else:
+            in_bin = (p_flat > left) & (p_flat <= right)
 
-    # Compute bin index in [0, n_bins-1] for each pixel probability.
-    bin_idx = torch.clamp((p_flat * float(n_bins)).to(torch.int64), min=0, max=n_bins - 1)
-
-    # Flatten (sample, bin) to one axis so we can use a single bincount pass.
-    sample_offsets = (torch.arange(bsz, device=p.device, dtype=torch.int64) * int(n_bins)).unsqueeze(1)
-    flat_idx = (bin_idx + sample_offsets).reshape(-1)
-
-    ones = torch.ones_like(flat_idx, dtype=torch.float32)
-    counts_flat = torch.bincount(flat_idx, weights=ones, minlength=bsz * n_bins)
-    prob_sums_flat = torch.bincount(flat_idx, weights=p_flat.reshape(-1), minlength=bsz * n_bins)
-    acc_sums_flat = torch.bincount(flat_idx, weights=g_flat.reshape(-1), minlength=bsz * n_bins)
-
-    counts = counts_flat.reshape(bsz, n_bins)
-    prob_sums = prob_sums_flat.reshape(bsz, n_bins)
-    acc_sums = acc_sums_flat.reshape(bsz, n_bins)
-
-    nonzero = counts > 0
-    conf = torch.zeros_like(counts)
-    acc = torch.zeros_like(counts)
-    conf[nonzero] = prob_sums[nonzero] / counts[nonzero]
-    acc[nonzero] = acc_sums[nonzero] / counts[nonzero]
-
-    weight = counts / max(1.0, numel_per_sample)
-    ece = torch.sum(torch.abs(acc - conf) * weight, dim=1)
-    return ece
-
-
-def _normalize_box_xyxy(box: Any) -> Optional[List[int]]:
-    if box is None:
-        return None
-    if isinstance(box, torch.Tensor):
-        vals = box.detach().to(torch.float32).cpu().reshape(-1).tolist()
-    else:
-        vals = list(box)
-    if len(vals) < 4:
-        return None
-    x1, y1, x2, y2 = [int(round(float(v))) for v in vals[:4]]
-    if x2 < x1 or y2 < y1:
-        return None
-    return [x1, y1, x2, y2]
-
-
-def _extract_pred_box_and_score(prob_mask: torch.Tensor, pred_mask: torch.Tensor) -> Optional[Tuple[List[int], float]]:
-    pm = pred_mask.detach().to(torch.bool)
-    ys, xs = torch.where(pm)
-    if ys.numel() == 0:
-        return None
-
-    x1 = int(xs.min().item())
-    y1 = int(ys.min().item())
-    x2 = int(xs.max().item())
-    y2 = int(ys.max().item())
-
-    p = prob_mask.detach().to(torch.float32)
-    score = float(p[pm].mean().item()) if bool(pm.any().item()) else 0.0
-    return [x1, y1, x2, y2], score
-
-
-def _box_iou_xyxy(a: List[int], b: List[int]) -> float:
-    ax1, ay1, ax2, ay2 = a
-    bx1, by1, bx2, by2 = b
-    ix1 = max(ax1, bx1)
-    iy1 = max(ay1, by1)
-    ix2 = min(ax2, bx2)
-    iy2 = min(ay2, by2)
-    iw = max(0, ix2 - ix1 + 1)
-    ih = max(0, iy2 - iy1 + 1)
-    inter = float(iw * ih)
-    area_a = float(max(0, ax2 - ax1 + 1) * max(0, ay2 - ay1 + 1))
-    area_b = float(max(0, bx2 - bx1 + 1) * max(0, by2 - by1 + 1))
-    denom = area_a + area_b - inter
-    if denom <= 0:
-        return 0.0
-    return inter / denom
-
-
-def _compute_ap_at_iou(
-    preds: List[Dict[str, Any]],
-    gt_by_image: Dict[str, List[List[int]]],
-    iou_thr: float,
-) -> float:
-    num_gt = int(sum(len(v) for v in gt_by_image.values()))
-    if num_gt <= 0:
-        return float("nan")
-
-    if not preds:
-        return 0.0
-
-    preds_sorted = sorted(preds, key=lambda x: float(x.get("score", 0.0)), reverse=True)
-    matched = {k: np.zeros((len(v),), dtype=np.bool_) for k, v in gt_by_image.items()}
-
-    tp = np.zeros((len(preds_sorted),), dtype=np.float64)
-    fp = np.zeros((len(preds_sorted),), dtype=np.float64)
-
-    for i, pred in enumerate(preds_sorted):
-        image_id = str(pred["image_id"])
-        box = pred["box"]
-        gts = gt_by_image.get(image_id, [])
-        if not gts:
-            fp[i] = 1.0
+        bin_count = in_bin.sum(dim=1).to(torch.float32)
+        nonzero = bin_count > 0
+        if not bool(nonzero.any().item()):
             continue
 
-        best_iou = -1.0
-        best_j = -1
-        for j, gt_box in enumerate(gts):
-            if matched[image_id][j]:
-                continue
-            iou = _box_iou_xyxy(box, gt_box)
-            if iou > best_iou:
-                best_iou = iou
-                best_j = j
+        bin_prob = torch.where(in_bin, p_flat, torch.zeros_like(p_flat)).sum(dim=1)
+        bin_acc = torch.where(in_bin, g_flat, torch.zeros_like(g_flat)).sum(dim=1)
+        conf = torch.zeros_like(bin_count)
+        acc = torch.zeros_like(bin_count)
+        conf[nonzero] = bin_prob[nonzero] / bin_count[nonzero]
+        acc[nonzero] = bin_acc[nonzero] / bin_count[nonzero]
 
-        if best_j >= 0 and best_iou >= iou_thr:
-            tp[i] = 1.0
-            matched[image_id][best_j] = True
-        else:
-            fp[i] = 1.0
+        weight = bin_count / float(p_flat.shape[1])
+        ece += torch.abs(acc - conf) * weight
 
-    tp_cum = np.cumsum(tp)
-    fp_cum = np.cumsum(fp)
-    recall = tp_cum / max(1.0, float(num_gt))
-    precision = tp_cum / np.maximum(tp_cum + fp_cum, 1e-12)
-
-    mrec = np.concatenate(([0.0], recall, [1.0]))
-    mpre = np.concatenate(([0.0], precision, [0.0]))
-    for i in range(mpre.size - 1, 0, -1):
-        mpre[i - 1] = max(mpre[i - 1], mpre[i])
-    idx = np.where(mrec[1:] != mrec[:-1])[0]
-    ap = np.sum((mrec[idx + 1] - mrec[idx]) * mpre[idx + 1])
-    return float(ap)
-
-
-def _compute_detection_map_stats(
-    preds: List[Dict[str, Any]],
-    gt_by_image: Dict[str, List[List[int]]],
-) -> Dict[str, Any]:
-    num_gt = int(sum(len(v) for v in gt_by_image.values()))
-    if num_gt <= 0:
-        return {}
-
-    iou_thresholds = [0.5 + 0.05 * i for i in range(10)]
-    ap_per_thr: Dict[str, float] = {}
-    for thr in iou_thresholds:
-        ap = _compute_ap_at_iou(preds=preds, gt_by_image=gt_by_image, iou_thr=thr)
-        ap_per_thr[f"ap{int(round(thr * 100)):02d}"] = float(ap)
-
-    map50_95 = float(np.nanmean([ap_per_thr[f"ap{int(round(thr * 100)):02d}"] for thr in iou_thresholds]))
-    return {
-        "num_gt_boxes": int(num_gt),
-        "num_pred_boxes": int(len(preds)),
-        "ap50": float(ap_per_thr["ap50"]),
-        "map50_95": map50_95,
-        "ap_per_iou": ap_per_thr,
-    }
+    return ece
 
 
 def _compute_ood_detection_stats(ood_scores: List[float], ood_labels: List[int]) -> Dict[str, Any]:
@@ -1673,46 +1541,6 @@ def _percentile(values: List[float], q: float) -> float:
     return float(np.percentile(arr, q))
 
 
-def _compute_model_hash_tag(model: Any, max_tensors: int = 24, sample_values: int = 64) -> str:
-    """Build a compact model fingerprint for cache keying.
-
-    Hashing full weights is expensive; hashing tensor metadata plus sampled values
-    is stable enough for run-to-run cache reuse while avoiding huge overhead.
-    """
-    try:
-        state = model.state_dict()
-    except Exception:
-        return "unknown"
-
-    hasher = hashlib.sha1()
-    counted = 0
-    for name, tensor in state.items():
-        if counted >= max_tensors:
-            break
-        if not isinstance(tensor, torch.Tensor):
-            continue
-
-        hasher.update(str(name).encode("utf-8"))
-        hasher.update(str(tuple(tensor.shape)).encode("utf-8"))
-        hasher.update(str(tensor.dtype).encode("utf-8"))
-        with torch.no_grad():
-            flat = tensor.detach().reshape(-1)
-            if flat.numel() > 0:
-                sample = flat[: min(sample_values, int(flat.numel()))].to(torch.float32).cpu().numpy()
-                hasher.update(sample.tobytes())
-        counted += 1
-
-    if counted == 0:
-        return "unknown"
-    return hasher.hexdigest()[:16]
-
-
-def _uncertainty_from_prob_tensor(prob_t: torch.Tensor) -> float:
-    p = prob_t.to(torch.float32).clamp(1e-6, 1.0 - 1e-6)
-    entropy_t = -(p * torch.log(p) + (1.0 - p) * torch.log1p(-p))
-    return float(entropy_t.mean().item())
-
-
 def _predict_baseline_batch_tensor(
     *,
     model: Any,
@@ -1725,8 +1553,6 @@ def _predict_baseline_batch_tensor(
     pred_cache: Optional[PredictionCache],
     profiler: Optional[PerformanceProfiler],
     profile_prefix: str,
-    model_hash: str = "",
-    cache_stats: Optional[Dict[str, int]] = None,
 ) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
     pred_masks_t: List[Optional[torch.Tensor]] = [None] * len(images)
     prob_for_ood_t: List[Optional[torch.Tensor]] = [None] * len(images)
@@ -1739,29 +1565,17 @@ def _predict_baseline_batch_tensor(
     _cache_image_size = images[0].size[0] if images else 0
     for i, (sample_name, bbox) in enumerate(zip(sample_names, bboxes)):
         t_cache = time.perf_counter()
-        cache_key = make_cache_key(
-            dataset_name,
-            sample_name,
-            bbox,
-            mode="baseline",
-            image_size=_cache_image_size,
-            model_hash=model_hash,
-        )
+        cache_key = make_cache_key(dataset_name, sample_name, bbox, mode="baseline", image_size=_cache_image_size)
         cached = pred_cache.get(cache_key) if pred_cache is not None else None
         if profiler is not None and profiler.enabled:
             profiler.record_duration(f"{profile_prefix or f'eval.{dataset_name}'}.cache_lookup", time.perf_counter() - t_cache)
 
         if cached is None:
-            if cache_stats is not None:
-                cache_stats["misses"] = int(cache_stats.get("misses", 0)) + 1
             miss_indices.append(i)
             miss_images.append(images[i])
             miss_boxes.append(bbox)
             miss_keys.append(cache_key)
             continue
-
-        if cache_stats is not None:
-            cache_stats["hits"] = int(cache_stats.get("hits", 0)) + 1
 
         cached_t = torch.from_numpy(cached)
         if cached_t.dtype in (torch.uint8, torch.bool):
@@ -1809,6 +1623,8 @@ def _predict_baseline_batch_tensor(
 
     return [p for p in pred_masks_t if p is not None], [p for p in prob_for_ood_t if p is not None]
 
+def _identity_collate(batch):
+    return batch
 
 def evaluate_dataset(
     dataset: Any,
@@ -1837,9 +1653,6 @@ def evaluate_dataset(
     ood_times: List[float] = []
     metrics_times: List[float] = []
     post_times: List[float] = []
-    det_gt_by_image: Dict[str, List[List[int]]] = {}
-    det_preds: List[Dict[str, Any]] = []
-    baseline_cache_stats: Dict[str, int] = {"hits": 0, "misses": 0}
 
     start = time.perf_counter()
 
@@ -1890,8 +1703,6 @@ def evaluate_dataset(
         f"probe_tput={autobatch_info.get('probe_tput', None)}",
         flush=True,
     )
-
-    baseline_model_hash = _compute_model_hash_tag(model)
     _maybe_warm_dataset_cache(dataset=dataset, dataset_name=dataset_name, profiler=profiler, profile_prefix=profile_prefix)
 
     if eval_workers > 0:
@@ -1903,7 +1714,7 @@ def evaluate_dataset(
             pin_memory=pin_memory,
             persistent_workers=True,
             prefetch_factor=eval_prefetch,
-            collate_fn=lambda b: b,
+            collate_fn=_identity_collate,
         )
         iterable = loader
         total = len(loader)
@@ -1967,8 +1778,6 @@ def evaluate_dataset(
                 pred_cache=pred_cache,
                 profiler=profiler,
                 profile_prefix=profile_prefix,
-                model_hash=baseline_model_hash,
-                cache_stats=baseline_cache_stats,
             )
 
         per_sample_infer_time = (time.perf_counter() - t0) / max(1, len(batch_samples))
@@ -1982,7 +1791,6 @@ def evaluate_dataset(
         batch_metrics = compute_metrics_batch_tensor(pred_batch_t, gt_batch_t)
         batch_metrics["bce"] = compute_bce_batch_tensor(prob_batch_t, gt_batch_t)
         batch_metrics["ece"] = compute_ece_batch_tensor(prob_batch_t, gt_batch_t)
-        batch_metrics_cpu = {k: batch_metrics[k].detach().cpu().numpy() for k in metrics_keys}
         metric_elapsed = time.perf_counter() - t_metric
         metrics_times.extend([metric_elapsed / max(1, len(batch_samples))] * len(batch_samples))
         if profiler is not None and profiler.enabled:
@@ -2014,19 +1822,9 @@ def evaluate_dataset(
                     ood_eval_scores.append(ood_score)
                     ood_eval_labels.append(int(ood_label))
 
-            m = {k: float(batch_metrics_cpu[k][i]) for k in metrics_keys}
+            m = {k: float(batch_metrics[k][i].item()) for k in metrics_keys}
             for k in metrics_keys:
                 metrics_store[k].append(float(m[k]))
-
-            raw_gt_boxes = batch_samples[i].get("gt_boxes", None)
-            if raw_gt_boxes is not None:
-                image_id = sample_names[i]
-                gt_boxes_norm = [b for b in (_normalize_box_xyxy(bx) for bx in raw_gt_boxes) if b is not None]
-                det_gt_by_image[image_id] = gt_boxes_norm
-                pred_entry = _extract_pred_box_and_score(prob_for_ood_t[i], pred_masks_t[i])
-                if pred_entry is not None:
-                    pred_box, pred_score = pred_entry
-                    det_preds.append({"image_id": image_id, "box": pred_box, "score": float(pred_score)})
 
             results.append(
                 {
@@ -2080,13 +1878,8 @@ def evaluate_dataset(
             "autobatch_raw_batch": autobatch_info.get("raw_batch", None),
             "autobatch_max_stable": autobatch_info.get("max_stable", None),
             "autobatch_safety": autobatch_info.get("safety", None),
-            "baseline_cache_model_hash": baseline_model_hash,
-            "baseline_cache_hits": int(baseline_cache_stats.get("hits", 0)),
-            "baseline_cache_misses": int(baseline_cache_stats.get("misses", 0)),
         },
     )
-    if det_gt_by_image:
-        stats.update(_compute_detection_map_stats(preds=det_preds, gt_by_image=det_gt_by_image))
 
     if profiler is not None and profiler.enabled:
         prefix = profile_prefix or f"eval.{dataset_name}"
@@ -2131,7 +1924,6 @@ def evaluate_dataset_ood_only(
     inference_times: List[float] = []
     data_times: List[float] = []
     ood_times: List[float] = []
-    baseline_cache_stats: Dict[str, int] = {"hits": 0, "misses": 0}
 
     start = time.perf_counter()
 
@@ -2177,8 +1969,6 @@ def evaluate_dataset_ood_only(
         flush=True,
     )
 
-    baseline_model_hash = _compute_model_hash_tag(model)
-
     _maybe_warm_dataset_cache(dataset=dataset, dataset_name=dataset_name, profiler=profiler, profile_prefix=profile_prefix)
 
     if eval_workers > 0:
@@ -2190,7 +1980,7 @@ def evaluate_dataset_ood_only(
             pin_memory=pin_memory,
             persistent_workers=True,
             prefetch_factor=eval_prefetch,
-            collate_fn=lambda b: b,
+            collate_fn=_identity_collate,
         )
         iterable = loader
         total = len(loader)
@@ -2230,8 +2020,6 @@ def evaluate_dataset_ood_only(
                     pred_cache=pred_cache,
                     profiler=profiler,
                     profile_prefix=profile_prefix,
-                    model_hash=baseline_model_hash,
-                    cache_stats=baseline_cache_stats,
                 )
                 inf_elapsed = time.perf_counter() - t_inf
                 inference_times.extend([inf_elapsed / max(1, len(cur))] * len(cur))
@@ -2294,9 +2082,6 @@ def evaluate_dataset_ood_only(
             "autobatch_raw_batch": autobatch_info.get("raw_batch", None),
             "autobatch_max_stable": autobatch_info.get("max_stable", None),
             "autobatch_safety": autobatch_info.get("safety", None),
-            "baseline_cache_model_hash": baseline_model_hash,
-            "baseline_cache_hits": int(baseline_cache_stats.get("hits", 0)),
-            "baseline_cache_misses": int(baseline_cache_stats.get("misses", 0)),
         },
     }
 
@@ -2352,14 +2137,6 @@ def evaluate_dataset_ood_tta(
     ood_times: List[float] = []
     metrics_times: List[float] = []
     post_times: List[float] = []
-    ood_det_gt_by_image: Dict[str, List[List[int]]] = {}
-    ood_det_preds: List[Dict[str, Any]] = []
-    tta_det_gt_by_image: Dict[str, List[List[int]]] = {}
-    tta_det_preds: List[Dict[str, Any]] = []
-    tta_cache_hits = 0
-    tta_cache_misses = 0
-    tta_unc_cache_hits = 0
-    baseline_cache_stats: Dict[str, int] = {"hits": 0, "misses": 0}
 
     start = time.perf_counter()
     default_eval_workers = _auto_eval_workers(device)
@@ -2404,12 +2181,6 @@ def evaluate_dataset_ood_tta(
         f"probe_tput={autobatch_info.get('probe_tput', None)}",
         flush=True,
     )
-
-    tta_model_hash = _compute_model_hash_tag(model)
-    baseline_model_hash = tta_model_hash
-    tta_aug_set = ",".join(str(aug) for aug in tta_predictor.augmentations)
-    tta_fusion = str(tta_predictor.fusion_mode)
-
     _maybe_warm_dataset_cache(dataset=dataset, dataset_name=dataset_name, profiler=profiler, profile_prefix=profile_prefix)
 
     if eval_workers > 0:
@@ -2421,7 +2192,7 @@ def evaluate_dataset_ood_tta(
             pin_memory=pin_memory,
             persistent_workers=True,
             prefetch_factor=eval_prefetch,
-            collate_fn=lambda b: b,
+            collate_fn=_identity_collate,
         )
         iterable = loader
         total = len(loader)
@@ -2466,111 +2237,25 @@ def evaluate_dataset_ood_tta(
                     pred_cache=pred_cache,
                     profiler=profiler,
                     profile_prefix=f"{profile_prefix}.ood" if profile_prefix else f"eval.{dataset_name}.ood",
-                    model_hash=baseline_model_hash,
-                    cache_stats=baseline_cache_stats,
                 )
                 inference_times_ood.extend([(time.perf_counter() - t_ood_inf) / max(1, len(cur))] * len(cur))
 
                 t_tta_inf = time.perf_counter()
-                tta_prob_t: List[Optional[torch.Tensor]] = [None] * len(cur)
-                tta_batch_uncertainties: List[float] = [0.0] * len(cur)
-
-                tta_miss_indices: List[int] = []
-                tta_miss_images: List[Image.Image] = []
-                tta_miss_bboxes: List[List[int]] = []
-                tta_miss_prob_keys: List[str] = []
-                tta_miss_unc_keys: List[str] = []
-
-                if pred_cache is not None:
-                    for i, (img, bbox, sample_name) in enumerate(zip(images, bboxes, sample_names)):
-                        w, h = img.size
-                        cache_image_size = int(max(w, h))
-                        tta_prob_key = make_cache_key(
-                            dataset_name,
-                            sample_name,
-                            bbox,
-                            mode="tta_prob",
-                            image_size=cache_image_size,
-                            model_hash=tta_model_hash,
-                            tta_aug_set=tta_aug_set,
-                            fusion=tta_fusion,
-                        )
-                        tta_unc_key = make_cache_key(
-                            dataset_name,
-                            sample_name,
-                            bbox,
-                            mode="tta_unc",
-                            image_size=cache_image_size,
-                            model_hash=tta_model_hash,
-                            tta_aug_set=tta_aug_set,
-                            fusion=tta_fusion,
-                        )
-
-                        cached_prob = pred_cache.get(tta_prob_key)
-                        if cached_prob is None:
-                            tta_miss_indices.append(i)
-                            tta_miss_images.append(img)
-                            tta_miss_bboxes.append(bbox)
-                            tta_miss_prob_keys.append(tta_prob_key)
-                            tta_miss_unc_keys.append(tta_unc_key)
-                            tta_cache_misses += 1
-                            continue
-
-                        prob_t = torch.from_numpy(cached_prob).to(torch.float32)
-                        if device == "cuda":
-                            prob_t = prob_t.to(device=device, non_blocking=True)
-                        else:
-                            prob_t = prob_t.to(device=device)
-                        tta_prob_t[i] = prob_t
-                        tta_cache_hits += 1
-
-                        cached_unc = pred_cache.get(tta_unc_key)
-                        if cached_unc is not None and np.asarray(cached_unc).size > 0:
-                            tta_batch_uncertainties[i] = float(np.asarray(cached_unc).reshape(-1)[0])
-                            tta_unc_cache_hits += 1
-                        else:
-                            tta_batch_uncertainties[i] = _uncertainty_from_prob_tensor(prob_t)
-                else:
-                    for i, (img, bbox) in enumerate(zip(images, bboxes)):
-                        tta_miss_indices.append(i)
-                        tta_miss_images.append(img)
-                        tta_miss_bboxes.append(bbox)
-
-                if tta_miss_indices:
-                    tta_prob_miss, tta_unc_miss = _tta_predict_with_oom_recovery(
-                        tta_predictor=tta_predictor,
-                        model=model,
-                        processor=processor,
-                        images=tta_miss_images,
-                        bboxes=tta_miss_bboxes,
-                        device=device,
-                    )
-                    for local_idx, global_idx in enumerate(tta_miss_indices):
-                        prob_t = tta_prob_miss[local_idx]
-                        unc = float(tta_unc_miss[local_idx])
-                        tta_prob_t[global_idx] = prob_t
-                        tta_batch_uncertainties[global_idx] = unc
-                        if pred_cache is not None and local_idx < len(tta_miss_prob_keys):
-                            pred_cache.put(
-                                tta_miss_prob_keys[local_idx],
-                                prob_t.detach().to(torch.float16).cpu().numpy(),
-                            )
-                            pred_cache.put(
-                                tta_miss_unc_keys[local_idx],
-                                np.asarray([unc], dtype=np.float32),
-                            )
-
-                tta_prob_t_final: List[torch.Tensor] = [p for p in tta_prob_t if p is not None]
-                if len(tta_prob_t_final) != len(cur):
-                    raise RuntimeError("TTA cache recovery failed: probability batch size mismatch")
-
-                tta_pred_masks_t = [(prob_t > 0.5).to(torch.uint8) for prob_t in tta_prob_t_final]
+                tta_prob_t, tta_batch_uncertainties = _tta_predict_with_oom_recovery(
+                    tta_predictor=tta_predictor,
+                    model=model,
+                    processor=processor,
+                    images=images,
+                    bboxes=bboxes,
+                    device=device,
+                )
+                tta_pred_masks_t = [(prob_t > 0.5).to(torch.uint8) for prob_t in tta_prob_t]
                 uncertainties.extend([float(u) for u in tta_batch_uncertainties])
                 inference_times_tta.extend([(time.perf_counter() - t_tta_inf) / max(1, len(cur))] * len(cur))
 
                 t_ood = time.perf_counter()
                 ood_prob_stack = torch.stack(ood_prob_t, dim=0)
-                tta_prob_stack = torch.stack(tta_prob_t_final, dim=0)
+                tta_prob_stack = torch.stack(tta_prob_t, dim=0)
                 ood_pred_stack = torch.stack(ood_pred_masks_t, dim=0)
                 tta_pred_stack = torch.stack(tta_pred_masks_t, dim=0)
                 ood_batch = ood_detector.detect_batch_tensor(ood_prob_stack)
@@ -2579,21 +2264,12 @@ def evaluate_dataset_ood_tta(
 
                 t_metric = time.perf_counter()
                 gt_stack = torch.stack(gt_masks_t, dim=0)
-                n_cur = int(len(cur))
-
-                combined_pred_stack = torch.cat([ood_pred_stack, tta_pred_stack], dim=0)
-                combined_prob_stack = torch.cat([ood_prob_stack, tta_prob_stack], dim=0)
-                combined_gt_stack = torch.cat([gt_stack, gt_stack], dim=0)
-
-                combined_metrics = compute_metrics_batch_tensor(combined_pred_stack, combined_gt_stack)
-                combined_metrics["bce"] = compute_bce_batch_tensor(combined_prob_stack, combined_gt_stack)
-                combined_metrics["ece"] = compute_ece_batch_tensor(combined_prob_stack, combined_gt_stack)
-
-                ood_batch_metrics = {k: v[:n_cur] for k, v in combined_metrics.items()}
-                tta_batch_metrics = {k: v[n_cur:] for k, v in combined_metrics.items()}
-
-                ood_batch_metrics_cpu = {k: ood_batch_metrics[k].detach().cpu().numpy() for k in metrics_keys}
-                tta_batch_metrics_cpu = {k: tta_batch_metrics[k].detach().cpu().numpy() for k in metrics_keys}
+                ood_batch_metrics = compute_metrics_batch_tensor(ood_pred_stack, gt_stack)
+                ood_batch_metrics["bce"] = compute_bce_batch_tensor(ood_prob_stack, gt_stack)
+                ood_batch_metrics["ece"] = compute_ece_batch_tensor(ood_prob_stack, gt_stack)
+                tta_batch_metrics = compute_metrics_batch_tensor(tta_pred_stack, gt_stack)
+                tta_batch_metrics["bce"] = compute_bce_batch_tensor(tta_prob_stack, gt_stack)
+                tta_batch_metrics["ece"] = compute_ece_batch_tensor(tta_prob_stack, gt_stack)
                 metric_elapsed = time.perf_counter() - t_metric
                 metrics_times.extend([metric_elapsed / max(1, len(cur))] * len(cur))
             except RuntimeError as exc:
@@ -2627,28 +2303,11 @@ def evaluate_dataset_ood_tta(
                     ood_eval_scores.append(ood_score)
                     ood_eval_labels.append(int(batch_ood_labels[i]))
 
-                ood_m = {k: float(ood_batch_metrics_cpu[k][i]) for k in metrics_keys}
-                tta_m = {k: float(tta_batch_metrics_cpu[k][i]) for k in metrics_keys}
+                ood_m = {k: float(ood_batch_metrics[k][i].item()) for k in metrics_keys}
+                tta_m = {k: float(tta_batch_metrics[k][i].item()) for k in metrics_keys}
                 for k in metrics_keys:
                     ood_metrics_store[k].append(ood_m[k])
                     tta_metrics_store[k].append(tta_m[k])
-
-                raw_gt_boxes = cur[i].get("gt_boxes", None)
-                if raw_gt_boxes is not None:
-                    image_id = sample_names[i]
-                    gt_boxes_norm = [b for b in (_normalize_box_xyxy(bx) for bx in raw_gt_boxes) if b is not None]
-                    ood_det_gt_by_image[image_id] = gt_boxes_norm
-                    tta_det_gt_by_image[image_id] = gt_boxes_norm
-
-                    ood_pred_entry = _extract_pred_box_and_score(ood_prob_t[i], ood_pred_masks_t[i])
-                    if ood_pred_entry is not None:
-                        ood_box, ood_score_box = ood_pred_entry
-                        ood_det_preds.append({"image_id": image_id, "box": ood_box, "score": float(ood_score_box)})
-
-                    tta_pred_entry = _extract_pred_box_and_score(tta_prob_t[i], tta_pred_masks_t[i])
-                    if tta_pred_entry is not None:
-                        tta_box, tta_score_box = tta_pred_entry
-                        tta_det_preds.append({"image_id": image_id, "box": tta_box, "score": float(tta_score_box)})
 
                 ood_results.append(
                     {
@@ -2718,15 +2377,6 @@ def evaluate_dataset_ood_tta(
             "autobatch_raw_batch": autobatch_info.get("raw_batch", None),
             "autobatch_max_stable": autobatch_info.get("max_stable", None),
             "autobatch_safety": autobatch_info.get("safety", None),
-            "tta_cache_model_hash": tta_model_hash,
-            "tta_cache_aug_set": tta_aug_set,
-            "tta_cache_fusion": tta_fusion,
-            "tta_cache_hits": int(tta_cache_hits),
-            "tta_cache_misses": int(tta_cache_misses),
-            "tta_unc_cache_hits": int(tta_unc_cache_hits),
-            "baseline_cache_model_hash": baseline_model_hash,
-            "baseline_cache_hits": int(baseline_cache_stats.get("hits", 0)),
-            "baseline_cache_misses": int(baseline_cache_stats.get("misses", 0)),
         },
     )
     tta_stats = _build_stats_from_store(
@@ -2752,21 +2402,8 @@ def evaluate_dataset_ood_tta(
             "autobatch_raw_batch": autobatch_info.get("raw_batch", None),
             "autobatch_max_stable": autobatch_info.get("max_stable", None),
             "autobatch_safety": autobatch_info.get("safety", None),
-            "tta_cache_model_hash": tta_model_hash,
-            "tta_cache_aug_set": tta_aug_set,
-            "tta_cache_fusion": tta_fusion,
-            "tta_cache_hits": int(tta_cache_hits),
-            "tta_cache_misses": int(tta_cache_misses),
-            "tta_unc_cache_hits": int(tta_unc_cache_hits),
-            "baseline_cache_model_hash": baseline_model_hash,
-            "baseline_cache_hits": int(baseline_cache_stats.get("hits", 0)),
-            "baseline_cache_misses": int(baseline_cache_stats.get("misses", 0)),
         },
     )
-    if ood_det_gt_by_image:
-        ood_stats.update(_compute_detection_map_stats(preds=ood_det_preds, gt_by_image=ood_det_gt_by_image))
-    if tta_det_gt_by_image:
-        tta_stats.update(_compute_detection_map_stats(preds=tta_det_preds, gt_by_image=tta_det_gt_by_image))
 
     if profiler is not None and profiler.enabled:
         prefix = profile_prefix or f"eval.{dataset_name}"

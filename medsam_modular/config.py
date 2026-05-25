@@ -52,7 +52,6 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "finetune_max_samples": 0,
     "finetune_use_fused_adamw": True,
     "run_only_stage7": False,
-    "run_only_stage8": False,
     "ood_threshold": 0.5,
     "ood_method": "entropy",
     "eval_workers": 0,
@@ -79,7 +78,6 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "ood_max_side": 64,
     "tta_autotune": True,
     "eval_prefetch": 4,
-    "eval_ece_max_pixels": 0,
 }
 
 
@@ -123,7 +121,6 @@ SETTING_ENV_MAP: Dict[str, str] = {
     "finetune_max_samples": "MEDSAM_FINETUNE_MAX_SAMPLES",
     "finetune_use_fused_adamw": "MEDSAM_FINETUNE_USE_FUSED_ADAMW",
     "run_only_stage7": "MEDSAM_RUN_ONLY_STAGE7",
-    "run_only_stage8": "MEDSAM_RUN_ONLY_STAGE8",
     "ood_threshold": "MEDSAM_OOD_THRESHOLD",
     "ood_method": "MEDSAM_OOD_METHOD",
     "eval_workers": "MEDSAM_EVAL_WORKERS",
@@ -150,7 +147,6 @@ SETTING_ENV_MAP: Dict[str, str] = {
     "ood_max_side": "MEDSAM_OOD_MAX_SIDE",
     "tta_autotune": "MEDSAM_TTA_AUTOTUNE",
     "eval_prefetch": "MEDSAM_EVAL_PREFETCH",
-    "eval_ece_max_pixels": "MEDSAM_EVAL_ECE_MAX_PIXELS",
 }
 
 
@@ -163,7 +159,6 @@ BOOL_SETTING_KEYS = {
     "finetune_early_stop_require_min_lr",
     "finetune_use_fused_adamw",
     "run_only_stage7",
-    "run_only_stage8",
     "cache_async_write",
     "precompute_embeddings",
     "eval_warm_cache",
@@ -198,7 +193,6 @@ INT_SETTING_KEYS = {
     "eval_autobatch_candidate_growth",
     "ood_max_side",
     "eval_prefetch",
-    "eval_ece_max_pixels",
 }
 
 FLOAT_SETTING_KEYS = {
