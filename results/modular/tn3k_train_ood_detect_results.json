@@ -2,7 +2,7 @@
   {
     "index": 0,
     "name": "0000",
-    "ood_score": 0.19568932056427002,
+    "ood_score": 0.1956893354654312,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.80431067943573
@@ -90,7 +90,7 @@
   {
     "index": 11,
     "name": "0011",
-    "ood_score": 0.10256709158420563,
+    "ood_score": 0.10256708413362503,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8974329233169556
@@ -130,7 +130,7 @@
   {
     "index": 16,
     "name": "0016",
-    "ood_score": 0.40662750601768494,
+    "ood_score": 0.4066275358200073,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5933724641799927
@@ -138,7 +138,7 @@
   {
     "index": 17,
     "name": "0017",
-    "ood_score": 0.16172993183135986,
+    "ood_score": 0.16172991693019867,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8382700681686401
@@ -178,7 +178,7 @@
   {
     "index": 22,
     "name": "0022",
-    "ood_score": 0.16777032613754272,
+    "ood_score": 0.16777031123638153,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8322296738624573
@@ -194,10 +194,10 @@
   {
     "index": 24,
     "name": "0024",
-    "ood_score": 0.3819287121295929,
+    "ood_score": 0.3819287419319153,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6180713176727295
+    "confidence": 0.6180712580680847
   },
   {
     "index": 25,
@@ -274,7 +274,7 @@
   {
     "index": 34,
     "name": "0034",
-    "ood_score": 0.44883742928504944,
+    "ood_score": 0.44883739948272705,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.551162600517273
@@ -282,7 +282,7 @@
   {
     "index": 35,
     "name": "0035",
-    "ood_score": 0.47197258472442627,
+    "ood_score": 0.47197261452674866,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5280274152755737
@@ -306,10 +306,10 @@
   {
     "index": 38,
     "name": "0038",
-    "ood_score": 0.4013226628303528,
+    "ood_score": 0.4013226330280304,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.5986773371696472
+    "confidence": 0.598677396774292
   },
   {
     "index": 39,
@@ -386,10 +386,10 @@
   {
     "index": 48,
     "name": "0048",
-    "ood_score": 0.4158487021923065,
+    "ood_score": 0.41584867238998413,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.5841512680053711
+    "confidence": 0.5841513276100159
   },
   {
     "index": 49,
@@ -402,15 +402,15 @@
   {
     "index": 50,
     "name": "0050",
-    "ood_score": 0.08689811825752258,
+    "ood_score": 0.08689812570810318,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9131019115447998
+    "confidence": 0.913101851940155
   },
   {
     "index": 51,
     "name": "0051",
-    "ood_score": 0.1483808159828186,
+    "ood_score": 0.1483808308839798,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8516191840171814
@@ -522,18 +522,18 @@
   {
     "index": 65,
     "name": "0065",
-    "ood_score": 0.3463747799396515,
+    "ood_score": 0.3463748097419739,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6536252498626709
+    "confidence": 0.6536251902580261
   },
   {
     "index": 66,
     "name": "0066",
-    "ood_score": 0.4312470555305481,
+    "ood_score": 0.4312470853328705,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.5687529444694519
+    "confidence": 0.5687528848648071
   },
   {
     "index": 67,
@@ -594,7 +594,7 @@
   {
     "index": 74,
     "name": "0074",
-    "ood_score": 0.08847818523645401,
+    "ood_score": 0.0884781926870346,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.9115217924118042
@@ -642,7 +642,7 @@
   {
     "index": 80,
     "name": "0080",
-    "ood_score": 0.14569050073623657,
+    "ood_score": 0.14569048583507538,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8543094992637634
@@ -698,10 +698,10 @@
   {
     "index": 87,
     "name": "0087",
-    "ood_score": 0.47618308663368225,
+    "ood_score": 0.47618311643600464,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.5238169431686401
+    "confidence": 0.5238168835639954
   },
   {
     "index": 88,
@@ -746,7 +746,7 @@
   {
     "index": 93,
     "name": "0093",
-    "ood_score": 0.20013239979743958,
+    "ood_score": 0.20013238489627838,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7998676300048828
@@ -762,7 +762,7 @@
   {
     "index": 95,
     "name": "0095",
-    "ood_score": 0.346688836812973,
+    "ood_score": 0.3466888666152954,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6533111333847046
@@ -802,7 +802,7 @@
   {
     "index": 100,
     "name": "0100",
-    "ood_score": 0.45429956912994385,
+    "ood_score": 0.45429959893226624,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5457004308700562
@@ -810,7 +810,7 @@
   {
     "index": 101,
     "name": "0101",
-    "ood_score": 0.449417382478714,
+    "ood_score": 0.4494173526763916,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5505826473236084
@@ -858,10 +858,10 @@
   {
     "index": 107,
     "name": "0107",
-    "ood_score": 0.17521803081035614,
+    "ood_score": 0.17521801590919495,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8247819542884827
+    "confidence": 0.8247820138931274
   },
   {
     "index": 108,
@@ -874,10 +874,10 @@
   {
     "index": 109,
     "name": "0109",
-    "ood_score": 0.29843610525131226,
+    "ood_score": 0.29843607544898987,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7015638947486877
+    "confidence": 0.7015639543533325
   },
   {
     "index": 110,
@@ -914,7 +914,7 @@
   {
     "index": 114,
     "name": "0114",
-    "ood_score": 0.4454527199268341,
+    "ood_score": 0.4454526901245117,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5545473098754883
@@ -938,10 +938,10 @@
   {
     "index": 117,
     "name": "0117",
-    "ood_score": 0.4512527585029602,
+    "ood_score": 0.4512527883052826,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.5487472414970398
+    "confidence": 0.548747181892395
   },
   {
     "index": 118,
@@ -954,7 +954,7 @@
   {
     "index": 119,
     "name": "0119",
-    "ood_score": 0.3012644052505493,
+    "ood_score": 0.30126437544822693,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6987355947494507
@@ -986,7 +986,7 @@
   {
     "index": 123,
     "name": "0123",
-    "ood_score": 0.18590523302555084,
+    "ood_score": 0.18590524792671204,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8140947818756104
@@ -1042,23 +1042,23 @@
   {
     "index": 130,
     "name": "0130",
-    "ood_score": 0.3887825608253479,
+    "ood_score": 0.3887825310230255,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6112174391746521
+    "confidence": 0.6112174987792969
   },
   {
     "index": 131,
     "name": "0131",
-    "ood_score": 0.29222986102104187,
+    "ood_score": 0.2922298312187195,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7077701091766357
+    "confidence": 0.7077701687812805
   },
   {
     "index": 132,
     "name": "0132",
-    "ood_score": 0.10295070707798004,
+    "ood_score": 0.10295071452856064,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8970493078231812
@@ -1146,15 +1146,15 @@
   {
     "index": 143,
     "name": "0143",
-    "ood_score": 0.23091359436511993,
+    "ood_score": 0.23091360926628113,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7690864205360413
+    "confidence": 0.7690863609313965
   },
   {
     "index": 144,
     "name": "0144",
-    "ood_score": 0.09952902793884277,
+    "ood_score": 0.09952904284000397,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.9004709720611572
@@ -1194,10 +1194,10 @@
   {
     "index": 149,
     "name": "0149",
-    "ood_score": 0.2595309317111969,
+    "ood_score": 0.2595309615135193,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7404690980911255
+    "confidence": 0.7404690384864807
   },
   {
     "index": 150,
@@ -1250,7 +1250,7 @@
   {
     "index": 156,
     "name": "0156",
-    "ood_score": 0.4402402639389038,
+    "ood_score": 0.4402402937412262,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5597597360610962
@@ -1274,10 +1274,10 @@
   {
     "index": 159,
     "name": "0159",
-    "ood_score": 0.17762617766857147,
+    "ood_score": 0.17762616276741028,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8223738074302673
+    "confidence": 0.8223738670349121
   },
   {
     "index": 160,
@@ -1290,7 +1290,7 @@
   {
     "index": 161,
     "name": "0161",
-    "ood_score": 0.31953465938568115,
+    "ood_score": 0.31953468918800354,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6804653406143188
@@ -1330,7 +1330,7 @@
   {
     "index": 166,
     "name": "0166",
-    "ood_score": 0.478908509016037,
+    "ood_score": 0.4789085388183594,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5210914611816406
@@ -1354,7 +1354,7 @@
   {
     "index": 169,
     "name": "0169",
-    "ood_score": 0.13820289075374603,
+    "ood_score": 0.13820287585258484,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8617970943450928
@@ -1378,10 +1378,10 @@
   {
     "index": 172,
     "name": "0172",
-    "ood_score": 0.2614324688911438,
+    "ood_score": 0.2614324986934662,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7385675311088562
+    "confidence": 0.7385674715042114
   },
   {
     "index": 173,
@@ -1426,7 +1426,7 @@
   {
     "index": 178,
     "name": "0178",
-    "ood_score": 0.11580850929021835,
+    "ood_score": 0.11580850183963776,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8841915130615234
@@ -1458,10 +1458,10 @@
   {
     "index": 182,
     "name": "0182",
-    "ood_score": 0.36590319871902466,
+    "ood_score": 0.36590316891670227,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6340968012809753
+    "confidence": 0.6340968608856201
   },
   {
     "index": 183,
@@ -1490,10 +1490,10 @@
   {
     "index": 186,
     "name": "0186",
-    "ood_score": 0.21604451537132263,
+    "ood_score": 0.21604450047016144,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.783955454826355
+    "confidence": 0.7839555144309998
   },
   {
     "index": 187,
@@ -1562,7 +1562,7 @@
   {
     "index": 195,
     "name": "0195",
-    "ood_score": 0.16513513028621674,
+    "ood_score": 0.16513511538505554,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8348648548126221
@@ -1658,7 +1658,7 @@
   {
     "index": 207,
     "name": "0207",
-    "ood_score": 0.13624757528305054,
+    "ood_score": 0.13624756038188934,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8637524247169495
@@ -1746,7 +1746,7 @@
   {
     "index": 218,
     "name": "0218",
-    "ood_score": 0.3633377254009247,
+    "ood_score": 0.36333775520324707,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6366622447967529
@@ -1770,7 +1770,7 @@
   {
     "index": 221,
     "name": "0221",
-    "ood_score": 0.4300733804702759,
+    "ood_score": 0.4300733506679535,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5699266195297241
@@ -1890,7 +1890,7 @@
   {
     "index": 236,
     "name": "0236",
-    "ood_score": 0.18687278032302856,
+    "ood_score": 0.18687279522418976,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8131272196769714
@@ -1954,7 +1954,7 @@
   {
     "index": 244,
     "name": "0244",
-    "ood_score": 0.2478024810552597,
+    "ood_score": 0.2478024959564209,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7521975040435791
@@ -1986,7 +1986,7 @@
   {
     "index": 248,
     "name": "0248",
-    "ood_score": 0.35003089904785156,
+    "ood_score": 0.3500308692455292,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6499691009521484
@@ -1994,7 +1994,7 @@
   {
     "index": 249,
     "name": "0249",
-    "ood_score": 0.11024703085422516,
+    "ood_score": 0.11024703830480576,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.889752984046936
@@ -2018,7 +2018,7 @@
   {
     "index": 252,
     "name": "0252",
-    "ood_score": 0.3561742603778839,
+    "ood_score": 0.3561742305755615,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6438257694244385
@@ -2050,10 +2050,10 @@
   {
     "index": 256,
     "name": "0256",
-    "ood_score": 0.341441810131073,
+    "ood_score": 0.3414417803287506,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.658558189868927
+    "confidence": 0.6585582494735718
   },
   {
     "index": 257,
@@ -2074,7 +2074,7 @@
   {
     "index": 259,
     "name": "0259",
-    "ood_score": 0.1598362922668457,
+    "ood_score": 0.1598363071680069,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8401637077331543
@@ -2090,7 +2090,7 @@
   {
     "index": 261,
     "name": "0261",
-    "ood_score": 0.17333590984344482,
+    "ood_score": 0.17333589494228363,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8266640901565552
@@ -2226,10 +2226,10 @@
   {
     "index": 278,
     "name": "0278",
-    "ood_score": 0.40718990564346313,
+    "ood_score": 0.4071899354457855,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.5928100943565369
+    "confidence": 0.5928100347518921
   },
   {
     "index": 279,
@@ -2418,7 +2418,7 @@
   {
     "index": 302,
     "name": "0302",
-    "ood_score": 0.23444823920726776,
+    "ood_score": 0.23444825410842896,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.765551745891571
@@ -2602,7 +2602,7 @@
   {
     "index": 325,
     "name": "0325",
-    "ood_score": 0.18328848481178284,
+    "ood_score": 0.18328845500946045,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8167115449905396
@@ -2626,7 +2626,7 @@
   {
     "index": 328,
     "name": "0328",
-    "ood_score": 0.281825989484787,
+    "ood_score": 0.2818260192871094,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7181739807128906
@@ -2698,7 +2698,7 @@
   {
     "index": 337,
     "name": "0337",
-    "ood_score": 0.11555029451847076,
+    "ood_score": 0.11555030196905136,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8844497203826904
@@ -2714,7 +2714,7 @@
   {
     "index": 339,
     "name": "0339",
-    "ood_score": 0.3682699203491211,
+    "ood_score": 0.3682698905467987,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6317300796508789
@@ -2730,7 +2730,7 @@
   {
     "index": 341,
     "name": "0341",
-    "ood_score": 0.3840522766113281,
+    "ood_score": 0.38405224680900574,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6159477233886719
@@ -2818,7 +2818,7 @@
   {
     "index": 352,
     "name": "0352",
-    "ood_score": 0.16117697954177856,
+    "ood_score": 0.16117699444293976,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8388230204582214
@@ -2874,7 +2874,7 @@
   {
     "index": 359,
     "name": "0359",
-    "ood_score": 0.36006298661231995,
+    "ood_score": 0.36006295680999756,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6399370431900024
@@ -2882,7 +2882,7 @@
   {
     "index": 360,
     "name": "0360",
-    "ood_score": 0.36054670810699463,
+    "ood_score": 0.36054667830467224,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6394532918930054
@@ -2930,7 +2930,7 @@
   {
     "index": 366,
     "name": "0366",
-    "ood_score": 0.20024842023849487,
+    "ood_score": 0.20024843513965607,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7997515797615051
@@ -2946,10 +2946,10 @@
   {
     "index": 368,
     "name": "0368",
-    "ood_score": 0.3924430012702942,
+    "ood_score": 0.3924430310726166,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6075569987297058
+    "confidence": 0.607556939125061
   },
   {
     "index": 369,
@@ -3026,7 +3026,7 @@
   {
     "index": 378,
     "name": "0378",
-    "ood_score": 0.10211022943258286,
+    "ood_score": 0.10211022198200226,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8978897929191589
@@ -3106,10 +3106,10 @@
   {
     "index": 388,
     "name": "0388",
-    "ood_score": 0.3348994851112366,
+    "ood_score": 0.3348994553089142,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6651005148887634
+    "confidence": 0.6651005744934082
   },
   {
     "index": 389,
@@ -3130,7 +3130,7 @@
   {
     "index": 391,
     "name": "0391",
-    "ood_score": 0.1279650330543518,
+    "ood_score": 0.1279650181531906,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8720349669456482
@@ -3242,10 +3242,10 @@
   {
     "index": 405,
     "name": "0405",
-    "ood_score": 0.19981828331947327,
+    "ood_score": 0.19981829822063446,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8001817464828491
+    "confidence": 0.8001816868782043
   },
   {
     "index": 406,
@@ -3266,7 +3266,7 @@
   {
     "index": 408,
     "name": "0408",
-    "ood_score": 0.28364384174346924,
+    "ood_score": 0.28364381194114685,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7163561582565308
@@ -3354,7 +3354,7 @@
   {
     "index": 419,
     "name": "0419",
-    "ood_score": 0.12021076679229736,
+    "ood_score": 0.12021075934171677,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8797892332077026
@@ -3386,10 +3386,10 @@
   {
     "index": 423,
     "name": "0423",
-    "ood_score": 0.272591233253479,
+    "ood_score": 0.2725912928581238,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.727408766746521
+    "confidence": 0.7274087071418762
   },
   {
     "index": 424,
@@ -3418,7 +3418,7 @@
   {
     "index": 427,
     "name": "0427",
-    "ood_score": 0.20495957136154175,
+    "ood_score": 0.20495955646038055,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7950404286384583
@@ -3458,10 +3458,10 @@
   {
     "index": 432,
     "name": "0432",
-    "ood_score": 0.4500366151332855,
+    "ood_score": 0.45003658533096313,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.5499633550643921
+    "confidence": 0.5499634146690369
   },
   {
     "index": 433,
@@ -3474,7 +3474,7 @@
   {
     "index": 434,
     "name": "0434",
-    "ood_score": 0.22127608954906464,
+    "ood_score": 0.22127610445022583,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7787238955497742
@@ -3522,7 +3522,7 @@
   {
     "index": 440,
     "name": "0440",
-    "ood_score": 0.1247308999300003,
+    "ood_score": 0.1247309073805809,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8752691149711609
@@ -3530,7 +3530,7 @@
   {
     "index": 441,
     "name": "0441",
-    "ood_score": 0.1552840620279312,
+    "ood_score": 0.15528404712677002,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.84471595287323
@@ -3562,7 +3562,7 @@
   {
     "index": 445,
     "name": "0445",
-    "ood_score": 0.06913432478904724,
+    "ood_score": 0.06913433223962784,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.9308656454086304
@@ -3578,7 +3578,7 @@
   {
     "index": 447,
     "name": "0447",
-    "ood_score": 0.18062998354434967,
+    "ood_score": 0.18062996864318848,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8193700313568115
@@ -3594,10 +3594,10 @@
   {
     "index": 449,
     "name": "0449",
-    "ood_score": 0.3268151581287384,
+    "ood_score": 0.3268151879310608,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.673184871673584
+    "confidence": 0.6731848120689392
   },
   {
     "index": 450,
@@ -3650,10 +3650,10 @@
   {
     "index": 456,
     "name": "0456",
-    "ood_score": 0.09890254586935043,
+    "ood_score": 0.09890255331993103,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9010974764823914
+    "confidence": 0.9010974168777466
   },
   {
     "index": 457,
@@ -3722,7 +3722,7 @@
   {
     "index": 465,
     "name": "0465",
-    "ood_score": 0.21597075462341309,
+    "ood_score": 0.2159707397222519,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7840292453765869
@@ -3818,7 +3818,7 @@
   {
     "index": 477,
     "name": "0477",
-    "ood_score": 0.14747637510299683,
+    "ood_score": 0.14747636020183563,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8525236248970032
@@ -3866,10 +3866,10 @@
   {
     "index": 483,
     "name": "0483",
-    "ood_score": 0.12567368149757385,
+    "ood_score": 0.12567369639873505,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8743263483047485
+    "confidence": 0.8743262887001038
   },
   {
     "index": 484,
@@ -4018,7 +4018,7 @@
   {
     "index": 502,
     "name": "0502",
-    "ood_score": 0.1782510131597519,
+    "ood_score": 0.1782509982585907,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8217489719390869
@@ -4042,7 +4042,7 @@
   {
     "index": 505,
     "name": "0505",
-    "ood_score": 0.424435019493103,
+    "ood_score": 0.42443498969078064,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.575564980506897
@@ -4050,10 +4050,10 @@
   {
     "index": 506,
     "name": "0506",
-    "ood_score": 0.4424658417701721,
+    "ood_score": 0.4424658715724945,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.5575341582298279
+    "confidence": 0.5575340986251831
   },
   {
     "index": 507,
@@ -4082,7 +4082,7 @@
   {
     "index": 510,
     "name": "0510",
-    "ood_score": 0.11986899375915527,
+    "ood_score": 0.11986898630857468,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8801310062408447
@@ -4106,10 +4106,10 @@
   {
     "index": 513,
     "name": "0513",
-    "ood_score": 0.24633462727069855,
+    "ood_score": 0.24633464217185974,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7536653876304626
+    "confidence": 0.7536653280258179
   },
   {
     "index": 514,
@@ -4138,10 +4138,10 @@
   {
     "index": 517,
     "name": "0517",
-    "ood_score": 0.1512243002653122,
+    "ood_score": 0.151224285364151,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8487756848335266
+    "confidence": 0.8487757444381714
   },
   {
     "index": 518,
@@ -4194,10 +4194,10 @@
   {
     "index": 524,
     "name": "0524",
-    "ood_score": 0.2043338268995285,
+    "ood_score": 0.2043338119983673,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7956661581993103
+    "confidence": 0.7956662178039551
   },
   {
     "index": 525,
@@ -4218,7 +4218,7 @@
   {
     "index": 527,
     "name": "0527",
-    "ood_score": 0.13032788038253784,
+    "ood_score": 0.13032786548137665,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8696721196174622
@@ -4274,10 +4274,10 @@
   {
     "index": 534,
     "name": "0534",
-    "ood_score": 0.36317506432533264,
+    "ood_score": 0.36317509412765503,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6368249654769897
+    "confidence": 0.636824905872345
   },
   {
     "index": 535,
@@ -4434,10 +4434,10 @@
   {
     "index": 554,
     "name": "0554",
-    "ood_score": 0.24730831384658813,
+    "ood_score": 0.24730828404426575,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7526916861534119
+    "confidence": 0.7526917457580566
   },
   {
     "index": 555,
@@ -4466,7 +4466,7 @@
   {
     "index": 558,
     "name": "0558",
-    "ood_score": 0.19971658289432526,
+    "ood_score": 0.19971656799316406,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8002834320068359
@@ -4506,7 +4506,7 @@
   {
     "index": 563,
     "name": "0563",
-    "ood_score": 0.29858818650245667,
+    "ood_score": 0.2985881567001343,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7014118432998657
@@ -4522,10 +4522,10 @@
   {
     "index": 565,
     "name": "0565",
-    "ood_score": 0.29922813177108765,
+    "ood_score": 0.29922810196876526,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7007718682289124
+    "confidence": 0.7007719278335571
   },
   {
     "index": 566,
@@ -4554,7 +4554,7 @@
   {
     "index": 569,
     "name": "0569",
-    "ood_score": 0.2768890857696533,
+    "ood_score": 0.2768891155719757,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7231109142303467
@@ -4674,10 +4674,10 @@
   {
     "index": 584,
     "name": "0584",
-    "ood_score": 0.13402602076530457,
+    "ood_score": 0.13402600586414337,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.865973949432373
+    "confidence": 0.8659740090370178
   },
   {
     "index": 585,
@@ -4698,7 +4698,7 @@
   {
     "index": 587,
     "name": "0587",
-    "ood_score": 0.3343510627746582,
+    "ood_score": 0.3343510329723358,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6656489372253418
@@ -4762,7 +4762,7 @@
   {
     "index": 595,
     "name": "0595",
-    "ood_score": 0.1442621797323227,
+    "ood_score": 0.1442621648311615,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8557378053665161
@@ -4850,10 +4850,10 @@
   {
     "index": 606,
     "name": "0606",
-    "ood_score": 0.23090749979019165,
+    "ood_score": 0.23090746998786926,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7690925002098083
+    "confidence": 0.7690925598144531
   },
   {
     "index": 607,
@@ -4890,7 +4890,7 @@
   {
     "index": 611,
     "name": "0611",
-    "ood_score": 0.12389243394136429,
+    "ood_score": 0.12389242649078369,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8761075735092163
@@ -4906,7 +4906,7 @@
   {
     "index": 613,
     "name": "0613",
-    "ood_score": 0.2635643184185028,
+    "ood_score": 0.2635643482208252,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7364356517791748
@@ -4922,10 +4922,10 @@
   {
     "index": 615,
     "name": "0615",
-    "ood_score": 0.13563449680805206,
+    "ood_score": 0.13563451170921326,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8643655180931091
+    "confidence": 0.8643654584884644
   },
   {
     "index": 616,
@@ -4962,7 +4962,7 @@
   {
     "index": 620,
     "name": "0620",
-    "ood_score": 0.1835462749004364,
+    "ood_score": 0.1835462898015976,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8164536952972412
@@ -5002,10 +5002,10 @@
   {
     "index": 625,
     "name": "0625",
-    "ood_score": 0.371928870677948,
+    "ood_score": 0.3719289302825928,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.628071129322052
+    "confidence": 0.6280710697174072
   },
   {
     "index": 626,
@@ -5034,10 +5034,10 @@
   {
     "index": 629,
     "name": "0629",
-    "ood_score": 0.18737761676311493,
+    "ood_score": 0.18737760186195374,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8126223683357239
+    "confidence": 0.8126224279403687
   },
   {
     "index": 630,
@@ -5050,10 +5050,10 @@
   {
     "index": 631,
     "name": "0631",
-    "ood_score": 0.22484751045703888,
+    "ood_score": 0.22484752535820007,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7751525044441223
+    "confidence": 0.7751524448394775
   },
   {
     "index": 632,
@@ -5194,7 +5194,7 @@
   {
     "index": 649,
     "name": "0649",
-    "ood_score": 0.24229547381401062,
+    "ood_score": 0.24229548871517181,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.757704496383667
@@ -5234,15 +5234,15 @@
   {
     "index": 654,
     "name": "0654",
-    "ood_score": 0.41714948415756226,
+    "ood_score": 0.41714951395988464,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.5828505158424377
+    "confidence": 0.582850456237793
   },
   {
     "index": 655,
     "name": "0655",
-    "ood_score": 0.4843215048313141,
+    "ood_score": 0.4843214750289917,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5156785249710083
@@ -5274,7 +5274,7 @@
   {
     "index": 659,
     "name": "0659",
-    "ood_score": 0.2112351804971695,
+    "ood_score": 0.2112351655960083,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7887648344039917
@@ -5322,18 +5322,18 @@
   {
     "index": 665,
     "name": "0665",
-    "ood_score": 0.22593827545642853,
+    "ood_score": 0.22593829035758972,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7740617394447327
+    "confidence": 0.7740616798400879
   },
   {
     "index": 666,
     "name": "0666",
-    "ood_score": 0.3342870771884918,
+    "ood_score": 0.3342871069908142,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6657129526138306
+    "confidence": 0.6657128930091858
   },
   {
     "index": 667,
@@ -5370,10 +5370,10 @@
   {
     "index": 671,
     "name": "0671",
-    "ood_score": 0.3683141767978668,
+    "ood_score": 0.3683142066001892,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6316858530044556
+    "confidence": 0.6316857933998108
   },
   {
     "index": 672,
@@ -5386,10 +5386,10 @@
   {
     "index": 673,
     "name": "0673",
-    "ood_score": 0.19219723343849182,
+    "ood_score": 0.19219724833965302,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8078027963638306
+    "confidence": 0.8078027367591858
   },
   {
     "index": 674,
@@ -5474,7 +5474,7 @@
   {
     "index": 684,
     "name": "0684",
-    "ood_score": 0.12244460731744766,
+    "ood_score": 0.12244461476802826,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8775553703308105
@@ -5482,7 +5482,7 @@
   {
     "index": 685,
     "name": "0685",
-    "ood_score": 0.2535970211029053,
+    "ood_score": 0.2535969913005829,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7464029788970947
@@ -5490,7 +5490,7 @@
   {
     "index": 686,
     "name": "0686",
-    "ood_score": 0.2292141318321228,
+    "ood_score": 0.229214146733284,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7707858681678772
@@ -5554,7 +5554,7 @@
   {
     "index": 694,
     "name": "0694",
-    "ood_score": 0.24303951859474182,
+    "ood_score": 0.24303950369358063,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7569605112075806
@@ -5570,7 +5570,7 @@
   {
     "index": 696,
     "name": "0696",
-    "ood_score": 0.14046496152877808,
+    "ood_score": 0.14046497642993927,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8595350384712219
@@ -5586,7 +5586,7 @@
   {
     "index": 698,
     "name": "0698",
-    "ood_score": 0.12960264086723328,
+    "ood_score": 0.12960265576839447,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8703973293304443
@@ -5674,7 +5674,7 @@
   {
     "index": 709,
     "name": "0709",
-    "ood_score": 0.11957554519176483,
+    "ood_score": 0.11957553774118423,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.880424439907074
@@ -5706,15 +5706,15 @@
   {
     "index": 713,
     "name": "0713",
-    "ood_score": 0.3529714047908783,
+    "ood_score": 0.3529713749885559,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6470285654067993
+    "confidence": 0.6470286250114441
   },
   {
     "index": 714,
     "name": "0714",
-    "ood_score": 0.15133072435855865,
+    "ood_score": 0.15133070945739746,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8486692905426025
@@ -5770,7 +5770,7 @@
   {
     "index": 721,
     "name": "0721",
-    "ood_score": 0.09505939483642578,
+    "ood_score": 0.09505940228700638,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.9049406051635742
@@ -5866,10 +5866,10 @@
   {
     "index": 733,
     "name": "0733",
-    "ood_score": 0.1593223363161087,
+    "ood_score": 0.1593223512172699,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8406776785850525
+    "confidence": 0.8406776189804077
   },
   {
     "index": 734,
@@ -5962,7 +5962,7 @@
   {
     "index": 745,
     "name": "0745",
-    "ood_score": 0.11352117359638214,
+    "ood_score": 0.11352118104696274,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.886478841304779
@@ -6002,10 +6002,10 @@
   {
     "index": 750,
     "name": "0750",
-    "ood_score": 0.2081756889820099,
+    "ood_score": 0.20817570388317108,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7918243408203125
+    "confidence": 0.7918242812156677
   },
   {
     "index": 751,
@@ -6066,10 +6066,10 @@
   {
     "index": 758,
     "name": "0758",
-    "ood_score": 0.3710595965385437,
+    "ood_score": 0.3710595667362213,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6289404034614563
+    "confidence": 0.6289404630661011
   },
   {
     "index": 759,
@@ -6330,7 +6330,7 @@
   {
     "index": 791,
     "name": "0791",
-    "ood_score": 0.18744434416294098,
+    "ood_score": 0.18744432926177979,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8125556707382202
@@ -6354,15 +6354,15 @@
   {
     "index": 794,
     "name": "0794",
-    "ood_score": 0.17985861003398895,
+    "ood_score": 0.17985859513282776,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8201413750648499
+    "confidence": 0.8201414346694946
   },
   {
     "index": 795,
     "name": "0795",
-    "ood_score": 0.15922324359416962,
+    "ood_score": 0.1592232584953308,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8407767415046692
@@ -6402,7 +6402,7 @@
   {
     "index": 800,
     "name": "0800",
-    "ood_score": 0.17700974643230438,
+    "ood_score": 0.17700976133346558,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8229902386665344
@@ -6442,15 +6442,15 @@
   {
     "index": 805,
     "name": "0805",
-    "ood_score": 0.21234889328479767,
+    "ood_score": 0.21234890818595886,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7876511216163635
+    "confidence": 0.7876510620117188
   },
   {
     "index": 806,
     "name": "0806",
-    "ood_score": 0.11353512108325958,
+    "ood_score": 0.11353511363267899,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8864648938179016
@@ -6474,7 +6474,7 @@
   {
     "index": 809,
     "name": "0809",
-    "ood_score": 0.24893327057361603,
+    "ood_score": 0.24893325567245483,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7510667443275452
@@ -6490,7 +6490,7 @@
   {
     "index": 811,
     "name": "0811",
-    "ood_score": 0.09816674888134003,
+    "ood_score": 0.09816675633192062,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.9018332362174988
@@ -6514,7 +6514,7 @@
   {
     "index": 814,
     "name": "0814",
-    "ood_score": 0.15998432040214539,
+    "ood_score": 0.15998433530330658,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8400156497955322
@@ -6530,10 +6530,10 @@
   {
     "index": 816,
     "name": "0816",
-    "ood_score": 0.37076789140701294,
+    "ood_score": 0.37076783180236816,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6292321085929871
+    "confidence": 0.6292321681976318
   },
   {
     "index": 817,
@@ -6554,18 +6554,18 @@
   {
     "index": 819,
     "name": "0819",
-    "ood_score": 0.14949004352092743,
+    "ood_score": 0.14949002861976624,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8505099415779114
+    "confidence": 0.8505100011825562
   },
   {
     "index": 820,
     "name": "0820",
-    "ood_score": 0.3118205666542053,
+    "ood_score": 0.31182053685188293,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6881794333457947
+    "confidence": 0.6881794929504395
   },
   {
     "index": 821,
@@ -6586,7 +6586,7 @@
   {
     "index": 823,
     "name": "0823",
-    "ood_score": 0.1409797966480255,
+    "ood_score": 0.14097978174686432,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8590202331542969
@@ -6626,7 +6626,7 @@
   {
     "index": 828,
     "name": "0828",
-    "ood_score": 0.08269839733839035,
+    "ood_score": 0.08269840478897095,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.917301595211029
@@ -6722,10 +6722,10 @@
   {
     "index": 840,
     "name": "0840",
-    "ood_score": 0.4700782597064972,
+    "ood_score": 0.4700782895088196,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.5299217700958252
+    "confidence": 0.5299217104911804
   },
   {
     "index": 841,
@@ -6802,7 +6802,7 @@
   {
     "index": 850,
     "name": "0850",
-    "ood_score": 0.36703646183013916,
+    "ood_score": 0.3670364320278168,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6329635381698608
@@ -6818,7 +6818,7 @@
   {
     "index": 852,
     "name": "0852",
-    "ood_score": 0.20842546224594116,
+    "ood_score": 0.20842547714710236,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7915745377540588
@@ -6826,7 +6826,7 @@
   {
     "index": 853,
     "name": "0853",
-    "ood_score": 0.4679070711135864,
+    "ood_score": 0.4679071009159088,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5320929288864136
@@ -6986,10 +6986,10 @@
   {
     "index": 873,
     "name": "0873",
-    "ood_score": 0.1531316339969635,
+    "ood_score": 0.1531316488981247,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8468683958053589
+    "confidence": 0.8468683362007141
   },
   {
     "index": 874,
@@ -7034,10 +7034,10 @@
   {
     "index": 879,
     "name": "0879",
-    "ood_score": 0.24891147017478943,
+    "ood_score": 0.24891145527362823,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7510885000228882
+    "confidence": 0.751088559627533
   },
   {
     "index": 880,
@@ -7066,10 +7066,10 @@
   {
     "index": 883,
     "name": "0883",
-    "ood_score": 0.39052432775497437,
+    "ood_score": 0.39052435755729675,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6094756722450256
+    "confidence": 0.6094756126403809
   },
   {
     "index": 884,
@@ -7130,7 +7130,7 @@
   {
     "index": 891,
     "name": "0891",
-    "ood_score": 0.15400920808315277,
+    "ood_score": 0.15400922298431396,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.845990777015686
@@ -7186,7 +7186,7 @@
   {
     "index": 898,
     "name": "0898",
-    "ood_score": 0.11902254074811935,
+    "ood_score": 0.11902254819869995,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8809774518013
@@ -7218,7 +7218,7 @@
   {
     "index": 902,
     "name": "0902",
-    "ood_score": 0.10103122144937515,
+    "ood_score": 0.10103122889995575,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8989687561988831
@@ -7298,10 +7298,10 @@
   {
     "index": 912,
     "name": "0912",
-    "ood_score": 0.15521398186683655,
+    "ood_score": 0.15521399676799774,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8447860479354858
+    "confidence": 0.8447859883308411
   },
   {
     "index": 913,
@@ -7322,7 +7322,7 @@
   {
     "index": 915,
     "name": "0915",
-    "ood_score": 0.11278658360242844,
+    "ood_score": 0.11278659105300903,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.887213408946991
@@ -7330,10 +7330,10 @@
   {
     "index": 916,
     "name": "0916",
-    "ood_score": 0.3443910777568817,
+    "ood_score": 0.3443910479545593,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6556088924407959
+    "confidence": 0.6556089520454407
   },
   {
     "index": 917,
@@ -7378,10 +7378,10 @@
   {
     "index": 922,
     "name": "0922",
-    "ood_score": 0.33555781841278076,
+    "ood_score": 0.335557758808136,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6644421815872192
+    "confidence": 0.664442241191864
   },
   {
     "index": 923,
@@ -7394,10 +7394,10 @@
   {
     "index": 924,
     "name": "0924",
-    "ood_score": 0.3127853572368622,
+    "ood_score": 0.3127853274345398,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6872146129608154
+    "confidence": 0.6872146725654602
   },
   {
     "index": 925,
@@ -7410,10 +7410,10 @@
   {
     "index": 926,
     "name": "0926",
-    "ood_score": 0.16561169922351837,
+    "ood_score": 0.16561171412467957,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8343883156776428
+    "confidence": 0.834388256072998
   },
   {
     "index": 927,
@@ -7434,7 +7434,7 @@
   {
     "index": 929,
     "name": "0929",
-    "ood_score": 0.346333384513855,
+    "ood_score": 0.3463333547115326,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.653666615486145
@@ -7466,10 +7466,10 @@
   {
     "index": 933,
     "name": "0933",
-    "ood_score": 0.39352232217788696,
+    "ood_score": 0.3935222923755646,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.606477677822113
+    "confidence": 0.6064777374267578
   },
   {
     "index": 934,
@@ -7562,7 +7562,7 @@
   {
     "index": 945,
     "name": "0945",
-    "ood_score": 0.12271063774824142,
+    "ood_score": 0.12271063029766083,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.877289354801178
@@ -7690,10 +7690,10 @@
   {
     "index": 961,
     "name": "0961",
-    "ood_score": 0.3301141858100891,
+    "ood_score": 0.3301142156124115,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6698858141899109
+    "confidence": 0.6698857545852661
   },
   {
     "index": 962,
@@ -7770,10 +7770,10 @@
   {
     "index": 971,
     "name": "0971",
-    "ood_score": 0.2555106282234192,
+    "ood_score": 0.2555106580257416,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7444893717765808
+    "confidence": 0.744489312171936
   },
   {
     "index": 972,
@@ -7850,10 +7850,10 @@
   {
     "index": 981,
     "name": "0981",
-    "ood_score": 0.3660241663455963,
+    "ood_score": 0.3660241961479187,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6339758634567261
+    "confidence": 0.6339758038520813
   },
   {
     "index": 982,
@@ -7874,10 +7874,10 @@
   {
     "index": 984,
     "name": "0984",
-    "ood_score": 0.23522894084453583,
+    "ood_score": 0.23522892594337463,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.764771044254303
+    "confidence": 0.7647711038589478
   },
   {
     "index": 985,
@@ -7930,7 +7930,7 @@
   {
     "index": 991,
     "name": "0991",
-    "ood_score": 0.40037915110588074,
+    "ood_score": 0.4003791809082031,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5996208190917969
@@ -7938,7 +7938,7 @@
   {
     "index": 992,
     "name": "0992",
-    "ood_score": 0.24654950201511383,
+    "ood_score": 0.24654951691627502,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7534505128860474
@@ -7978,10 +7978,10 @@
   {
     "index": 997,
     "name": "0997",
-    "ood_score": 0.3765607476234436,
+    "ood_score": 0.376560777425766,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6234392523765564
+    "confidence": 0.6234391927719116
   },
   {
     "index": 998,
@@ -7994,7 +7994,7 @@
   {
     "index": 999,
     "name": "0999",
-    "ood_score": 0.118895523250103,
+    "ood_score": 0.1188955157995224,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8811044692993164
@@ -8210,7 +8210,7 @@
   {
     "index": 1026,
     "name": "1026",
-    "ood_score": 0.10032254457473755,
+    "ood_score": 0.10032255202531815,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8996774554252625
@@ -8242,7 +8242,7 @@
   {
     "index": 1030,
     "name": "1030",
-    "ood_score": 0.06790710240602493,
+    "ood_score": 0.06790710985660553,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.9320929050445557
@@ -8258,7 +8258,7 @@
   {
     "index": 1032,
     "name": "1032",
-    "ood_score": 0.17862047255039215,
+    "ood_score": 0.17862045764923096,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.821379542350769
@@ -8354,7 +8354,7 @@
   {
     "index": 1044,
     "name": "1044",
-    "ood_score": 0.37771955132484436,
+    "ood_score": 0.377719521522522,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.622280478477478
@@ -8378,7 +8378,7 @@
   {
     "index": 1047,
     "name": "1047",
-    "ood_score": 0.40164971351623535,
+    "ood_score": 0.40164968371391296,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5983502864837646
@@ -8426,7 +8426,7 @@
   {
     "index": 1053,
     "name": "1053",
-    "ood_score": 0.12341959029436111,
+    "ood_score": 0.12341959774494171,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8765804171562195
@@ -8442,10 +8442,10 @@
   {
     "index": 1055,
     "name": "1055",
-    "ood_score": 0.2485981434583664,
+    "ood_score": 0.2485981285572052,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7514018416404724
+    "confidence": 0.7514019012451172
   },
   {
     "index": 1056,
@@ -8466,7 +8466,7 @@
   {
     "index": 1058,
     "name": "1058",
-    "ood_score": 0.10001987963914871,
+    "ood_score": 0.10001988708972931,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8999801278114319
@@ -8538,15 +8538,15 @@
   {
     "index": 1067,
     "name": "1067",
-    "ood_score": 0.270465224981308,
+    "ood_score": 0.2704651951789856,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7295347452163696
+    "confidence": 0.7295348048210144
   },
   {
     "index": 1068,
     "name": "1068",
-    "ood_score": 0.12374565750360489,
+    "ood_score": 0.12374566495418549,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8762543201446533
@@ -8778,10 +8778,10 @@
   {
     "index": 1097,
     "name": "1097",
-    "ood_score": 0.36984559893608093,
+    "ood_score": 0.36984556913375854,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6301543712615967
+    "confidence": 0.6301544308662415
   },
   {
     "index": 1098,
@@ -8826,7 +8826,7 @@
   {
     "index": 1103,
     "name": "1103",
-    "ood_score": 0.3916108310222626,
+    "ood_score": 0.39161086082458496,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.608389139175415
@@ -8834,10 +8834,10 @@
   {
     "index": 1104,
     "name": "1104",
-    "ood_score": 0.25825685262680054,
+    "ood_score": 0.2582568824291229,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7417431473731995
+    "confidence": 0.7417430877685547
   },
   {
     "index": 1105,
@@ -8874,10 +8874,10 @@
   {
     "index": 1109,
     "name": "1109",
-    "ood_score": 0.4216417670249939,
+    "ood_score": 0.4216417372226715,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.5783582329750061
+    "confidence": 0.5783582925796509
   },
   {
     "index": 1110,
@@ -8930,10 +8930,10 @@
   {
     "index": 1116,
     "name": "1116",
-    "ood_score": 0.2796235978603363,
+    "ood_score": 0.2796235680580139,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7203763723373413
+    "confidence": 0.7203764319419861
   },
   {
     "index": 1117,
@@ -8954,7 +8954,7 @@
   {
     "index": 1119,
     "name": "1119",
-    "ood_score": 0.23011240363121033,
+    "ood_score": 0.23011241853237152,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7698875665664673
@@ -9034,7 +9034,7 @@
   {
     "index": 1129,
     "name": "1129",
-    "ood_score": 0.10278491675853729,
+    "ood_score": 0.10278492420911789,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8972150683403015
@@ -9098,10 +9098,10 @@
   {
     "index": 1137,
     "name": "1137",
-    "ood_score": 0.37347984313964844,
+    "ood_score": 0.37347978353500366,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6265201568603516
+    "confidence": 0.6265202164649963
   },
   {
     "index": 1138,
@@ -9114,7 +9114,7 @@
   {
     "index": 1139,
     "name": "1139",
-    "ood_score": 0.2770150899887085,
+    "ood_score": 0.2770151197910309,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7229849100112915
@@ -9210,10 +9210,10 @@
   {
     "index": 1151,
     "name": "1151",
-    "ood_score": 0.23899886012077332,
+    "ood_score": 0.23899884521961212,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7610011100769043
+    "confidence": 0.7610011696815491
   },
   {
     "index": 1152,
@@ -9258,7 +9258,7 @@
   {
     "index": 1157,
     "name": "1157",
-    "ood_score": 0.39897000789642334,
+    "ood_score": 0.39896997809410095,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6010299921035767
@@ -9274,7 +9274,7 @@
   {
     "index": 1159,
     "name": "1159",
-    "ood_score": 0.23823633790016174,
+    "ood_score": 0.23823632299900055,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7617636919021606
@@ -9370,10 +9370,10 @@
   {
     "index": 1171,
     "name": "1171",
-    "ood_score": 0.20685796439647675,
+    "ood_score": 0.20685794949531555,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7931420207023621
+    "confidence": 0.7931420803070068
   },
   {
     "index": 1172,
@@ -9442,10 +9442,10 @@
   {
     "index": 1180,
     "name": "1180",
-    "ood_score": 0.22003284096717834,
+    "ood_score": 0.22003285586833954,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.779967188835144
+    "confidence": 0.7799671292304993
   },
   {
     "index": 1181,
@@ -9482,10 +9482,10 @@
   {
     "index": 1185,
     "name": "1185",
-    "ood_score": 0.22772452235221863,
+    "ood_score": 0.22772450745105743,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.772275447845459
+    "confidence": 0.7722755074501038
   },
   {
     "index": 1186,
@@ -9610,7 +9610,7 @@
   {
     "index": 1201,
     "name": "1201",
-    "ood_score": 0.28534409403800964,
+    "ood_score": 0.28534412384033203,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.714655876159668
@@ -9658,7 +9658,7 @@
   {
     "index": 1207,
     "name": "1207",
-    "ood_score": 0.12579935789108276,
+    "ood_score": 0.12579934298992157,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8742006421089172
@@ -9682,10 +9682,10 @@
   {
     "index": 1210,
     "name": "1210",
-    "ood_score": 0.45149046182632446,
+    "ood_score": 0.4514904320240021,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.5485095381736755
+    "confidence": 0.5485095977783203
   },
   {
     "index": 1211,
@@ -9706,7 +9706,7 @@
   {
     "index": 1213,
     "name": "1213",
-    "ood_score": 0.4503868818283081,
+    "ood_score": 0.4503869116306305,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5496131181716919
@@ -9738,7 +9738,7 @@
   {
     "index": 1217,
     "name": "1217",
-    "ood_score": 0.2308591604232788,
+    "ood_score": 0.23085917532444,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7691408395767212
@@ -9762,7 +9762,7 @@
   {
     "index": 1220,
     "name": "1220",
-    "ood_score": 0.26077696681022644,
+    "ood_score": 0.26077699661254883,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7392230033874512
@@ -9826,7 +9826,7 @@
   {
     "index": 1228,
     "name": "1228",
-    "ood_score": 0.10906989127397537,
+    "ood_score": 0.10906988382339478,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8909301161766052
@@ -9882,7 +9882,7 @@
   {
     "index": 1235,
     "name": "1235",
-    "ood_score": 0.2588775157928467,
+    "ood_score": 0.2588774859905243,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7411224842071533
@@ -9898,10 +9898,10 @@
   {
     "index": 1237,
     "name": "1237",
-    "ood_score": 0.14225783944129944,
+    "ood_score": 0.14225785434246063,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.857742190361023
+    "confidence": 0.8577421307563782
   },
   {
     "index": 1238,
@@ -9914,7 +9914,7 @@
   {
     "index": 1239,
     "name": "1239",
-    "ood_score": 0.3196899890899658,
+    "ood_score": 0.3196900188922882,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6803100109100342
@@ -9954,10 +9954,10 @@
   {
     "index": 1244,
     "name": "1244",
-    "ood_score": 0.20778658986091614,
+    "ood_score": 0.20778660476207733,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7922134399414062
+    "confidence": 0.7922133803367615
   },
   {
     "index": 1245,
@@ -9978,7 +9978,7 @@
   {
     "index": 1247,
     "name": "1247",
-    "ood_score": 0.1136162132024765,
+    "ood_score": 0.1136162206530571,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8863837718963623
@@ -9994,7 +9994,7 @@
   {
     "index": 1249,
     "name": "1249",
-    "ood_score": 0.38133955001831055,
+    "ood_score": 0.38133952021598816,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6186604499816895
@@ -10010,7 +10010,7 @@
   {
     "index": 1251,
     "name": "1251",
-    "ood_score": 0.4081381857395172,
+    "ood_score": 0.4081381559371948,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5918618440628052
@@ -10210,7 +10210,7 @@
   {
     "index": 1276,
     "name": "1276",
-    "ood_score": 0.42342257499694824,
+    "ood_score": 0.42342260479927063,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5765774250030518
@@ -10250,7 +10250,7 @@
   {
     "index": 1281,
     "name": "1281",
-    "ood_score": 0.21608185768127441,
+    "ood_score": 0.21608182787895203,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7839181423187256
@@ -10266,10 +10266,10 @@
   {
     "index": 1283,
     "name": "1283",
-    "ood_score": 0.32076868414878845,
+    "ood_score": 0.32076865434646606,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6792312860488892
+    "confidence": 0.6792313456535339
   },
   {
     "index": 1284,
@@ -10306,7 +10306,7 @@
   {
     "index": 1288,
     "name": "1288",
-    "ood_score": 0.08260326087474823,
+    "ood_score": 0.08260326832532883,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.9173967242240906
@@ -10314,10 +10314,10 @@
   {
     "index": 1289,
     "name": "1289",
-    "ood_score": 0.4621751010417938,
+    "ood_score": 0.46217507123947144,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.5378248691558838
+    "confidence": 0.5378249287605286
   },
   {
     "index": 1290,
@@ -10330,7 +10330,7 @@
   {
     "index": 1291,
     "name": "1291",
-    "ood_score": 0.3727904260158539,
+    "ood_score": 0.37279045581817627,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6272095441818237
@@ -10362,7 +10362,7 @@
   {
     "index": 1295,
     "name": "1295",
-    "ood_score": 0.2836127281188965,
+    "ood_score": 0.2836126983165741,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7163872718811035
@@ -10474,7 +10474,7 @@
   {
     "index": 1309,
     "name": "1309",
-    "ood_score": 0.11389779299497604,
+    "ood_score": 0.11389780044555664,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8861021995544434
@@ -10554,7 +10554,7 @@
   {
     "index": 1319,
     "name": "1319",
-    "ood_score": 0.15353049337863922,
+    "ood_score": 0.15353047847747803,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.846469521522522
@@ -10562,7 +10562,7 @@
   {
     "index": 1320,
     "name": "1320",
-    "ood_score": 0.08798129111528397,
+    "ood_score": 0.08798129856586456,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.9120187163352966
@@ -10682,7 +10682,7 @@
   {
     "index": 1335,
     "name": "1335",
-    "ood_score": 0.3891656696796417,
+    "ood_score": 0.38916563987731934,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6108343601226807
@@ -10698,7 +10698,7 @@
   {
     "index": 1337,
     "name": "1337",
-    "ood_score": 0.087347611784935,
+    "ood_score": 0.0873476043343544,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.9126523733139038
@@ -10706,7 +10706,7 @@
   {
     "index": 1338,
     "name": "1338",
-    "ood_score": 0.3832962214946747,
+    "ood_score": 0.38329625129699707,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6167037487030029
@@ -10714,7 +10714,7 @@
   {
     "index": 1339,
     "name": "1339",
-    "ood_score": 0.0859019011259079,
+    "ood_score": 0.0859018936753273,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.9140980839729309
@@ -10738,10 +10738,10 @@
   {
     "index": 1342,
     "name": "1342",
-    "ood_score": 0.20147404074668884,
+    "ood_score": 0.20147402584552765,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7985259294509888
+    "confidence": 0.7985259890556335
   },
   {
     "index": 1343,
@@ -10794,7 +10794,7 @@
   {
     "index": 1349,
     "name": "1349",
-    "ood_score": 0.2530752122402191,
+    "ood_score": 0.2530752420425415,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7469247579574585
@@ -10802,10 +10802,10 @@
   {
     "index": 1350,
     "name": "1350",
-    "ood_score": 0.1928482949733734,
+    "ood_score": 0.19284828007221222,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8071516752243042
+    "confidence": 0.807151734828949
   },
   {
     "index": 1351,
@@ -10970,7 +10970,7 @@
   {
     "index": 1371,
     "name": "1371",
-    "ood_score": 0.2891515791416168,
+    "ood_score": 0.28915154933929443,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7108484506607056
@@ -11058,7 +11058,7 @@
   {
     "index": 1382,
     "name": "1382",
-    "ood_score": 0.45543646812438965,
+    "ood_score": 0.45543643832206726,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5445635318756104
@@ -11210,7 +11210,7 @@
   {
     "index": 1401,
     "name": "1401",
-    "ood_score": 0.11086811125278473,
+    "ood_score": 0.11086810380220413,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8891319036483765
@@ -11226,7 +11226,7 @@
   {
     "index": 1403,
     "name": "1403",
-    "ood_score": 0.2559621334075928,
+    "ood_score": 0.25596216320991516,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7440378665924072
@@ -11306,7 +11306,7 @@
   {
     "index": 1413,
     "name": "1413",
-    "ood_score": 0.09663088619709015,
+    "ood_score": 0.09663087874650955,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.903369128704071
@@ -11322,7 +11322,7 @@
   {
     "index": 1415,
     "name": "1415",
-    "ood_score": 0.14355310797691345,
+    "ood_score": 0.14355312287807465,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8564468622207642
@@ -11370,10 +11370,10 @@
   {
     "index": 1421,
     "name": "1421",
-    "ood_score": 0.1433291733264923,
+    "ood_score": 0.1433291882276535,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8566708564758301
+    "confidence": 0.8566707968711853
   },
   {
     "index": 1422,
@@ -11402,15 +11402,15 @@
   {
     "index": 1425,
     "name": "1425",
-    "ood_score": 0.25092217326164246,
+    "ood_score": 0.25092214345932007,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7490777969360352
+    "confidence": 0.7490778565406799
   },
   {
     "index": 1426,
     "name": "1426",
-    "ood_score": 0.18177247047424316,
+    "ood_score": 0.18177248537540436,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8182275295257568
@@ -11466,7 +11466,7 @@
   {
     "index": 1433,
     "name": "1433",
-    "ood_score": 0.08864399790763855,
+    "ood_score": 0.08864400535821915,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.9113559722900391
@@ -11490,7 +11490,7 @@
   {
     "index": 1436,
     "name": "1436",
-    "ood_score": 0.28119733929634094,
+    "ood_score": 0.28119730949401855,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7188026905059814
@@ -11546,7 +11546,7 @@
   {
     "index": 1443,
     "name": "1443",
-    "ood_score": 0.14081978797912598,
+    "ood_score": 0.14081980288028717,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.859180212020874
@@ -11674,7 +11674,7 @@
   {
     "index": 1459,
     "name": "1459",
-    "ood_score": 0.10033783316612244,
+    "ood_score": 0.10033784061670303,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8996621370315552
@@ -11690,10 +11690,10 @@
   {
     "index": 1461,
     "name": "1461",
-    "ood_score": 0.25892600417137146,
+    "ood_score": 0.2589259743690491,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7410739660263062
+    "confidence": 0.7410740256309509
   },
   {
     "index": 1462,
@@ -11738,7 +11738,7 @@
   {
     "index": 1467,
     "name": "1467",
-    "ood_score": 0.14364418387413025,
+    "ood_score": 0.14364419877529144,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8563557863235474
@@ -11810,10 +11810,10 @@
   {
     "index": 1476,
     "name": "1476",
-    "ood_score": 0.1358151137828827,
+    "ood_score": 0.1358150988817215,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8641848564147949
+    "confidence": 0.8641849160194397
   },
   {
     "index": 1477,
@@ -11826,7 +11826,7 @@
   {
     "index": 1478,
     "name": "1478",
-    "ood_score": 0.10981176048517227,
+    "ood_score": 0.10981176793575287,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8901882171630859
@@ -11842,10 +11842,10 @@
   {
     "index": 1480,
     "name": "1480",
-    "ood_score": 0.26302745938301086,
+    "ood_score": 0.26302748918533325,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7369725704193115
+    "confidence": 0.7369725108146667
   },
   {
     "index": 1481,
@@ -11866,7 +11866,7 @@
   {
     "index": 1483,
     "name": "1483",
-    "ood_score": 0.1224922463297844,
+    "ood_score": 0.1224922388792038,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.877507746219635
@@ -11914,7 +11914,7 @@
   {
     "index": 1489,
     "name": "1489",
-    "ood_score": 0.08773240447044373,
+    "ood_score": 0.08773241192102432,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.9122675657272339
@@ -12018,7 +12018,7 @@
   {
     "index": 1502,
     "name": "1502",
-    "ood_score": 0.11497574299573898,
+    "ood_score": 0.11497575044631958,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8850242495536804
@@ -12026,7 +12026,7 @@
   {
     "index": 1503,
     "name": "1503",
-    "ood_score": 0.12288175523281097,
+    "ood_score": 0.12288174778223038,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8771182298660278
@@ -12194,7 +12194,7 @@
   {
     "index": 1524,
     "name": "1524",
-    "ood_score": 0.09891337901353836,
+    "ood_score": 0.09891338646411896,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.9010866284370422
@@ -12210,7 +12210,7 @@
   {
     "index": 1526,
     "name": "1526",
-    "ood_score": 0.188837468624115,
+    "ood_score": 0.1888374537229538,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.811162531375885
@@ -12258,7 +12258,7 @@
   {
     "index": 1532,
     "name": "1532",
-    "ood_score": 0.0804920420050621,
+    "ood_score": 0.0804920345544815,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.9195079803466797
@@ -12298,7 +12298,7 @@
   {
     "index": 1537,
     "name": "1537",
-    "ood_score": 0.10151214152574539,
+    "ood_score": 0.10151214897632599,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8984878659248352
@@ -12474,10 +12474,10 @@
   {
     "index": 1559,
     "name": "1559",
-    "ood_score": 0.11892863363027573,
+    "ood_score": 0.11892864108085632,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8810713887214661
+    "confidence": 0.8810713291168213
   },
   {
     "index": 1560,
@@ -12642,10 +12642,10 @@
   {
     "index": 1580,
     "name": "1580",
-    "ood_score": 0.2759067416191101,
+    "ood_score": 0.2759067714214325,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7240932583808899
+    "confidence": 0.7240931987762451
   },
   {
     "index": 1581,
@@ -12658,7 +12658,7 @@
   {
     "index": 1582,
     "name": "1582",
-    "ood_score": 0.23248054087162018,
+    "ood_score": 0.23248052597045898,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.767519474029541
@@ -12738,10 +12738,10 @@
   {
     "index": 1592,
     "name": "1592",
-    "ood_score": 0.221034973859787,
+    "ood_score": 0.2210349589586258,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7789649963378906
+    "confidence": 0.7789650559425354
   },
   {
     "index": 1593,
@@ -12786,10 +12786,10 @@
   {
     "index": 1598,
     "name": "1598",
-    "ood_score": 0.11135360598564148,
+    "ood_score": 0.11135359853506088,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8886463642120361
+    "confidence": 0.8886464238166809
   },
   {
     "index": 1599,
@@ -12802,7 +12802,7 @@
   {
     "index": 1600,
     "name": "1600",
-    "ood_score": 0.10856831818819046,
+    "ood_score": 0.10856831073760986,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8914316892623901
@@ -12834,10 +12834,10 @@
   {
     "index": 1604,
     "name": "1604",
-    "ood_score": 0.15950161218643188,
+    "ood_score": 0.15950164198875427,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8404983878135681
+    "confidence": 0.8404983282089233
   },
   {
     "index": 1605,
@@ -12922,7 +12922,7 @@
   {
     "index": 1615,
     "name": "1615",
-    "ood_score": 0.11626173555850983,
+    "ood_score": 0.11626172810792923,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8837382793426514
@@ -12978,10 +12978,10 @@
   {
     "index": 1622,
     "name": "1622",
-    "ood_score": 0.24421292543411255,
+    "ood_score": 0.24421295523643494,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7557870745658875
+    "confidence": 0.7557870149612427
   },
   {
     "index": 1623,
@@ -13002,7 +13002,7 @@
   {
     "index": 1625,
     "name": "1625",
-    "ood_score": 0.0888579934835434,
+    "ood_score": 0.08885800093412399,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.9111419916152954
@@ -13042,7 +13042,7 @@
   {
     "index": 1630,
     "name": "1630",
-    "ood_score": 0.27632415294647217,
+    "ood_score": 0.2763241231441498,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7236758470535278
@@ -13202,7 +13202,7 @@
   {
     "index": 1650,
     "name": "1650",
-    "ood_score": 0.17148995399475098,
+    "ood_score": 0.17148996889591217,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.828510046005249
@@ -13330,7 +13330,7 @@
   {
     "index": 1666,
     "name": "1666",
-    "ood_score": 0.49439629912376404,
+    "ood_score": 0.4943963289260864,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5056036710739136
@@ -13402,7 +13402,7 @@
   {
     "index": 1675,
     "name": "1675",
-    "ood_score": 0.17169207334518433,
+    "ood_score": 0.17169205844402313,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8283079266548157
@@ -13426,10 +13426,10 @@
   {
     "index": 1678,
     "name": "1678",
-    "ood_score": 0.2910834848880768,
+    "ood_score": 0.29108351469039917,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7089165449142456
+    "confidence": 0.7089164853096008
   },
   {
     "index": 1679,
@@ -13450,10 +13450,10 @@
   {
     "index": 1681,
     "name": "1681",
-    "ood_score": 0.15702003240585327,
+    "ood_score": 0.15702000260353088,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8429799675941467
+    "confidence": 0.8429800271987915
   },
   {
     "index": 1682,
@@ -13546,7 +13546,7 @@
   {
     "index": 1693,
     "name": "1693",
-    "ood_score": 0.14229869842529297,
+    "ood_score": 0.14229868352413177,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.857701301574707
@@ -13570,10 +13570,10 @@
   {
     "index": 1696,
     "name": "1696",
-    "ood_score": 0.34323805570602417,
+    "ood_score": 0.34323808550834656,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6567619442939758
+    "confidence": 0.656761884689331
   },
   {
     "index": 1697,
@@ -13610,7 +13610,7 @@
   {
     "index": 1701,
     "name": "1701",
-    "ood_score": 0.17706944048404694,
+    "ood_score": 0.17706945538520813,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8229305744171143
@@ -13618,7 +13618,7 @@
   {
     "index": 1702,
     "name": "1702",
-    "ood_score": 0.10680856555700302,
+    "ood_score": 0.10680855810642242,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8931914567947388
@@ -13674,7 +13674,7 @@
   {
     "index": 1709,
     "name": "1709",
-    "ood_score": 0.33445170521736145,
+    "ood_score": 0.33445167541503906,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6655483245849609
@@ -13698,7 +13698,7 @@
   {
     "index": 1712,
     "name": "1712",
-    "ood_score": 0.3783048391342163,
+    "ood_score": 0.3783048093318939,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6216951608657837
@@ -13706,10 +13706,10 @@
   {
     "index": 1713,
     "name": "1713",
-    "ood_score": 0.2935469448566437,
+    "ood_score": 0.29354697465896606,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7064530849456787
+    "confidence": 0.7064530253410339
   },
   {
     "index": 1714,
@@ -13730,7 +13730,7 @@
   {
     "index": 1716,
     "name": "1716",
-    "ood_score": 0.12829135358333588,
+    "ood_score": 0.12829136848449707,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8717086315155029
@@ -13762,18 +13762,18 @@
   {
     "index": 1720,
     "name": "1720",
-    "ood_score": 0.3511114716529846,
+    "ood_score": 0.35111141204833984,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6488885283470154
+    "confidence": 0.6488885879516602
   },
   {
     "index": 1721,
     "name": "1721",
-    "ood_score": 0.3739960789680481,
+    "ood_score": 0.3739960491657257,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6260039210319519
+    "confidence": 0.6260039806365967
   },
   {
     "index": 1722,
@@ -13786,7 +13786,7 @@
   {
     "index": 1723,
     "name": "1723",
-    "ood_score": 0.23756472766399384,
+    "ood_score": 0.23756474256515503,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.762435257434845
@@ -13834,10 +13834,10 @@
   {
     "index": 1729,
     "name": "1729",
-    "ood_score": 0.3571752905845642,
+    "ood_score": 0.3571753203868866,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6428247094154358
+    "confidence": 0.642824649810791
   },
   {
     "index": 1730,
@@ -13898,10 +13898,10 @@
   {
     "index": 1737,
     "name": "1737",
-    "ood_score": 0.360586941242218,
+    "ood_score": 0.36058691143989563,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.639413058757782
+    "confidence": 0.6394131183624268
   },
   {
     "index": 1738,
@@ -13922,7 +13922,7 @@
   {
     "index": 1740,
     "name": "1740",
-    "ood_score": 0.33937108516693115,
+    "ood_score": 0.33937111496925354,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6606289148330688
@@ -13930,10 +13930,10 @@
   {
     "index": 1741,
     "name": "1741",
-    "ood_score": 0.12742216885089874,
+    "ood_score": 0.12742218375205994,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8725778460502625
+    "confidence": 0.8725777864456177
   },
   {
     "index": 1742,
@@ -14018,7 +14018,7 @@
   {
     "index": 1752,
     "name": "1752",
-    "ood_score": 0.21609017252922058,
+    "ood_score": 0.21609018743038177,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.783909797668457
@@ -14074,10 +14074,10 @@
   {
     "index": 1759,
     "name": "1759",
-    "ood_score": 0.361331969499588,
+    "ood_score": 0.3613319993019104,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6386680603027344
+    "confidence": 0.6386680006980896
   },
   {
     "index": 1760,
@@ -14090,10 +14090,10 @@
   {
     "index": 1761,
     "name": "1761",
-    "ood_score": 0.364907830953598,
+    "ood_score": 0.36490780115127563,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6350921392440796
+    "confidence": 0.6350921988487244
   },
   {
     "index": 1762,
@@ -14106,7 +14106,7 @@
   {
     "index": 1763,
     "name": "1763",
-    "ood_score": 0.09862682968378067,
+    "ood_score": 0.09862682223320007,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.9013731479644775
@@ -14130,15 +14130,15 @@
   {
     "index": 1766,
     "name": "1766",
-    "ood_score": 0.4157567620277405,
+    "ood_score": 0.4157567322254181,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.5842432379722595
+    "confidence": 0.5842432975769043
   },
   {
     "index": 1767,
     "name": "1767",
-    "ood_score": 0.19866226613521576,
+    "ood_score": 0.19866228103637695,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.801337718963623
@@ -14170,7 +14170,7 @@
   {
     "index": 1771,
     "name": "1771",
-    "ood_score": 0.2401285320520401,
+    "ood_score": 0.2401285469532013,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7598714828491211
@@ -14218,7 +14218,7 @@
   {
     "index": 1777,
     "name": "1777",
-    "ood_score": 0.09662989526987076,
+    "ood_score": 0.09662990272045135,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.9033700823783875
@@ -14226,10 +14226,10 @@
   {
     "index": 1778,
     "name": "1778",
-    "ood_score": 0.4696410000324249,
+    "ood_score": 0.4696410298347473,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.5303590297698975
+    "confidence": 0.5303589701652527
   },
   {
     "index": 1779,
@@ -14282,7 +14282,7 @@
   {
     "index": 1785,
     "name": "1785",
-    "ood_score": 0.1649983823299408,
+    "ood_score": 0.164998397231102,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8350015878677368
@@ -14298,7 +14298,7 @@
   {
     "index": 1787,
     "name": "1787",
-    "ood_score": 0.23429062962532043,
+    "ood_score": 0.23429061472415924,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.765709400177002
@@ -14314,10 +14314,10 @@
   {
     "index": 1789,
     "name": "1789",
-    "ood_score": 0.2832391560077667,
+    "ood_score": 0.2832391858100891,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7167608737945557
+    "confidence": 0.7167608141899109
   },
   {
     "index": 1790,
@@ -14458,18 +14458,18 @@
   {
     "index": 1807,
     "name": "1807",
-    "ood_score": 0.26405614614486694,
+    "ood_score": 0.26405611634254456,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7359438538551331
+    "confidence": 0.7359439134597778
   },
   {
     "index": 1808,
     "name": "1808",
-    "ood_score": 0.1633870154619217,
+    "ood_score": 0.16338703036308289,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8366129994392395
+    "confidence": 0.8366129398345947
   },
   {
     "index": 1809,
@@ -14514,10 +14514,10 @@
   {
     "index": 1814,
     "name": "1814",
-    "ood_score": 0.17643480002880096,
+    "ood_score": 0.17643478512763977,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8235651850700378
+    "confidence": 0.8235652446746826
   },
   {
     "index": 1815,
@@ -14538,7 +14538,7 @@
   {
     "index": 1817,
     "name": "1817",
-    "ood_score": 0.1181502416729927,
+    "ood_score": 0.11815023422241211,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8818497657775879
@@ -14546,7 +14546,7 @@
   {
     "index": 1818,
     "name": "1818",
-    "ood_score": 0.38269031047821045,
+    "ood_score": 0.38269034028053284,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6173096895217896
@@ -14698,7 +14698,7 @@
   {
     "index": 1837,
     "name": "1837",
-    "ood_score": 0.2985124886035919,
+    "ood_score": 0.29851245880126953,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7014875411987305
@@ -14842,10 +14842,10 @@
   {
     "index": 1855,
     "name": "1855",
-    "ood_score": 0.2639286518096924,
+    "ood_score": 0.26392871141433716,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7360713481903076
+    "confidence": 0.7360712885856628
   },
   {
     "index": 1856,
@@ -14866,10 +14866,10 @@
   {
     "index": 1858,
     "name": "1858",
-    "ood_score": 0.3300006687641144,
+    "ood_score": 0.33000069856643677,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.669999361038208
+    "confidence": 0.6699993014335632
   },
   {
     "index": 1859,
@@ -14930,10 +14930,10 @@
   {
     "index": 1866,
     "name": "1866",
-    "ood_score": 0.30497798323631287,
+    "ood_score": 0.3049779534339905,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6950219869613647
+    "confidence": 0.6950220465660095
   },
   {
     "index": 1867,
@@ -14962,7 +14962,7 @@
   {
     "index": 1870,
     "name": "1870",
-    "ood_score": 0.2118747979402542,
+    "ood_score": 0.21187478303909302,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.788125216960907
@@ -14978,7 +14978,7 @@
   {
     "index": 1872,
     "name": "1872",
-    "ood_score": 0.31887197494506836,
+    "ood_score": 0.31887200474739075,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6811280250549316
@@ -14994,7 +14994,7 @@
   {
     "index": 1874,
     "name": "1874",
-    "ood_score": 0.289141446352005,
+    "ood_score": 0.2891414165496826,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7108585834503174
@@ -15066,7 +15066,7 @@
   {
     "index": 1883,
     "name": "1883",
-    "ood_score": 0.30415236949920654,
+    "ood_score": 0.30415239930152893,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6958476305007935
@@ -15090,7 +15090,7 @@
   {
     "index": 1886,
     "name": "1886",
-    "ood_score": 0.11465951055288315,
+    "ood_score": 0.11465950310230255,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8853405117988586
@@ -15098,10 +15098,10 @@
   {
     "index": 1887,
     "name": "1887",
-    "ood_score": 0.37928515672683716,
+    "ood_score": 0.37928518652915955,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6207148432731628
+    "confidence": 0.6207147836685181
   },
   {
     "index": 1888,
@@ -15154,7 +15154,7 @@
   {
     "index": 1894,
     "name": "1894",
-    "ood_score": 0.2065219283103943,
+    "ood_score": 0.2065219134092331,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7934780716896057
@@ -15202,7 +15202,7 @@
   {
     "index": 1900,
     "name": "1900",
-    "ood_score": 0.41178441047668457,
+    "ood_score": 0.4117843806743622,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5882155895233154
@@ -15250,10 +15250,10 @@
   {
     "index": 1906,
     "name": "1906",
-    "ood_score": 0.24030904471874237,
+    "ood_score": 0.24030902981758118,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7596909403800964
+    "confidence": 0.7596909999847412
   },
   {
     "index": 1907,
@@ -15266,10 +15266,10 @@
   {
     "index": 1908,
     "name": "1908",
-    "ood_score": 0.2868010103702545,
+    "ood_score": 0.2868010401725769,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7131990194320679
+    "confidence": 0.7131989598274231
   },
   {
     "index": 1909,
@@ -15298,7 +15298,7 @@
   {
     "index": 1912,
     "name": "1912",
-    "ood_score": 0.20379391312599182,
+    "ood_score": 0.20379389822483063,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7962061166763306
@@ -15314,7 +15314,7 @@
   {
     "index": 1914,
     "name": "1914",
-    "ood_score": 0.26366010308265686,
+    "ood_score": 0.2636600732803345,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7363399267196655
@@ -15346,10 +15346,10 @@
   {
     "index": 1918,
     "name": "1918",
-    "ood_score": 0.27619317173957825,
+    "ood_score": 0.27619320154190063,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7238068580627441
+    "confidence": 0.7238067984580994
   },
   {
     "index": 1919,
@@ -15410,7 +15410,7 @@
   {
     "index": 1926,
     "name": "1926",
-    "ood_score": 0.10398013144731522,
+    "ood_score": 0.10398012399673462,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8960198760032654
@@ -15458,7 +15458,7 @@
   {
     "index": 1932,
     "name": "1932",
-    "ood_score": 0.2096988409757614,
+    "ood_score": 0.2096988558769226,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7903011441230774
@@ -15490,10 +15490,10 @@
   {
     "index": 1936,
     "name": "1936",
-    "ood_score": 0.31265074014663696,
+    "ood_score": 0.31265076994895935,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.687349259853363
+    "confidence": 0.6873492002487183
   },
   {
     "index": 1937,
@@ -15586,10 +15586,10 @@
   {
     "index": 1948,
     "name": "1948",
-    "ood_score": 0.32538822293281555,
+    "ood_score": 0.32538825273513794,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6746118068695068
+    "confidence": 0.6746117472648621
   },
   {
     "index": 1949,
@@ -15610,15 +15610,15 @@
   {
     "index": 1951,
     "name": "1951",
-    "ood_score": 0.3803230822086334,
+    "ood_score": 0.3803231120109558,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.619676947593689
+    "confidence": 0.6196768879890442
   },
   {
     "index": 1952,
     "name": "1952",
-    "ood_score": 0.4379591941833496,
+    "ood_score": 0.437959223985672,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.5620408058166504
@@ -15754,10 +15754,10 @@
   {
     "index": 1969,
     "name": "1969",
-    "ood_score": 0.3649778962135315,
+    "ood_score": 0.36497795581817627,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6350221037864685
+    "confidence": 0.6350220441818237
   },
   {
     "index": 1970,
@@ -15794,7 +15794,7 @@
   {
     "index": 1974,
     "name": "1974",
-    "ood_score": 0.29019272327423096,
+    "ood_score": 0.29019275307655334,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.709807276725769
@@ -15834,10 +15834,10 @@
   {
     "index": 1979,
     "name": "1979",
-    "ood_score": 0.2696160674095154,
+    "ood_score": 0.26961609721183777,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7303839325904846
+    "confidence": 0.7303838729858398
   },
   {
     "index": 1980,
@@ -15850,7 +15850,7 @@
   {
     "index": 1981,
     "name": "1981",
-    "ood_score": 0.09469843655824661,
+    "ood_score": 0.09469842910766602,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.905301570892334
@@ -15890,7 +15890,7 @@
   {
     "index": 1986,
     "name": "1986",
-    "ood_score": 0.31042012572288513,
+    "ood_score": 0.3104201555252075,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.6895798444747925
@@ -15922,7 +15922,7 @@
   {
     "index": 1990,
     "name": "1990",
-    "ood_score": 0.20130373537540436,
+    "ood_score": 0.20130372047424316,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7986962795257568
@@ -15962,10 +15962,10 @@
   {
     "index": 1995,
     "name": "1995",
-    "ood_score": 0.3827725052833557,
+    "ood_score": 0.3827724754810333,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6172274947166443
+    "confidence": 0.6172275543212891
   },
   {
     "index": 1996,
@@ -16002,7 +16002,7 @@
   {
     "index": 2000,
     "name": "2000",
-    "ood_score": 0.1096789538860321,
+    "ood_score": 0.1096789613366127,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.8903210163116455
@@ -16058,7 +16058,7 @@
   {
     "index": 2007,
     "name": "2007",
-    "ood_score": 0.2664269208908081,
+    "ood_score": 0.2664269506931305,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.7335730791091919
@@ -16090,7 +16090,7 @@
   {
     "index": 2011,
     "name": "2011",
-    "ood_score": 0.10194461792707443,
+    "ood_score": 0.10194462537765503,
     "is_ood": false,
     "ood_label": null,
     "confidence": 0.898055374622345

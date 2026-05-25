@@ -9,15 +9,20 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-try:
-    from scipy import ndimage
-except Exception:
-    ndimage = None
-
 from medsam_modular.cache import PredictionCache, make_cache_key
+from medsam_modular.config import ENV_DEFAULTS
 from medsam_modular.model import build_inputs_batch, predict_prob_masks_from_inputs
 
 PerformanceProfiler = Any
+
+
+def _env(name: str, fallback: str = "") -> str:
+    return os.getenv(name, ENV_DEFAULTS.get(name, fallback))
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = _env(name, "1" if default else "0").strip().lower()
+    return raw in {"1", "true", "yes", "y", "on"}
 
 
 def get_active_profiler() -> None:
@@ -39,6 +44,7 @@ def _build_stats_from_store(
     uncertainties: Optional[List[float]] = None,
     ood_eval_scores: Optional[List[float]] = None,
     ood_eval_labels: Optional[List[int]] = None,
+    eval_config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     mean_dice, std_dice = _mean_std(metrics_store["dice"])
     mean_jaccard, std_jaccard = _mean_std(metrics_store["jaccard"])
@@ -47,9 +53,11 @@ def _build_stats_from_store(
     mean_sensitivity, std_sensitivity = _mean_std(metrics_store.get("sensitivity", metrics_store["recall"]))
     mean_f1, std_f1 = _mean_std(metrics_store["f1"])
     mean_bce, std_bce = _mean_std(metrics_store.get("bce", [0.0]))
-    mean_hd95, std_hd95 = _mean_std(metrics_store.get("hd95", [float("nan")]))
-    mean_assd, std_assd = _mean_std(metrics_store.get("assd", [float("nan")]))
     mean_ece, std_ece = _mean_std(metrics_store.get("ece", [float("nan")]))
+    dice_1pct_low = _percentile(metrics_store["dice"], 1.0)
+    jaccard_1pct_low = _percentile(metrics_store["jaccard"], 1.0)
+    f1_1pct_low = _percentile(metrics_store["f1"], 1.0)
+    sensitivity_1pct_low = _percentile(metrics_store.get("sensitivity", metrics_store["recall"]), 1.0)
 
     stats: Dict[str, Any] = {
         "dataset": dataset_name,
@@ -68,12 +76,12 @@ def _build_stats_from_store(
         "std_f1": std_f1,
         "mean_bce": mean_bce,
         "std_bce": std_bce,
-        "mean_hd95": mean_hd95,
-        "std_hd95": std_hd95,
-        "mean_assd": mean_assd,
-        "std_assd": std_assd,
         "mean_ece": mean_ece,
         "std_ece": std_ece,
+        "dice_1pct_low": dice_1pct_low,
+        "jaccard_1pct_low": jaccard_1pct_low,
+        "f1_1pct_low": f1_1pct_low,
+        "sensitivity_1pct_low": sensitivity_1pct_low,
         "total_time_sec": float(total_time),
         "avg_inference_time_ms": float(np.mean(inference_times) * 1000.0),
         "avg_data_time_ms": float(np.mean(data_times) * 1000.0),
@@ -97,6 +105,9 @@ def _build_stats_from_store(
         stats["mean_uncertainty"] = float(np.mean(uncertainties))
         stats["std_uncertainty"] = float(np.std(uncertainties))
 
+    if eval_config:
+        stats["eval_config"] = dict(eval_config)
+
     component_totals = {
         "data": float(np.sum(data_times)),
         "inference": float(np.sum(inference_times)),
@@ -111,13 +122,13 @@ def _build_stats_from_store(
 
 
 def _maybe_warm_dataset_cache(dataset: Any, dataset_name: str, profiler: Optional[PerformanceProfiler], profile_prefix: str) -> None:
-    warm_enabled = os.getenv("MEDSAM_EVAL_WARM_CACHE", "1").strip().lower() in {"1", "true", "yes", "y", "on"}
+    warm_enabled = _env_bool("MEDSAM_EVAL_WARM_CACHE", True)
     if not warm_enabled:
         return
     if not hasattr(dataset, "__len__"):
         return
 
-    warm_samples = max(0, int(os.getenv("MEDSAM_EVAL_WARM_SAMPLES", "16")))
+    warm_samples = max(0, int(_env("MEDSAM_EVAL_WARM_SAMPLES", "16")))
     if warm_samples <= 0:
         return
 
@@ -208,7 +219,7 @@ def _run_eval_probe(
         _ = compute_metrics_batch_tensor(pred_batch_t, gt_batch_t)
         _ = compute_bce_batch_tensor(prob_batch_t, gt_batch_t)
         _ = compute_ece_batch_tensor(prob_batch_t, gt_batch_t)
-        _ = compute_surface_metrics_batch_tensor(pred_batch_t, gt_batch_t)
+        _ = compute_ece_batch_tensor(prob_batch_t, gt_batch_t)
 
 
 def _benchmark_probe_throughput(
@@ -282,8 +293,8 @@ def _benchmark_probe_throughput(
         _ = compute_bce_batch_tensor(tta_prob_stack, gt_batch_t)
         _ = compute_ece_batch_tensor(prob_batch_t, gt_batch_t)
         _ = compute_ece_batch_tensor(tta_prob_stack, gt_batch_t)
-        _ = compute_surface_metrics_batch_tensor(pred_batch_t, gt_batch_t)
-        _ = compute_surface_metrics_batch_tensor(tta_pred_stack, gt_batch_t)
+        _ = compute_ece_batch_tensor(prob_batch_t, gt_batch_t)
+        _ = compute_ece_batch_tensor(tta_prob_stack, gt_batch_t)
 
 
 def _auto_tune_eval_batch_size(
@@ -297,21 +308,53 @@ def _auto_tune_eval_batch_size(
     default_eval_batch: int,
     ood_detector: Optional[Any] = None,
     tta_predictor: Optional[Any] = None,
-) -> int:
+) -> Tuple[int, Dict[str, Any]]:
     if device != "cuda":
-        return max(1, int(default_eval_batch))
+        batch = max(1, int(default_eval_batch))
+        return batch, {
+            "source": "autobatch",
+            "reason": "non_cuda",
+            "raw_batch": int(batch),
+            "max_stable": int(batch),
+            "probe_tput": None,
+            "safety": 1.0,
+        }
 
-    tune_enabled = os.getenv("MEDSAM_EVAL_AUTOBATCH", "1").strip().lower() in {"1", "true", "yes", "y", "on"}
+    tune_enabled = _env_bool("MEDSAM_EVAL_AUTOBATCH", True)
     if not tune_enabled:
-        return max(1, int(default_eval_batch))
+        batch = max(1, int(default_eval_batch))
+        return batch, {
+            "source": "autobatch",
+            "reason": "disabled",
+            "raw_batch": int(batch),
+            "max_stable": int(batch),
+            "probe_tput": None,
+            "safety": 1.0,
+        }
 
     if not hasattr(dataset, "__len__"):
-        return max(1, int(default_eval_batch))
+        batch = max(1, int(default_eval_batch))
+        return batch, {
+            "source": "autobatch",
+            "reason": "no_len",
+            "raw_batch": int(batch),
+            "max_stable": int(batch),
+            "probe_tput": None,
+            "safety": 1.0,
+        }
     n = int(len(dataset))
     if n <= 0:
-        return max(1, int(default_eval_batch))
+        batch = max(1, int(default_eval_batch))
+        return batch, {
+            "source": "autobatch",
+            "reason": "empty_dataset",
+            "raw_batch": int(batch),
+            "max_stable": int(batch),
+            "probe_tput": None,
+            "safety": 1.0,
+        }
 
-    warmup_samples = max(1, int(os.getenv("MEDSAM_EVAL_AUTOBATCH_WARMUP_SAMPLES", "2")))
+    warmup_samples = max(1, int(_env("MEDSAM_EVAL_AUTOBATCH_WARMUP_SAMPLES", "2")))
     warmup_samples = min(warmup_samples, n)
     base_samples = [dataset[i] for i in range(warmup_samples)]
 
@@ -320,7 +363,8 @@ def _auto_tune_eval_batch_size(
         default_cap = 4 if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else 8
     else:
         default_cap = 16 if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else 64
-    max_batch_cap = max(1, int(os.getenv("MEDSAM_EVAL_AUTOBATCH_MAX", str(default_cap))))
+    configured_max = int(_env("MEDSAM_EVAL_AUTOBATCH_MAX", "0"))
+    max_batch_cap = max(1, configured_max if configured_max > 0 else default_cap)
 
     start_batch = max(1, min(int(default_eval_batch), max_batch_cap))
     best_stable = 0
@@ -355,7 +399,14 @@ def _auto_tune_eval_batch_size(
             break
 
     if best_stable <= 0:
-        return 1
+        return 1, {
+            "source": "autobatch",
+            "reason": "no_stable_batch",
+            "raw_batch": 1,
+            "max_stable": 1,
+            "probe_tput": None,
+            "safety": 1.0,
+        }
     if failed <= 0:
         max_stable = best_stable
     else:
@@ -385,10 +436,10 @@ def _auto_tune_eval_batch_size(
         max_stable = max(1, lo)
 
     # Throughput-oriented tuning among stable candidates.
-    benchmark_warmup = max(0, int(os.getenv("MEDSAM_EVAL_AUTOBATCH_BENCH_WARMUP", "1")))
-    benchmark_rounds = max(1, int(os.getenv("MEDSAM_EVAL_AUTOBATCH_BENCH_ROUNDS", "2")))
+    benchmark_warmup = max(0, int(_env("MEDSAM_EVAL_AUTOBATCH_BENCH_WARMUP", "1")))
+    benchmark_rounds = max(1, int(_env("MEDSAM_EVAL_AUTOBATCH_BENCH_ROUNDS", "2")))
 
-    growth = max(2, int(os.getenv("MEDSAM_EVAL_AUTOBATCH_CANDIDATE_GROWTH", "2")))
+    growth = max(2, int(_env("MEDSAM_EVAL_AUTOBATCH_CANDIDATE_GROWTH", "2")))
     candidates: List[int] = []
     c = 1
     while c <= max_stable:
@@ -426,7 +477,7 @@ def _auto_tune_eval_batch_size(
 
     tuned = max(1, best_batch)
 
-    safety_raw = os.getenv("MEDSAM_EVAL_AUTOBATCH_SAFETY", "").strip()
+    safety_raw = _env("MEDSAM_EVAL_AUTOBATCH_SAFETY", "").strip()
     if safety_raw:
         try:
             safety = float(safety_raw)
@@ -441,7 +492,14 @@ def _auto_tune_eval_batch_size(
         f"  [autobatch] {dataset_name} ({mode}) -> eval_batch={tuned_safe} "
         f"(raw={tuned}, max_stable={max_stable}, best_tput={best_tput:.2f} samples/s, safety={safety:.2f})"
     )
-    return tuned_safe
+    return tuned_safe, {
+        "source": "autobatch",
+        "reason": "ok",
+        "raw_batch": int(tuned),
+        "max_stable": int(max_stable),
+        "probe_tput": (float(best_tput) if best_tput >= 0 else None),
+        "safety": float(safety),
+    }
 
 
 def _iter_with_oom_backoff(batch_samples: List[Dict[str, Any]], min_chunk: int = 1) -> List[List[Dict[str, Any]]]:
@@ -455,7 +513,7 @@ class OODDetector:
     def __init__(self, threshold: float = 0.5, method: str = "entropy"):
         self.threshold = threshold
         self.method = method
-        self.max_side = max(8, int(os.getenv("MEDSAM_OOD_MAX_SIDE", "64")))
+        self.max_side = max(8, int(_env("MEDSAM_OOD_MAX_SIDE", "64")))
 
     def _score_from_tensor(self, p: torch.Tensor) -> Tuple[float, float]:
         p = p.to(dtype=torch.float32)
@@ -591,17 +649,17 @@ class TTAPredictor:
         self.augmentations = self._canonicalize_augmentations(raw_augmentations)
         
         self.fusion_mode = fusion_mode
-        env_fixed_batch = int(os.getenv("MEDSAM_TTA_FIXED_BATCH", "0"))
+        env_fixed_batch = int(_env("MEDSAM_TTA_FIXED_BATCH", "0"))
         self.fixed_batch_size = max(0, env_fixed_batch)
         cuda_mem_gb = _cuda_total_memory_gb()
         default_chunk = 4 if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else 8
-        chunk_env_raw = os.getenv("MEDSAM_TTA_CHUNK_SIZE", "").strip()
+        chunk_env_raw = _env("MEDSAM_TTA_CHUNK_SIZE", "").strip()
         if chunk_env_raw:
             self.infer_chunk_size = max(1, int(chunk_env_raw))
         else:
             self.infer_chunk_size = max(1, int(default_chunk))
 
-        autotune_raw = os.getenv("MEDSAM_TTA_AUTOTUNE", "1").strip().lower()
+        autotune_raw = _env("MEDSAM_TTA_AUTOTUNE", "1").strip().lower()
         self._autotune_enabled = autotune_raw in {"1", "true", "yes", "y", "on"}
 
         # If user fixed chunk size or disabled autotune, skip first-sample tuner.
@@ -823,8 +881,6 @@ class TTAPredictor:
                 mapped = src.flip(-2).flip(-1)
             elif aug_name == "rotate_90":
                 mapped = torch.rot90(src, k=3, dims=(-2, -1))
-            elif aug_name == "rotate_180":
-                mapped = torch.rot90(src, k=2, dims=(-2, -1))
             elif aug_name == "rotate_270":
                 mapped = torch.rot90(src, k=1, dims=(-2, -1))
             else:
@@ -1322,70 +1378,6 @@ def compute_bce_batch_tensor(prob_masks: torch.Tensor, gt_masks: torch.Tensor) -
     return -(g * p.log() + (1.0 - g) * (1.0 - p).log()).mean(dim=reduce_dims)
 
 
-def _surface_boundary(mask: np.ndarray) -> np.ndarray:
-    if ndimage is None:
-        return mask
-    eroded = ndimage.binary_erosion(mask, structure=np.ones((3, 3), dtype=bool), border_value=0)
-    boundary = np.logical_xor(mask, eroded)
-    if not boundary.any():
-        return mask
-    return boundary
-
-
-def _compute_surface_metrics_np(pred_mask: np.ndarray, gt_mask: np.ndarray) -> Tuple[float, float]:
-    pred = pred_mask.astype(bool)
-    gt = gt_mask.astype(bool)
-
-    if not pred.any() and not gt.any():
-        return 0.0, 0.0
-
-    fallback = float(np.hypot(pred.shape[0], pred.shape[1]))
-    if (not pred.any()) or (not gt.any()):
-        return fallback, fallback
-
-    if ndimage is None:
-        return float("nan"), float("nan")
-
-    pred_b = _surface_boundary(pred)
-    gt_b = _surface_boundary(gt)
-
-    dt_gt = ndimage.distance_transform_edt(~gt_b)
-    dt_pred = ndimage.distance_transform_edt(~pred_b)
-    d_pred_to_gt = dt_gt[pred_b]
-    d_gt_to_pred = dt_pred[gt_b]
-
-    if d_pred_to_gt.size == 0 and d_gt_to_pred.size == 0:
-        return 0.0, 0.0
-
-    all_d = np.concatenate([d_pred_to_gt, d_gt_to_pred], axis=0)
-    hd95 = float(np.percentile(all_d, 95)) if all_d.size > 0 else 0.0
-
-    mean_a = float(d_pred_to_gt.mean()) if d_pred_to_gt.size > 0 else 0.0
-    mean_b = float(d_gt_to_pred.mean()) if d_gt_to_pred.size > 0 else 0.0
-    assd = 0.5 * (mean_a + mean_b)
-    return hd95, assd
-
-
-def compute_surface_metrics_batch_tensor(pred_masks: torch.Tensor, gt_masks: torch.Tensor) -> Dict[str, torch.Tensor]:
-    if pred_masks.shape != gt_masks.shape:
-        raise ValueError(f"pred_masks and gt_masks shape mismatch: {tuple(pred_masks.shape)} vs {tuple(gt_masks.shape)}")
-
-    pred_np = pred_masks.detach().to(device="cpu", dtype=torch.bool).numpy()
-    gt_np = gt_masks.detach().to(device="cpu", dtype=torch.bool).numpy()
-
-    hd95_vals: List[float] = []
-    assd_vals: List[float] = []
-    for i in range(pred_np.shape[0]):
-        hd95, assd = _compute_surface_metrics_np(pred_np[i], gt_np[i])
-        hd95_vals.append(float(hd95))
-        assd_vals.append(float(assd))
-
-    return {
-        "hd95": torch.tensor(hd95_vals, device=pred_masks.device, dtype=torch.float32),
-        "assd": torch.tensor(assd_vals, device=pred_masks.device, dtype=torch.float32),
-    }
-
-
 def compute_ece_batch_tensor(prob_masks: torch.Tensor, gt_masks: torch.Tensor, n_bins: int = 15) -> torch.Tensor:
     p = prob_masks.to(torch.float32).clamp(1e-7, 1.0 - 1e-7)
     g = gt_masks.to(torch.float32)
@@ -1532,6 +1524,13 @@ def _mean_std(values: List[float]) -> Tuple[float, float]:
     return float(np.mean(values)), float(np.std(values))
 
 
+def _percentile(values: List[float], q: float) -> float:
+    if not values:
+        return float("nan")
+    arr = np.asarray(values, dtype=np.float64)
+    return float(np.percentile(arr, q))
+
+
 def _predict_baseline_batch_tensor(
     *,
     model: Any,
@@ -1629,7 +1628,7 @@ def evaluate_dataset(
     profiler: Optional[PerformanceProfiler] = None,
     profile_prefix: str = "",
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    metrics_keys = ["dice", "jaccard", "precision", "recall", "sensitivity", "f1", "bce", "hd95", "assd", "ece"]
+    metrics_keys = ["dice", "jaccard", "precision", "recall", "sensitivity", "f1", "bce", "ece"]
     metrics_store: Dict[str, List[float]] = {k: [] for k in metrics_keys}
 
     results: List[Dict[str, Any]] = []
@@ -1655,12 +1654,13 @@ def evaluate_dataset(
             default_eval_batch = 2 if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else 4
     else:
         default_eval_batch = 1
-    raw_eval_workers = int(os.getenv("MEDSAM_EVAL_WORKERS", "0"))
+    raw_eval_workers = int(_env("MEDSAM_EVAL_WORKERS", "0"))
     eval_workers = default_eval_workers if raw_eval_workers <= 0 else max(0, raw_eval_workers)
-    raw_eval_batch = int(os.getenv("MEDSAM_EVAL_BATCH", "0"))
+    raw_eval_batch = int(_env("MEDSAM_EVAL_BATCH", "0"))
     if raw_eval_batch <= 0:
+        eval_batch_source = "autobatch"
         mode = "ood_tta" if use_tta else "baseline"
-        eval_batch_size = _auto_tune_eval_batch_size(
+        eval_batch_size, autobatch_info = _auto_tune_eval_batch_size(
             dataset=dataset,
             dataset_name=dataset_name,
             mode=mode,
@@ -1672,10 +1672,25 @@ def evaluate_dataset(
             tta_predictor=tta_predictor,
         )
     else:
+        eval_batch_source = "manual"
         eval_batch_size = max(1, raw_eval_batch)
-    eval_prefetch = max(2, int(os.getenv("MEDSAM_EVAL_PREFETCH", "4")))
+        autobatch_info = {
+            "source": "manual",
+            "reason": "manual_override",
+            "raw_batch": int(eval_batch_size),
+            "max_stable": None,
+            "probe_tput": None,
+            "safety": None,
+        }
+    eval_prefetch = max(2, int(_env("MEDSAM_EVAL_PREFETCH", "4")))
     pin_memory = device == "cuda"
 
+    print(
+        f"  [autobatch-result] {dataset_name} ({'ood_tta' if use_tta else 'baseline'}) "
+        f"eval_batch={eval_batch_size} source={eval_batch_source} workers={eval_workers} prefetch={eval_prefetch} "
+        f"probe_tput={autobatch_info.get('probe_tput', None)}",
+        flush=True,
+    )
     _maybe_warm_dataset_cache(dataset=dataset, dataset_name=dataset_name, profiler=profiler, profile_prefix=profile_prefix)
 
     if eval_workers > 0:
@@ -1763,9 +1778,6 @@ def evaluate_dataset(
         t_metric = time.perf_counter()
         batch_metrics = compute_metrics_batch_tensor(pred_batch_t, gt_batch_t)
         batch_metrics["bce"] = compute_bce_batch_tensor(prob_batch_t, gt_batch_t)
-        surface_metrics = compute_surface_metrics_batch_tensor(pred_batch_t, gt_batch_t)
-        batch_metrics["hd95"] = surface_metrics["hd95"]
-        batch_metrics["assd"] = surface_metrics["assd"]
         batch_metrics["ece"] = compute_ece_batch_tensor(prob_batch_t, gt_batch_t)
         metric_elapsed = time.perf_counter() - t_metric
         metrics_times.extend([metric_elapsed / max(1, len(batch_samples))] * len(batch_samples))
@@ -1813,8 +1825,6 @@ def evaluate_dataset(
                     "sensitivity": float(m["sensitivity"]),
                     "f1": float(m["f1"]),
                     "bce": float(m["bce"]),
-                    "hd95": float(m["hd95"]),
-                    "assd": float(m["assd"]),
                     "ece": float(m["ece"]),
                     "ood_score": ood_score,
                     "is_ood": is_ood,
@@ -1845,6 +1855,18 @@ def evaluate_dataset(
         uncertainties=uncertainties,
         ood_eval_scores=ood_eval_scores,
         ood_eval_labels=ood_eval_labels,
+        eval_config={
+            "mode": "ood_tta" if use_tta else "baseline",
+            "eval_batch": int(eval_batch_size),
+            "eval_batch_source": eval_batch_source,
+            "eval_workers": int(eval_workers),
+            "eval_prefetch": int(eval_prefetch),
+            "autobatch_probe_tput": autobatch_info.get("probe_tput", None),
+            "autobatch_reason": autobatch_info.get("reason", ""),
+            "autobatch_raw_batch": autobatch_info.get("raw_batch", None),
+            "autobatch_max_stable": autobatch_info.get("max_stable", None),
+            "autobatch_safety": autobatch_info.get("safety", None),
+        },
     )
 
     if profiler is not None and profiler.enabled:
@@ -1880,7 +1902,7 @@ def evaluate_dataset_ood_only(
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Fast OOD-only evaluation path.
 
-    This path intentionally skips segmentation metrics (dice/jaccard/hd95/ece)
+    This path intentionally skips segmentation metrics (dice/jaccard/ece)
     and only computes baseline prediction + OOD score for subset selection.
     """
     results: List[Dict[str, Any]] = []
@@ -1898,11 +1920,12 @@ def evaluate_dataset_ood_only(
         default_eval_batch = 16
     else:
         default_eval_batch = 1
-    raw_eval_workers = int(os.getenv("MEDSAM_EVAL_WORKERS", "0"))
+    raw_eval_workers = int(_env("MEDSAM_EVAL_WORKERS", "0"))
     eval_workers = default_eval_workers if raw_eval_workers <= 0 else max(0, raw_eval_workers)
-    raw_eval_batch = int(os.getenv("MEDSAM_EVAL_BATCH", "0"))
+    raw_eval_batch = int(_env("MEDSAM_EVAL_BATCH", "0"))
     if raw_eval_batch <= 0:
-        eval_batch_size = _auto_tune_eval_batch_size(
+        eval_batch_source = "autobatch"
+        eval_batch_size, autobatch_info = _auto_tune_eval_batch_size(
             dataset=dataset,
             dataset_name=dataset_name,
             mode="ood_only",
@@ -1914,9 +1937,25 @@ def evaluate_dataset_ood_only(
             tta_predictor=None,
         )
     else:
+        eval_batch_source = "manual"
         eval_batch_size = max(1, raw_eval_batch)
-    eval_prefetch = max(2, int(os.getenv("MEDSAM_EVAL_PREFETCH", "4")))
+        autobatch_info = {
+            "source": "manual",
+            "reason": "manual_override",
+            "raw_batch": int(eval_batch_size),
+            "max_stable": None,
+            "probe_tput": None,
+            "safety": None,
+        }
+    eval_prefetch = max(2, int(_env("MEDSAM_EVAL_PREFETCH", "4")))
     pin_memory = device == "cuda"
+
+    print(
+        f"  [autobatch-result] {dataset_name} (ood_only) "
+        f"eval_batch={eval_batch_size} source={eval_batch_source} workers={eval_workers} prefetch={eval_prefetch} "
+        f"probe_tput={autobatch_info.get('probe_tput', None)}",
+        flush=True,
+    )
 
     _maybe_warm_dataset_cache(dataset=dataset, dataset_name=dataset_name, profiler=profiler, profile_prefix=profile_prefix)
 
@@ -2020,6 +2059,18 @@ def evaluate_dataset_ood_only(
         "avg_data_time_ms": float(np.mean(data_times) * 1000.0) if data_times else 0.0,
         "avg_ood_time_ms": float(np.mean(ood_times) * 1000.0) if ood_times else 0.0,
         "throughput_samples_per_sec": float(len(results) / total_time if total_time > 0 else 0.0),
+        "eval_config": {
+            "mode": "ood_only",
+            "eval_batch": int(eval_batch_size),
+            "eval_batch_source": eval_batch_source,
+            "eval_workers": int(eval_workers),
+            "eval_prefetch": int(eval_prefetch),
+            "autobatch_probe_tput": autobatch_info.get("probe_tput", None),
+            "autobatch_reason": autobatch_info.get("reason", ""),
+            "autobatch_raw_batch": autobatch_info.get("raw_batch", None),
+            "autobatch_max_stable": autobatch_info.get("max_stable", None),
+            "autobatch_safety": autobatch_info.get("safety", None),
+        },
     }
 
     if ood_eval_scores and ood_eval_labels:
@@ -2057,7 +2108,7 @@ def evaluate_dataset_ood_tta(
     profiler: Optional[PerformanceProfiler] = None,
     profile_prefix: str = "",
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
-    metrics_keys = ["dice", "jaccard", "precision", "recall", "sensitivity", "f1", "bce", "hd95", "assd", "ece"]
+    metrics_keys = ["dice", "jaccard", "precision", "recall", "sensitivity", "f1", "bce", "ece"]
 
     ood_metrics_store: Dict[str, List[float]] = {k: [] for k in metrics_keys}
     tta_metrics_store: Dict[str, List[float]] = {k: [] for k in metrics_keys}
@@ -2082,11 +2133,12 @@ def evaluate_dataset_ood_tta(
         default_eval_batch = 2 if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else 4
     else:
         default_eval_batch = 1
-    raw_eval_workers = int(os.getenv("MEDSAM_EVAL_WORKERS", "0"))
+    raw_eval_workers = int(_env("MEDSAM_EVAL_WORKERS", "0"))
     eval_workers = default_eval_workers if raw_eval_workers <= 0 else max(0, raw_eval_workers)
-    raw_eval_batch = int(os.getenv("MEDSAM_EVAL_BATCH", "0"))
+    raw_eval_batch = int(_env("MEDSAM_EVAL_BATCH", "0"))
     if raw_eval_batch <= 0:
-        eval_batch_size = _auto_tune_eval_batch_size(
+        eval_batch_source = "autobatch"
+        eval_batch_size, autobatch_info = _auto_tune_eval_batch_size(
             dataset=dataset,
             dataset_name=dataset_name,
             mode="ood_tta",
@@ -2098,10 +2150,25 @@ def evaluate_dataset_ood_tta(
             tta_predictor=tta_predictor,
         )
     else:
+        eval_batch_source = "manual"
         eval_batch_size = max(1, raw_eval_batch)
-    eval_prefetch = max(2, int(os.getenv("MEDSAM_EVAL_PREFETCH", "4")))
+        autobatch_info = {
+            "source": "manual",
+            "reason": "manual_override",
+            "raw_batch": int(eval_batch_size),
+            "max_stable": None,
+            "probe_tput": None,
+            "safety": None,
+        }
+    eval_prefetch = max(2, int(_env("MEDSAM_EVAL_PREFETCH", "4")))
     pin_memory = device == "cuda"
 
+    print(
+        f"  [autobatch-result] {dataset_name} (ood_tta) "
+        f"eval_batch={eval_batch_size} source={eval_batch_source} workers={eval_workers} prefetch={eval_prefetch} "
+        f"probe_tput={autobatch_info.get('probe_tput', None)}",
+        flush=True,
+    )
     _maybe_warm_dataset_cache(dataset=dataset, dataset_name=dataset_name, profiler=profiler, profile_prefix=profile_prefix)
 
     if eval_workers > 0:
@@ -2123,9 +2190,9 @@ def evaluate_dataset_ood_tta(
 
     sample_index = 0
     for batch_samples in tqdm(iterable, total=total, desc=f"Evaluating {dataset_name} (ood+tta)"):
-        pending: List[List[Dict[str, Any]]] = [batch_samples]
+        pending: List[Tuple[List[Dict[str, Any]], int]] = [(batch_samples, 0)]
         while pending:
-            cur = pending.pop(0)
+            cur, retry_count = pending.pop(0)
             batch_start = time.perf_counter()
             images = [s["image"] for s in cur]
             bboxes = [s["bbox"] for s in cur]
@@ -2187,23 +2254,30 @@ def evaluate_dataset_ood_tta(
                 gt_stack = torch.stack(gt_masks_t, dim=0)
                 ood_batch_metrics = compute_metrics_batch_tensor(ood_pred_stack, gt_stack)
                 ood_batch_metrics["bce"] = compute_bce_batch_tensor(ood_prob_stack, gt_stack)
-                ood_surface_metrics = compute_surface_metrics_batch_tensor(ood_pred_stack, gt_stack)
-                ood_batch_metrics["hd95"] = ood_surface_metrics["hd95"]
-                ood_batch_metrics["assd"] = ood_surface_metrics["assd"]
                 ood_batch_metrics["ece"] = compute_ece_batch_tensor(ood_prob_stack, gt_stack)
                 tta_batch_metrics = compute_metrics_batch_tensor(tta_pred_stack, gt_stack)
                 tta_batch_metrics["bce"] = compute_bce_batch_tensor(tta_prob_stack, gt_stack)
-                tta_surface_metrics = compute_surface_metrics_batch_tensor(tta_pred_stack, gt_stack)
-                tta_batch_metrics["hd95"] = tta_surface_metrics["hd95"]
-                tta_batch_metrics["assd"] = tta_surface_metrics["assd"]
                 tta_batch_metrics["ece"] = compute_ece_batch_tensor(tta_prob_stack, gt_stack)
                 metric_elapsed = time.perf_counter() - t_metric
                 metrics_times.extend([metric_elapsed / max(1, len(cur))] * len(cur))
             except RuntimeError as exc:
-                if device == "cuda" and _is_cuda_oom_error(exc) and len(cur) > 1:
+                if device == "cuda" and _is_cuda_oom_error(exc):
                     torch.cuda.empty_cache()
-                    pending = _iter_with_oom_backoff(cur) + pending
-                    continue
+                    if len(cur) > 1:
+                        pending = [(chunk, retry_count + 1) for chunk in _iter_with_oom_backoff(cur)] + pending
+                        continue
+
+                    # Single-sample fallback: reduce TTA chunk size and retry.
+                    current_chunk = int(getattr(tta_predictor, "infer_chunk_size", 1))
+                    if current_chunk > 1 and retry_count < 4:
+                        next_chunk = max(1, current_chunk // 2)
+                        tta_predictor.infer_chunk_size = next_chunk
+                        print(
+                            f"  [OOM fallback] {dataset_name}: reduce TTA chunk {current_chunk} -> {next_chunk} and retry",
+                            flush=True,
+                        )
+                        pending = [(cur, retry_count + 1)] + pending
+                        continue
                 raise
 
             t_post = time.perf_counter()
@@ -2234,8 +2308,6 @@ def evaluate_dataset_ood_tta(
                         "sensitivity": float(ood_m["sensitivity"]),
                         "f1": float(ood_m["f1"]),
                         "bce": float(ood_m["bce"]),
-                        "hd95": float(ood_m["hd95"]),
-                        "assd": float(ood_m["assd"]),
                         "ece": float(ood_m["ece"]),
                         "ood_score": ood_score,
                         "is_ood": is_ood,
@@ -2255,8 +2327,6 @@ def evaluate_dataset_ood_tta(
                         "sensitivity": float(tta_m["sensitivity"]),
                         "f1": float(tta_m["f1"]),
                         "bce": float(tta_m["bce"]),
-                        "hd95": float(tta_m["hd95"]),
-                        "assd": float(tta_m["assd"]),
                         "ece": float(tta_m["ece"]),
                         "ood_score": 0.0,
                         "is_ood": False,
@@ -2284,6 +2354,18 @@ def evaluate_dataset_ood_tta(
         uncertainties=None,
         ood_eval_scores=ood_eval_scores,
         ood_eval_labels=ood_eval_labels,
+        eval_config={
+            "mode": "ood_tta_ood",
+            "eval_batch": int(eval_batch_size),
+            "eval_batch_source": eval_batch_source,
+            "eval_workers": int(eval_workers),
+            "eval_prefetch": int(eval_prefetch),
+            "autobatch_probe_tput": autobatch_info.get("probe_tput", None),
+            "autobatch_reason": autobatch_info.get("reason", ""),
+            "autobatch_raw_batch": autobatch_info.get("raw_batch", None),
+            "autobatch_max_stable": autobatch_info.get("max_stable", None),
+            "autobatch_safety": autobatch_info.get("safety", None),
+        },
     )
     tta_stats = _build_stats_from_store(
         dataset_name=dataset_name,
@@ -2297,6 +2379,18 @@ def evaluate_dataset_ood_tta(
         total_time=total_time,
         ood_scores=None,
         uncertainties=uncertainties,
+        eval_config={
+            "mode": "ood_tta_tta",
+            "eval_batch": int(eval_batch_size),
+            "eval_batch_source": eval_batch_source,
+            "eval_workers": int(eval_workers),
+            "eval_prefetch": int(eval_prefetch),
+            "autobatch_probe_tput": autobatch_info.get("probe_tput", None),
+            "autobatch_reason": autobatch_info.get("reason", ""),
+            "autobatch_raw_batch": autobatch_info.get("raw_batch", None),
+            "autobatch_max_stable": autobatch_info.get("max_stable", None),
+            "autobatch_safety": autobatch_info.get("safety", None),
+        },
     )
 
     if profiler is not None and profiler.enabled:

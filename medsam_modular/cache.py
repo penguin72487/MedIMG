@@ -7,6 +7,7 @@ from typing import Optional
 
 import numpy as np
 
+from medsam_modular.config import ENV_DEFAULTS
 from medsam_modular.io_async import get_global_async_writer
 
 
@@ -14,10 +15,10 @@ class PredictionCache:
     def __init__(self, cache_dir: Path):
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self._ram_max_entries = max(0, int(os.getenv("MEDSAM_CACHE_RAM_ENTRIES", "256")))
+        self._ram_max_entries = max(0, int(os.getenv("MEDSAM_CACHE_RAM_ENTRIES", ENV_DEFAULTS["MEDSAM_CACHE_RAM_ENTRIES"])))
         self._ram: OrderedDict[str, np.ndarray] = OrderedDict()
         self._lock = Lock()
-        self._async_disk_write = os.getenv("MEDSAM_CACHE_ASYNC_WRITE", "1").strip().lower() in {"1", "true", "yes", "y", "on"}
+        self._async_disk_write = os.getenv("MEDSAM_CACHE_ASYNC_WRITE", ENV_DEFAULTS["MEDSAM_CACHE_ASYNC_WRITE"]).strip().lower() in {"1", "true", "yes", "y", "on"}
 
     def _key_to_path(self, key: str) -> Path:
         digest = hashlib.md5(key.encode("utf-8")).hexdigest()

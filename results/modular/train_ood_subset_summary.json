@@ -10,15 +10,15 @@
       "num_samples": 2015,
       "num_ood_detected": 6,
       "ood_ratio": 0.002977667493796526,
-      "mean_ood_score": 0.24073667562296314,
-      "std_ood_score": 0.10823714898441815,
-      "total_time_sec": 112.18651226800284,
-      "avg_inference_time_ms": 12.615434918054333,
-      "avg_data_time_ms": 0.02051213156866954,
-      "avg_ood_time_ms": 2.492111424411267,
-      "throughput_samples_per_sec": 17.96116092089892,
+      "mean_ood_score": 0.24073667565624116,
+      "std_ood_score": 0.10823714892343236,
+      "total_time_sec": 69.88686605299881,
+      "avg_inference_time_ms": 13.654916581083766,
+      "avg_data_time_ms": 0.00923604067982921,
+      "avg_ood_time_ms": 4.745249285860386,
+      "throughput_samples_per_sec": 28.83231304823315,
       "bottleneck_component": "inference",
-      "bottleneck_component_ratio": 0.22658785665030118
+      "bottleneck_component_ratio": 0.39370282951331664
     }
   },
   "TG3K": {
@@ -32,15 +32,15 @@
       "num_samples": 2015,
       "num_ood_detected": 7,
       "ood_ratio": 0.0034739454094292804,
-      "mean_ood_score": 0.2237611999749102,
-      "std_ood_score": 0.10697885944185127,
-      "total_time_sec": 47.498956866998924,
-      "avg_inference_time_ms": 14.240298822246146,
-      "avg_data_time_ms": 0.12021048981930353,
-      "avg_ood_time_ms": 3.0763443498564573,
-      "throughput_samples_per_sec": 42.4219842478261,
+      "mean_ood_score": 0.22376120002852481,
+      "std_ood_score": 0.10697885963513919,
+      "total_time_sec": 48.36554810999951,
+      "avg_inference_time_ms": 15.460372122564172,
+      "avg_data_time_ms": 0.02029061484411729,
+      "avg_ood_time_ms": 4.108824893792054,
+      "throughput_samples_per_sec": 41.661886998927685,
       "bottleneck_component": "inference",
-      "bottleneck_component_ratio": 0.6041017323216626
+      "bottleneck_component_ratio": 0.6441082763316404
     }
   },
   "DDTI": {
@@ -54,15 +54,15 @@
       "num_samples": 328,
       "num_ood_detected": 0,
       "ood_ratio": 0.0,
-      "mean_ood_score": 0.15813819764227402,
-      "std_ood_score": 0.05824545348730915,
-      "total_time_sec": 16.28658395799721,
-      "avg_inference_time_ms": 14.833927728676183,
-      "avg_data_time_ms": 0.010834259339345608,
-      "avg_ood_time_ms": 1.4822373020318238,
-      "throughput_samples_per_sec": 20.13927542116295,
+      "mean_ood_score": 0.15813819784671068,
+      "std_ood_score": 0.05824545277645974,
+      "total_time_sec": 13.647702161004418,
+      "avg_inference_time_ms": 16.00486992036877,
+      "avg_data_time_ms": 0.04283575934805856,
+      "avg_ood_time_ms": 2.615090625201957,
+      "throughput_samples_per_sec": 24.03334979988019,
       "bottleneck_component": "inference",
-      "bottleneck_component_ratio": 0.2987445561054358
+      "bottleneck_component_ratio": 0.3846506372978033
     }
   },
   "TN5000": {
@@ -78,13 +78,13 @@
       "ood_ratio": 0.0005714285714285715,
       "mean_ood_score": 0.14775790584619555,
       "std_ood_score": 0.06297172622131078,
-      "total_time_sec": 76.51973405000172,
-      "avg_inference_time_ms": 14.738511156573493,
-      "avg_data_time_ms": 0.11425928278393778,
-      "avg_ood_time_ms": 3.2975492505231943,
-      "throughput_samples_per_sec": 45.73983487335345,
+      "total_time_sec": 80.56548025200027,
+      "avg_inference_time_ms": 15.835491708290649,
+      "avg_data_time_ms": 0.09810820663447624,
+      "avg_ood_time_ms": 4.049267930529563,
+      "throughput_samples_per_sec": 43.442923557985026,
       "bottleneck_component": "inference",
-      "bottleneck_component_ratio": 0.6741370665807491
+      "bottleneck_component_ratio": 0.6879400557863763
     }
   }
 }

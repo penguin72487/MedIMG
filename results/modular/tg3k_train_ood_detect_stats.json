@@ -9,14 +9,14 @@
     "num_samples": 2015,
     "num_ood_detected": 7,
     "ood_ratio": 0.0034739454094292804,
-    "mean_ood_score": 0.2237611999749102,
-    "std_ood_score": 0.10697885944185127,
-    "total_time_sec": 47.498956866998924,
-    "avg_inference_time_ms": 14.240298822246146,
-    "avg_data_time_ms": 0.12021048981930353,
-    "avg_ood_time_ms": 3.0763443498564573,
-    "throughput_samples_per_sec": 42.4219842478261,
+    "mean_ood_score": 0.22376120002852481,
+    "std_ood_score": 0.10697885963513919,
+    "total_time_sec": 48.36554810999951,
+    "avg_inference_time_ms": 15.460372122564172,
+    "avg_data_time_ms": 0.02029061484411729,
+    "avg_ood_time_ms": 4.108824893792054,
+    "throughput_samples_per_sec": 41.661886998927685,
     "bottleneck_component": "inference",
-    "bottleneck_component_ratio": 0.6041017323216626
+    "bottleneck_component_ratio": 0.6441082763316404
   }
 }

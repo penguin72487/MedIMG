@@ -16,6 +16,7 @@ os.environ.setdefault("TRITON_BACKENDS_IN_TREE", "1")
 
 import torch
 import torch.nn.functional as F
+from medsam_modular.config import ENV_DEFAULTS
 from PIL import Image
 from transformers import SamModel, SamProcessor
 
@@ -86,7 +87,8 @@ def _ensure_triton_in_tree_backends() -> None:
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name, "1" if default else "0").strip().lower()
+    raw_default = ENV_DEFAULTS.get(name, "1" if default else "0")
+    raw = os.getenv(name, raw_default).strip().lower()
     return raw in {"1", "true", "yes", "y", "on"}
 
 
@@ -313,7 +315,7 @@ def _try_compile_model(model: SamModel, processor: SamProcessor, device: str, im
     compile_dynamic = _env_bool("MEDSAM_COMPILE_DYNAMIC", default_dynamic)
     cuda_total_gb = _cuda_total_memory_gb() if device == "cuda" else None
     warmup_batches = _parse_warmup_batches(
-        os.getenv("MEDSAM_COMPILE_WARMUP_BATCHES", ""),
+        os.getenv("MEDSAM_COMPILE_WARMUP_BATCHES", ENV_DEFAULTS["MEDSAM_COMPILE_WARMUP_BATCHES"]),
         [1] if (device == "cuda" and cuda_total_gb is not None and cuda_total_gb <= 12.5) else ([1, 8] if device == "cuda" else [1]),
     )
     if device == "cuda" and cuda_total_gb is not None and cuda_total_gb <= 12.5:

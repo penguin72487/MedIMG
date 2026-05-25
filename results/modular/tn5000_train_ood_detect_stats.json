@@ -11,12 +11,12 @@
     "ood_ratio": 0.0005714285714285715,
     "mean_ood_score": 0.14775790584619555,
     "std_ood_score": 0.06297172622131078,
-    "total_time_sec": 76.51973405000172,
-    "avg_inference_time_ms": 14.738511156573493,
-    "avg_data_time_ms": 0.11425928278393778,
-    "avg_ood_time_ms": 3.2975492505231943,
-    "throughput_samples_per_sec": 45.73983487335345,
+    "total_time_sec": 80.56548025200027,
+    "avg_inference_time_ms": 15.835491708290649,
+    "avg_data_time_ms": 0.09810820663447624,
+    "avg_ood_time_ms": 4.049267930529563,
+    "throughput_samples_per_sec": 43.442923557985026,
     "bottleneck_component": "inference",
-    "bottleneck_component_ratio": 0.6741370665807491
+    "bottleneck_component_ratio": 0.6879400557863763
   }
 }

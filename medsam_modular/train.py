@@ -12,6 +12,7 @@ from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
 import torch.nn.functional as F
 from tqdm import tqdm
 
+from medsam_modular.config import ENV_DEFAULTS
 from medsam_modular.data import compute_bbox_from_mask_np, prepare_datasets_by_split
 from medsam_modular.model import load_state_dict_compat, normalize_pred_masks_to_4d
 
@@ -43,7 +44,8 @@ class _AsyncCheckpointSaver:
 
 def _env_bool(name: str, default: bool = False) -> bool:
     """讀取環境變數作為布林值"""
-    raw = os.getenv(name, "1" if default else "0").strip().lower()
+    raw_default = ENV_DEFAULTS.get(name, "1" if default else "0")
+    raw = os.getenv(name, raw_default).strip().lower()
     return raw in {"1", "true", "yes", "y", "on"}
 
 
@@ -565,8 +567,8 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
     early_stop_require_min_lr = _get_bool("finetune_early_stop_require_min_lr", True)
     resume_weight_path_raw = str(config.get("resume_weight_path", "")).strip()
     resume_weight_path = Path(resume_weight_path_raw) if resume_weight_path_raw else None
-    precompute_batch = int(os.getenv("MEDSAM_PRECOMPUTE_BATCH", "0"))
-    precompute_workers = int(os.getenv("MEDSAM_PRECOMPUTE_WORKERS", "0"))
+    precompute_batch = int(os.getenv("MEDSAM_PRECOMPUTE_BATCH", ENV_DEFAULTS["MEDSAM_PRECOMPUTE_BATCH"]))
+    precompute_workers = int(os.getenv("MEDSAM_PRECOMPUTE_WORKERS", ENV_DEFAULTS["MEDSAM_PRECOMPUTE_WORKERS"]))
     cuda_mem_gb = _cuda_total_memory_gb() if device == "cuda" else None
     low_vram_mode = bool(cuda_mem_gb is not None and cuda_mem_gb <= 12.5)
     use_emb_cache = device == "cuda" and not train_backbone and _env_bool("MEDSAM_PRECOMPUTE_EMBEDDINGS", True)

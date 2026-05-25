@@ -19,31 +19,28 @@ def build_comparison_table(all_stats: Dict[str, Dict[str, Dict]]) -> pd.DataFram
     rows = []
     for dataset_name, modes in all_stats.items():
         baseline_dice = modes["baseline"]["mean_dice"]
+        baseline_dice_1pct_low = modes["baseline"].get("dice_1pct_low", float("nan"))
         baseline_jaccard = modes["baseline"]["mean_jaccard"]
         baseline_f1 = modes["baseline"]["mean_f1"]
         baseline_sensitivity = modes["baseline"].get("mean_sensitivity", modes["baseline"].get("mean_recall", float("nan")))
         baseline_bce = modes["baseline"].get("mean_bce", float("nan"))
         baseline_ece = modes["baseline"].get("mean_ece", float("nan"))
-        baseline_hd95 = modes["baseline"].get("mean_hd95", float("nan"))
-        baseline_assd = modes["baseline"].get("mean_assd", float("nan"))
 
         ood_dice = modes["ood"]["mean_dice"]
+        ood_dice_1pct_low = modes["ood"].get("dice_1pct_low", float("nan"))
         ood_jaccard = modes["ood"]["mean_jaccard"]
         ood_f1 = modes["ood"]["mean_f1"]
         ood_sensitivity = modes["ood"].get("mean_sensitivity", modes["ood"].get("mean_recall", float("nan")))
         ood_bce = modes["ood"].get("mean_bce", float("nan"))
         ood_ece = modes["ood"].get("mean_ece", float("nan"))
-        ood_hd95 = modes["ood"].get("mean_hd95", float("nan"))
-        ood_assd = modes["ood"].get("mean_assd", float("nan"))
 
         tta_dice = modes["tta"]["mean_dice"]
+        tta_dice_1pct_low = modes["tta"].get("dice_1pct_low", float("nan"))
         tta_jaccard = modes["tta"]["mean_jaccard"]
         tta_f1 = modes["tta"]["mean_f1"]
         tta_sensitivity = modes["tta"].get("mean_sensitivity", modes["tta"].get("mean_recall", float("nan")))
         tta_bce = modes["tta"].get("mean_bce", float("nan"))
         tta_ece = modes["tta"].get("mean_ece", float("nan"))
-        tta_hd95 = modes["tta"].get("mean_hd95", float("nan"))
-        tta_assd = modes["tta"].get("mean_assd", float("nan"))
 
         rows.append(
             {
@@ -52,6 +49,10 @@ def build_comparison_table(all_stats: Dict[str, Dict[str, Dict]]) -> pd.DataFram
                 "OOD Dice": f"{ood_dice:.4f}",
                 "TTA Dice": f"{tta_dice:.4f}",
                 "TTA Dice Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_dice, baseline_dice, True)),
+                "Baseline Dice 1% Low": f"{baseline_dice_1pct_low:.4f}",
+                "OOD Dice 1% Low": f"{ood_dice_1pct_low:.4f}",
+                "TTA Dice 1% Low": f"{tta_dice_1pct_low:.4f}",
+                "TTA Dice 1% Low Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_dice_1pct_low, baseline_dice_1pct_low, True)),
                 "Baseline Jaccard": f"{baseline_jaccard:.4f}",
                 "OOD Jaccard": f"{ood_jaccard:.4f}",
                 "TTA Jaccard": f"{tta_jaccard:.4f}",
@@ -72,14 +73,6 @@ def build_comparison_table(all_stats: Dict[str, Dict[str, Dict]]) -> pd.DataFram
                 "OOD ECE (lower is better)": f"{ood_ece:.4f}",
                 "TTA ECE (lower is better)": f"{tta_ece:.4f}",
                 "TTA ECE Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_ece, baseline_ece, False)),
-                "Baseline HD95 (lower is better)": f"{baseline_hd95:.4f}",
-                "OOD HD95 (lower is better)": f"{ood_hd95:.4f}",
-                "TTA HD95 (lower is better)": f"{tta_hd95:.4f}",
-                "TTA HD95 Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_hd95, baseline_hd95, False)),
-                "Baseline ASSD (lower is better)": f"{baseline_assd:.4f}",
-                "OOD ASSD (lower is better)": f"{ood_assd:.4f}",
-                "TTA ASSD (lower is better)": f"{tta_assd:.4f}",
-                "TTA ASSD Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_assd, baseline_assd, False)),
             }
         )
     return pd.DataFrame(rows)
@@ -108,13 +101,12 @@ def save_comparison_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir: Pat
     datasets = list(all_stats.keys())
     metric_rows = [
         ("mean_dice", "Dice", True, (0.0, 1.0)),
+        ("dice_1pct_low", "Dice 1% Low", True, (0.0, 1.0)),
         ("mean_jaccard", "Jaccard", True, (0.0, 1.0)),
         ("mean_f1", "F1", True, (0.0, 1.0)),
         ("mean_sensitivity", "Sensitivity", True, (0.0, 1.0)),
         ("mean_bce", "BCE (lower is better)", False, None),
         ("mean_ece", "ECE (lower is better)", False, None),
-        ("mean_hd95", "HD95 (lower is better)", False, None),
-        ("mean_assd", "ASSD (lower is better)", False, None),
     ]
     fig, axes = plt.subplots(len(metric_rows), len(datasets), figsize=(6 * len(datasets), 4.5 * len(metric_rows)), squeeze=False)
 
@@ -134,7 +126,7 @@ def save_comparison_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir: Pat
     fig.text(
         0.5,
         0.01,
-        "Dice/Jaccard/F1/Sensitivity are higher-is-better; BCE/ECE/HD95/ASSD are lower-is-better.",
+        "Dice/Jaccard/F1/Sensitivity are higher-is-better; BCE/ECE are lower-is-better.",
         ha="center",
         fontsize=10,
     )
