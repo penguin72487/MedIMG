@@ -30,11 +30,8 @@ def _cpu_count() -> int:
 
 
 def _auto_cpu_threads(device: str) -> int:
-    cores = _cpu_count()
-    if device == "cuda":
-        # Reserve headroom for DataLoader/I/O workers while keeping tensor ops responsive.
-        return max(2, min(12, cores // 2))
-    return max(1, cores - 1)
+    _ = device
+    return _cpu_count()
 
 
 def _project_root() -> Path:
@@ -168,10 +165,17 @@ def _build_train_config(project_root: Path, data_paths: Dict[str, str], image_si
         "finetune_adamw_eps": os.getenv("MEDSAM_FINETUNE_ADAMW_EPS", "1e-8"),
         "finetune_val_ratio": os.getenv("MEDSAM_FINETUNE_VAL_RATIO", "0.1"),
         "finetune_patience": os.getenv("MEDSAM_FINETUNE_PATIENCE", "20"),
+        "finetune_min_epochs": os.getenv("MEDSAM_FINETUNE_MIN_EPOCHS", "30"),
         "finetune_min_delta": os.getenv("MEDSAM_FINETUNE_MIN_DELTA", "1e-4"),
+        "finetune_use_plateau_scheduler": os.getenv("MEDSAM_FINETUNE_USE_PLATEAU_SCHEDULER", "1"),
+        "finetune_plateau_factor": os.getenv("MEDSAM_FINETUNE_PLATEAU_FACTOR", "0.5"),
+        "finetune_plateau_patience": os.getenv("MEDSAM_FINETUNE_PLATEAU_PATIENCE", "5"),
+        "finetune_plateau_cooldown": os.getenv("MEDSAM_FINETUNE_PLATEAU_COOLDOWN", "2"),
+        "finetune_plateau_min_lr": os.getenv("MEDSAM_FINETUNE_PLATEAU_MIN_LR", "1e-6"),
+        "finetune_early_stop_require_min_lr": os.getenv("MEDSAM_FINETUNE_EARLY_STOP_REQUIRE_MIN_LR", "1"),
         "finetune_grad_accum": os.getenv("MEDSAM_FINETUNE_GRAD_ACCUM", "2"),
         "finetune_grad_clip": os.getenv("MEDSAM_FINETUNE_GRAD_CLIP", "1.0"),
-        "finetune_workers": os.getenv("MEDSAM_FINETUNE_WORKERS", "16"),
+        "finetune_workers": os.getenv("MEDSAM_FINETUNE_WORKERS", "0"),
         "finetune_max_samples": os.getenv("MEDSAM_FINETUNE_MAX_SAMPLES", "0"),
         "finetune_use_fused_adamw": os.getenv("MEDSAM_FINETUNE_USE_FUSED_ADAMW", "1"),
     }
@@ -192,7 +196,7 @@ def main() -> None:
         # set_num_interop_threads may be called only once in some runtimes.
         pass
 
-    image_size = int(os.getenv("MEDSAM_IMAGE_SIZE", "512"))
+    image_size = int(os.getenv("MEDSAM_IMAGE_SIZE", "1024"))
     model_id = os.getenv("MEDSAM_MODEL_ID", "facebook/sam-vit-base")
     data_paths = _resolve_data_paths(project_root)
     baseline_weight_path = _resolve_baseline_weight_path(project_root)
@@ -222,7 +226,7 @@ def main() -> None:
     for k, v in data_paths.items():
         print(f"  {k:8s}: {v}")
 
-    print("\n[Stage 1/3] 載入模型 ...")
+    print("\n[Stage 1/5] 載入模型 ...")
     t1 = time.time()
     with profiler.section_and_flush("stage.load_model"):
         model, processor, compile_report = load_medsam(
@@ -246,7 +250,7 @@ def main() -> None:
     if require_compile and not bool(compile_report.get("compiled", False)):
         raise RuntimeError(f"torch.compile(inductor) required but unavailable: {compile_report}")
 
-    print("\n[Stage 2/4] 準備測試資料 / 基線評估 ...")
+    print("\n[Stage 2/5] 準備測試資料 ...")
     t3 = time.time()
     split_root = Path(os.getenv("MEDSAM_SPLIT_ROOT", str(project_root / "splits")))
     with profiler.section_and_flush("stage.prepare_test_data"):
@@ -288,10 +292,43 @@ def main() -> None:
     print(f"  Augmentations: {tta_predictor.augmentations}")
     print(f"  Number of augmentations: {len(tta_predictor.augmentations)}")
 
+    finetune_only = _env_bool("MEDSAM_FINETUNE_ONLY", False)
+    skip_finetune = _env_bool("MEDSAM_SKIP_FINETUNE", True)
+
+    print("\n[Stage 3/5] 訓練 / 微調 ...")
+    t2 = time.time()
+    with profiler.section_and_flush("stage.finetune"):
+        model = maybe_finetune(
+            model=model,
+            processor=processor,
+            config=_build_train_config(
+                project_root=project_root,
+                data_paths=data_paths,
+                image_size=image_size,
+                device=device,
+                output_dir=output_dir,
+            ),
+            profiler=profiler,
+        )
+    print(f"  微調耗時: {time.time()-t2:.1f}s")
+
+    if finetune_only:
+        print("\n[Stage 4/5] 已啟用 finetune-only，略過後續 baseline / OOD / TTA 評估。")
+        profiler.flush()
+        shutdown_global_async_writer()
+        return
+
+    print("\n[Stage 4/5] 基線評估 (vit_b) ...")
     baseline_all_results: Dict[str, Any] = {}
     baseline_all_stats: Dict[str, Dict[str, Any]] = {}
-    print("\n[Stage 2/4] 基線評估 (vit_b) ...")
     t_eval_start = time.time()
+    baseline_weight = Path(baseline_weight_path) if baseline_weight_path else None
+    if baseline_weight is not None and baseline_weight.exists():
+        load_state_dict_compat(model, baseline_weight, map_location=device)
+        print(f"  📌 baseline 使用權重: {baseline_weight}")
+    else:
+        print("  ⚠️ baseline 權重不存在，將使用目前模型權重進行 baseline 評估。")
+
     for dataset_name, dataset in test_sets.items():
         if len(dataset) == 0:
             print(f"\n  ⚠️ skip empty dataset: {dataset_name}")
@@ -327,39 +364,17 @@ def main() -> None:
             f"{limit_info.get('message', '')}"
         )
 
-    finetune_only = _env_bool("MEDSAM_FINETUNE_ONLY", False)
-    skip_finetune = _env_bool("MEDSAM_SKIP_FINETUNE", True)
-
-    print("\n[Stage 3/4] 訓練 / 微調 ...")
-    t2 = time.time()
-    with profiler.section_and_flush("stage.finetune"):
-        model = maybe_finetune(
-            model=model,
-            processor=processor,
-            config=_build_train_config(
-                project_root=project_root,
-                data_paths=data_paths,
-                image_size=image_size,
-                device=device,
-                output_dir=output_dir,
-            ),
-            profiler=profiler,
-        )
-    print(f"  微調耗時: {time.time()-t2:.1f}s")
-
-    if finetune_only:
-        print("\n[Stage 4/4] 已啟用 finetune-only，略過後續 OOD/TTA 評估。")
-        profiler.flush()
-        shutdown_global_async_writer()
-        return
-
+    post_finetune_weight_path = _resolve_resume_weight_path(project_root, output_dir)
     if skip_finetune and resume_weight_path and Path(resume_weight_path).exists():
         load_state_dict_compat(model, Path(resume_weight_path), map_location=device)
         print(f"  📌 評估使用權重: {resume_weight_path}")
+    elif (not skip_finetune) and post_finetune_weight_path and Path(post_finetune_weight_path).exists():
+        load_state_dict_compat(model, Path(post_finetune_weight_path), map_location=device)
+        print(f"  📌 評估使用權重: {post_finetune_weight_path}")
     else:
         print(f"  📌 評估使用權重: <finetuned model>")
 
-    print("\n[Stage 4/4] OOD / TTA 評估 ...")
+    print("\n[Stage 5/5] OOD / TTA 評估 ...")
     t_eval_start = time.time()
     all_stats: Dict[str, Dict[str, Dict[str, Any]]] = {}
     for dataset_name, dataset in test_sets.items():

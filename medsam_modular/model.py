@@ -508,7 +508,10 @@ def _to_rgb_uint8_np(image: Any) -> np.ndarray:
             arr = arr[:, :, :3]
     if arr.dtype != np.uint8:
         arr = np.clip(arr, 0, 255).astype(np.uint8)
-    return np.ascontiguousarray(arr)
+    arr = np.ascontiguousarray(arr)
+    if not arr.flags.writeable:
+        arr = arr.copy()
+    return arr
 
 
 def _build_inputs_fast(

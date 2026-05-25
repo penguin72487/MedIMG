@@ -61,7 +61,7 @@ def split_file(split_root: Path, dataset_name: str, split_name: str) -> Optional
 
 
 class TN3KDataset(Dataset):
-    def __init__(self, root_dir: str, split: str = "test", image_size: int = 512, split_ids: Optional[Set[str]] = None):
+    def __init__(self, root_dir: str, split: str = "test", image_size: int = 1024, split_ids: Optional[Set[str]] = None):
         self.root_dir = Path(root_dir)
         self.split = split
         self.image_size = image_size
@@ -157,7 +157,7 @@ class TN3KDataset(Dataset):
 
 
 class DDTIDataset(Dataset):
-    def __init__(self, root_dir: str, split: str = "test", image_size: int = 512, split_ids: Optional[Set[str]] = None):
+    def __init__(self, root_dir: str, split: str = "test", image_size: int = 1024, split_ids: Optional[Set[str]] = None):
         self.root_dir = Path(root_dir)
         self.split = split
         self.image_size = image_size
@@ -266,7 +266,7 @@ class DDTIDataset(Dataset):
 
 
 class TN5000Dataset(Dataset):
-    def __init__(self, root_dir: str, split: str = "test", image_size: int = 512, split_ids: Optional[Set[str]] = None):
+    def __init__(self, root_dir: str, split: str = "test", image_size: int = 1024, split_ids: Optional[Set[str]] = None):
         self.root_dir = Path(root_dir)
         self.split = split
         self.image_size = image_size

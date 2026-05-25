@@ -140,10 +140,8 @@ def _cpu_count() -> int:
 
 
 def _auto_eval_workers(device: str) -> int:
-    cores = _cpu_count()
-    if device == "cuda":
-        return max(2, min(16, cores // 2))
-    return max(1, min(8, cores - 1))
+    _ = device
+    return _cpu_count()
 
 
 class OODDetector:
@@ -1255,9 +1253,10 @@ def _predict_baseline_batch_tensor(
     miss_boxes: List[List[int]] = []
     miss_keys: List[str] = []
 
+    _cache_image_size = images[0].size[0] if images else 0
     for i, (sample_name, bbox) in enumerate(zip(sample_names, bboxes)):
         t_cache = time.perf_counter()
-        cache_key = make_cache_key(dataset_name, sample_name, bbox, mode="baseline")
+        cache_key = make_cache_key(dataset_name, sample_name, bbox, mode="baseline", image_size=_cache_image_size)
         cached = pred_cache.get(cache_key) if pred_cache is not None else None
         if profiler is not None and profiler.enabled:
             profiler.record_duration(f"{profile_prefix or f'eval.{dataset_name}'}.cache_lookup", time.perf_counter() - t_cache)

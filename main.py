@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 DEFAULT_MODEL_ID = "facebook/sam-vit-base"
-DEFAULT_IMAGE_SIZE = 512
+DEFAULT_IMAGE_SIZE = 1024
 DEFAULT_OUTPUT_DIR = Path("results") / "modular"
 
 # 強制 stdout/stderr 無緩衝，確保終端機即時顯示
