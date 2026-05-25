@@ -51,11 +51,9 @@ CLI_SETTING_KEYS = {
     "finetune_only",
     "finetune_use_fused_adamw",
     "run_only_stage7",
-    "run_only_stage8",
     "ood_threshold",
     "eval_workers",
     "eval_batch",
-    "eval_ece_max_pixels",
     "cpu_threads",
     "ood_method",
     "tta_fusion",
@@ -211,13 +209,7 @@ def _parse_args(defaults: dict, config_path: Path) -> argparse.Namespace:
         "--stage7-only",
         action="store_true",
         dest="run_only_stage7",
-        help="只執行 Stage 7/8 測試（略過 Stage 3~6 與 Stage 8 繪圖）",
-    )
-    train_group.add_argument(
-        "--stage8-only",
-        action="store_true",
-        dest="run_only_stage8",
-        help="只執行 Stage 8/8 繪圖（讀取既有 summary.json，不做推論）",
+        help="只執行 Stage 7/7 測試（略過 Stage 3~6）",
     )
     fused_group = train_group.add_mutually_exclusive_group()
     fused_group.add_argument("--use-fused-adamw", action="store_true", dest="finetune_use_fused_adamw", help="啟用 fused AdamW")
@@ -250,14 +242,6 @@ def _parse_args(defaults: dict, config_path: Path) -> argparse.Namespace:
         help="評估批次大小（0 表示依模式自動）",
     )
     eval_group.add_argument(
-        "--eval-ece-max-pixels",
-        type=int,
-        default=defaults["eval_ece_max_pixels"],
-        dest="eval_ece_max_pixels",
-        metavar="N",
-        help="ECE 每張圖最多使用像素數（0=全像素；>0 可加速，屬近似）",
-    )
-    eval_group.add_argument(
         "--cpu-threads",
         type=int,
         default=defaults["cpu_threads"],
@@ -269,7 +253,7 @@ def _parse_args(defaults: dict, config_path: Path) -> argparse.Namespace:
         "--ood-method",
         default=defaults["ood_method"],
         dest="ood_method",
-        choices=["entropy", "confidence", "variance"],
+        choices=["entropy", "confidence", "variance", "advanced"], # <--- 把 "advanced" 加進來
         help="OOD 偵測方法",
     )
     
@@ -323,7 +307,6 @@ def _parse_args(defaults: dict, config_path: Path) -> argparse.Namespace:
         finetune_only=bool(defaults["finetune_only"]),
         finetune_use_fused_adamw=bool(defaults["finetune_use_fused_adamw"]),
         run_only_stage7=bool(defaults["run_only_stage7"]),
-        run_only_stage8=bool(defaults["run_only_stage8"]),
     )
 
     return parser.parse_args()
