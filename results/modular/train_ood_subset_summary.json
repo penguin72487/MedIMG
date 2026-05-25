@@ -1,0 +1,90 @@
+{
+  "TN3K": {
+    "num_samples": 2015,
+    "num_ood": 6,
+    "ood_ratio": 0.002977667493796526,
+    "ood_threshold": 0.5,
+    "ood_method": "entropy",
+    "eval_stats": {
+      "dataset": "TN3K",
+      "num_samples": 2015,
+      "num_ood_detected": 6,
+      "ood_ratio": 0.002977667493796526,
+      "mean_ood_score": 0.24073667562296314,
+      "std_ood_score": 0.10823714898441815,
+      "total_time_sec": 112.18651226800284,
+      "avg_inference_time_ms": 12.615434918054333,
+      "avg_data_time_ms": 0.02051213156866954,
+      "avg_ood_time_ms": 2.492111424411267,
+      "throughput_samples_per_sec": 17.96116092089892,
+      "bottleneck_component": "inference",
+      "bottleneck_component_ratio": 0.22658785665030118
+    }
+  },
+  "TG3K": {
+    "num_samples": 2015,
+    "num_ood": 7,
+    "ood_ratio": 0.0034739454094292804,
+    "ood_threshold": 0.5,
+    "ood_method": "entropy",
+    "eval_stats": {
+      "dataset": "TG3K",
+      "num_samples": 2015,
+      "num_ood_detected": 7,
+      "ood_ratio": 0.0034739454094292804,
+      "mean_ood_score": 0.2237611999749102,
+      "std_ood_score": 0.10697885944185127,
+      "total_time_sec": 47.498956866998924,
+      "avg_inference_time_ms": 14.240298822246146,
+      "avg_data_time_ms": 0.12021048981930353,
+      "avg_ood_time_ms": 3.0763443498564573,
+      "throughput_samples_per_sec": 42.4219842478261,
+      "bottleneck_component": "inference",
+      "bottleneck_component_ratio": 0.6041017323216626
+    }
+  },
+  "DDTI": {
+    "num_samples": 328,
+    "num_ood": 0,
+    "ood_ratio": 0.0,
+    "ood_threshold": 0.5,
+    "ood_method": "entropy",
+    "eval_stats": {
+      "dataset": "DDTI",
+      "num_samples": 328,
+      "num_ood_detected": 0,
+      "ood_ratio": 0.0,
+      "mean_ood_score": 0.15813819764227402,
+      "std_ood_score": 0.05824545348730915,
+      "total_time_sec": 16.28658395799721,
+      "avg_inference_time_ms": 14.833927728676183,
+      "avg_data_time_ms": 0.010834259339345608,
+      "avg_ood_time_ms": 1.4822373020318238,
+      "throughput_samples_per_sec": 20.13927542116295,
+      "bottleneck_component": "inference",
+      "bottleneck_component_ratio": 0.2987445561054358
+    }
+  },
+  "TN5000": {
+    "num_samples": 3500,
+    "num_ood": 2,
+    "ood_ratio": 0.0005714285714285715,
+    "ood_threshold": 0.5,
+    "ood_method": "entropy",
+    "eval_stats": {
+      "dataset": "TN5000",
+      "num_samples": 3500,
+      "num_ood_detected": 2,
+      "ood_ratio": 0.0005714285714285715,
+      "mean_ood_score": 0.14775790584619555,
+      "std_ood_score": 0.06297172622131078,
+      "total_time_sec": 76.51973405000172,
+      "avg_inference_time_ms": 14.738511156573493,
+      "avg_data_time_ms": 0.11425928278393778,
+      "avg_ood_time_ms": 3.2975492505231943,
+      "throughput_samples_per_sec": 45.73983487335345,
+      "bottleneck_component": "inference",
+      "bottleneck_component_ratio": 0.6741370665807491
+    }
+  }
+}

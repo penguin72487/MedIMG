@@ -1,0 +1,22 @@
+{
+  "num_samples": 328,
+  "num_ood": 0,
+  "ood_ratio": 0.0,
+  "ood_threshold": 0.5,
+  "ood_method": "entropy",
+  "eval_stats": {
+    "dataset": "DDTI",
+    "num_samples": 328,
+    "num_ood_detected": 0,
+    "ood_ratio": 0.0,
+    "mean_ood_score": 0.15813819764227402,
+    "std_ood_score": 0.05824545348730915,
+    "total_time_sec": 16.28658395799721,
+    "avg_inference_time_ms": 14.833927728676183,
+    "avg_data_time_ms": 0.010834259339345608,
+    "avg_ood_time_ms": 1.4822373020318238,
+    "throughput_samples_per_sec": 20.13927542116295,
+    "bottleneck_component": "inference",
+    "bottleneck_component_ratio": 0.2987445561054358
+  }
+}

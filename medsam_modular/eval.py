@@ -16,7 +16,12 @@ except Exception:
 
 from medsam_modular.cache import PredictionCache, make_cache_key
 from medsam_modular.model import build_inputs_batch, predict_prob_masks_from_inputs
-from medsam_modular.profiler import PerformanceProfiler, get_active_profiler
+
+PerformanceProfiler = Any
+
+
+def get_active_profiler() -> None:
+    return None
 
 
 def _build_stats_from_store(
@@ -144,6 +149,308 @@ def _auto_eval_workers(device: str) -> int:
     return _cpu_count()
 
 
+def _is_cuda_oom_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return ("out of memory" in msg) or (("cuda" in msg) and ("memory" in msg))
+
+
+def _make_probe_batch(samples: List[Dict[str, Any]], batch_size: int) -> List[Dict[str, Any]]:
+    if not samples:
+        return []
+    return [samples[i % len(samples)] for i in range(batch_size)]
+
+
+def _run_eval_probe(
+    *,
+    mode: str,
+    model: Any,
+    processor: Any,
+    device: str,
+    ood_detector: Optional[Any],
+    tta_predictor: Optional[Any],
+    batch_samples: List[Dict[str, Any]],
+) -> None:
+    if not batch_samples:
+        return
+
+    images = [s["image"] for s in batch_samples]
+    bboxes = [s["bbox"] for s in batch_samples]
+    sample_names = [str(s.get("name", f"probe_{i}")) for i, s in enumerate(batch_samples)]
+
+    pred_masks_t, prob_for_ood_t = _predict_baseline_batch_tensor(
+        model=model,
+        processor=processor,
+        images=images,
+        bboxes=bboxes,
+        dataset_name="autotune",
+        sample_names=sample_names,
+        device=device,
+        pred_cache=None,
+        profiler=None,
+        profile_prefix="eval.autobatch",
+    )
+
+    gt_masks_t = [
+        (s["mask"] if isinstance(s["mask"], torch.Tensor) else torch.as_tensor(s["mask"]))
+        .to(device=device, dtype=torch.float32, non_blocking=(device == "cuda"))
+        for s in batch_samples
+    ]
+
+    pred_batch_t = torch.stack(pred_masks_t, dim=0)
+    prob_batch_t = torch.stack(prob_for_ood_t, dim=0)
+
+    if mode in {"ood_only", "ood_tta"} and ood_detector is not None and prob_for_ood_t:
+        _ = ood_detector.detect_batch_tensor(prob_batch_t)
+
+    # Baseline-like path should include metrics tensors in probe, otherwise tuned batch can be too optimistic.
+    if mode == "baseline":
+        gt_batch_t = torch.stack(gt_masks_t, dim=0)
+        _ = compute_metrics_batch_tensor(pred_batch_t, gt_batch_t)
+        _ = compute_bce_batch_tensor(prob_batch_t, gt_batch_t)
+        _ = compute_ece_batch_tensor(prob_batch_t, gt_batch_t)
+        _ = compute_surface_metrics_batch_tensor(pred_batch_t, gt_batch_t)
+
+
+def _benchmark_probe_throughput(
+    *,
+    mode: str,
+    model: Any,
+    processor: Any,
+    device: str,
+    ood_detector: Optional[Any],
+    tta_predictor: Optional[Any],
+    base_samples: List[Dict[str, Any]],
+    batch_size: int,
+    warmup_rounds: int,
+    measure_rounds: int,
+) -> Optional[float]:
+    probe_batch = _make_probe_batch(base_samples, batch_size)
+
+    try:
+        for _ in range(max(0, warmup_rounds)):
+            _run_eval_probe(
+                mode=mode,
+                model=model,
+                processor=processor,
+                device=device,
+                ood_detector=ood_detector,
+                tta_predictor=tta_predictor,
+                batch_samples=probe_batch,
+            )
+        if device == "cuda":
+            torch.cuda.synchronize()
+
+        t0 = time.perf_counter()
+        for _ in range(max(1, measure_rounds)):
+            _run_eval_probe(
+                mode=mode,
+                model=model,
+                processor=processor,
+                device=device,
+                ood_detector=ood_detector,
+                tta_predictor=tta_predictor,
+                batch_samples=probe_batch,
+            )
+        if device == "cuda":
+            torch.cuda.synchronize()
+        elapsed = time.perf_counter() - t0
+        if elapsed <= 0:
+            return None
+        return float((batch_size * max(1, measure_rounds)) / elapsed)
+    except RuntimeError as exc:
+        if _is_cuda_oom_error(exc):
+            if device == "cuda":
+                torch.cuda.empty_cache()
+            return None
+        raise
+
+    if mode == "ood_tta" and tta_predictor is not None:
+        tta_prob_t, _ = _tta_predict_with_oom_recovery(
+            tta_predictor=tta_predictor,
+            model=model,
+            processor=processor,
+            images=images,
+            bboxes=bboxes,
+            device=device,
+        )
+        tta_prob_stack = torch.stack(tta_prob_t, dim=0)
+        tta_pred_stack = (tta_prob_stack > 0.5).to(torch.uint8)
+        gt_batch_t = torch.stack(gt_masks_t, dim=0)
+        _ = compute_metrics_batch_tensor(pred_batch_t, gt_batch_t)
+        _ = compute_metrics_batch_tensor(tta_pred_stack, gt_batch_t)
+        _ = compute_bce_batch_tensor(prob_batch_t, gt_batch_t)
+        _ = compute_bce_batch_tensor(tta_prob_stack, gt_batch_t)
+        _ = compute_ece_batch_tensor(prob_batch_t, gt_batch_t)
+        _ = compute_ece_batch_tensor(tta_prob_stack, gt_batch_t)
+        _ = compute_surface_metrics_batch_tensor(pred_batch_t, gt_batch_t)
+        _ = compute_surface_metrics_batch_tensor(tta_pred_stack, gt_batch_t)
+
+
+def _auto_tune_eval_batch_size(
+    *,
+    dataset: Any,
+    dataset_name: str,
+    mode: str,
+    model: Any,
+    processor: Any,
+    device: str,
+    default_eval_batch: int,
+    ood_detector: Optional[Any] = None,
+    tta_predictor: Optional[Any] = None,
+) -> int:
+    if device != "cuda":
+        return max(1, int(default_eval_batch))
+
+    tune_enabled = os.getenv("MEDSAM_EVAL_AUTOBATCH", "1").strip().lower() in {"1", "true", "yes", "y", "on"}
+    if not tune_enabled:
+        return max(1, int(default_eval_batch))
+
+    if not hasattr(dataset, "__len__"):
+        return max(1, int(default_eval_batch))
+    n = int(len(dataset))
+    if n <= 0:
+        return max(1, int(default_eval_batch))
+
+    warmup_samples = max(1, int(os.getenv("MEDSAM_EVAL_AUTOBATCH_WARMUP_SAMPLES", "2")))
+    warmup_samples = min(warmup_samples, n)
+    base_samples = [dataset[i] for i in range(warmup_samples)]
+
+    cuda_mem_gb = _cuda_total_memory_gb()
+    if mode == "ood_tta":
+        default_cap = 4 if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else 8
+    else:
+        default_cap = 16 if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else 64
+    max_batch_cap = max(1, int(os.getenv("MEDSAM_EVAL_AUTOBATCH_MAX", str(default_cap))))
+
+    start_batch = max(1, min(int(default_eval_batch), max_batch_cap))
+    best_stable = 0
+    failed = 0
+    candidate = start_batch
+
+    while candidate <= max_batch_cap:
+        probe_batch = _make_probe_batch(base_samples, candidate)
+        try:
+            _run_eval_probe(
+                mode=mode,
+                model=model,
+                processor=processor,
+                device=device,
+                ood_detector=ood_detector,
+                tta_predictor=tta_predictor,
+                batch_samples=probe_batch,
+            )
+            torch.cuda.synchronize()
+            best_stable = candidate
+            if candidate == max_batch_cap:
+                break
+            next_candidate = min(max_batch_cap, candidate * 2)
+            if next_candidate == candidate:
+                break
+            candidate = next_candidate
+        except RuntimeError as exc:
+            if not _is_cuda_oom_error(exc):
+                raise
+            torch.cuda.empty_cache()
+            failed = candidate
+            break
+
+    if best_stable <= 0:
+        return 1
+    if failed <= 0:
+        max_stable = best_stable
+    else:
+        lo = best_stable
+        hi = failed - 1
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            probe_batch = _make_probe_batch(base_samples, mid)
+            try:
+                _run_eval_probe(
+                    mode=mode,
+                    model=model,
+                    processor=processor,
+                    device=device,
+                    ood_detector=ood_detector,
+                    tta_predictor=tta_predictor,
+                    batch_samples=probe_batch,
+                )
+                torch.cuda.synchronize()
+                lo = mid
+            except RuntimeError as exc:
+                if not _is_cuda_oom_error(exc):
+                    raise
+                torch.cuda.empty_cache()
+                hi = mid - 1
+
+        max_stable = max(1, lo)
+
+    # Throughput-oriented tuning among stable candidates.
+    benchmark_warmup = max(0, int(os.getenv("MEDSAM_EVAL_AUTOBATCH_BENCH_WARMUP", "1")))
+    benchmark_rounds = max(1, int(os.getenv("MEDSAM_EVAL_AUTOBATCH_BENCH_ROUNDS", "2")))
+
+    growth = max(2, int(os.getenv("MEDSAM_EVAL_AUTOBATCH_CANDIDATE_GROWTH", "2")))
+    candidates: List[int] = []
+    c = 1
+    while c <= max_stable:
+        candidates.append(c)
+        next_c = c * growth
+        if next_c == c:
+            break
+        c = next_c
+    if candidates[-1] != max_stable:
+        candidates.append(max_stable)
+    if start_batch not in candidates and start_batch <= max_stable:
+        candidates.append(start_batch)
+    candidates = sorted(set(max(1, min(max_stable, v)) for v in candidates))
+
+    best_batch = 1
+    best_tput = -1.0
+    for bs in candidates:
+        tput = _benchmark_probe_throughput(
+            mode=mode,
+            model=model,
+            processor=processor,
+            device=device,
+            ood_detector=ood_detector,
+            tta_predictor=tta_predictor,
+            base_samples=base_samples,
+            batch_size=bs,
+            warmup_rounds=benchmark_warmup,
+            measure_rounds=benchmark_rounds,
+        )
+        if tput is None:
+            continue
+        if tput > best_tput:
+            best_tput = tput
+            best_batch = bs
+
+    tuned = max(1, best_batch)
+
+    safety_raw = os.getenv("MEDSAM_EVAL_AUTOBATCH_SAFETY", "").strip()
+    if safety_raw:
+        try:
+            safety = float(safety_raw)
+        except Exception:
+            safety = 1.0
+    else:
+        safety = 1.0
+    safety = float(np.clip(safety, 0.1, 1.0))
+
+    tuned_safe = max(1, int(np.floor(tuned * safety)))
+    print(
+        f"  [autobatch] {dataset_name} ({mode}) -> eval_batch={tuned_safe} "
+        f"(raw={tuned}, max_stable={max_stable}, best_tput={best_tput:.2f} samples/s, safety={safety:.2f})"
+    )
+    return tuned_safe
+
+
+def _iter_with_oom_backoff(batch_samples: List[Dict[str, Any]], min_chunk: int = 1) -> List[List[Dict[str, Any]]]:
+    if len(batch_samples) <= min_chunk:
+        return [batch_samples]
+    half = max(min_chunk, len(batch_samples) // 2)
+    return [batch_samples[:half], batch_samples[half:]]
+
+
 class OODDetector:
     def __init__(self, threshold: float = 0.5, method: str = "entropy"):
         self.threshold = threshold
@@ -265,28 +572,21 @@ class TTAPredictor:
         self,
         augmentations: Optional[List[str]] = None,
         fusion_mode: str = "entropy_weighted",
-        use_fast_mode: bool = False,
     ):
         """
         Args:
             augmentations: List of augmentations to apply. If None, uses defaults.
             fusion_mode: "mean", "median", or "entropy_weighted"
-            use_fast_mode: If True, uses only flip augmentations (faster)
         """
-        if use_fast_mode:
-            # Fast mode: only essential augmentations
-            raw_augmentations = augmentations or ["none", "hflip", "vflip", "hvflip"]
-        else:
-            # Full mode: fixed augmentations (elastic_deform removed for speed).
-            base_augs = [
-                "none",
-                "hflip",
-                "vflip",
-                "hvflip",
-                "rotate_90",
-                "rotate_270",
-            ]
-            raw_augmentations = augmentations or base_augs
+        base_augs = [
+            "none",
+            "hflip",
+            "vflip",
+            "hvflip",
+            "rotate_90",
+            "rotate_270",
+        ]
+        raw_augmentations = augmentations or base_augs
 
         self.augmentations = self._canonicalize_augmentations(raw_augmentations)
         
@@ -1345,18 +1645,34 @@ def evaluate_dataset(
 
     start = time.perf_counter()
 
-    default_eval_workers = str(_auto_eval_workers(device))
+    default_eval_workers = _auto_eval_workers(device)
     # TTA path benefits from small batching; keep baseline higher and TTA moderate to avoid OOM.
     if device == "cuda":
         cuda_mem_gb = _cuda_total_memory_gb()
         if not use_tta:
-            default_eval_batch = "8"
+            default_eval_batch = 8
         else:
-            default_eval_batch = "2" if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else "4"
+            default_eval_batch = 2 if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else 4
     else:
-        default_eval_batch = "1"
-    eval_workers = max(0, int(os.getenv("MEDSAM_EVAL_WORKERS", default_eval_workers)))
-    eval_batch_size = max(1, int(os.getenv("MEDSAM_EVAL_BATCH", default_eval_batch)))
+        default_eval_batch = 1
+    raw_eval_workers = int(os.getenv("MEDSAM_EVAL_WORKERS", "0"))
+    eval_workers = default_eval_workers if raw_eval_workers <= 0 else max(0, raw_eval_workers)
+    raw_eval_batch = int(os.getenv("MEDSAM_EVAL_BATCH", "0"))
+    if raw_eval_batch <= 0:
+        mode = "ood_tta" if use_tta else "baseline"
+        eval_batch_size = _auto_tune_eval_batch_size(
+            dataset=dataset,
+            dataset_name=dataset_name,
+            mode=mode,
+            model=model,
+            processor=processor,
+            device=device,
+            default_eval_batch=default_eval_batch,
+            ood_detector=ood_detector,
+            tta_predictor=tta_predictor,
+        )
+    else:
+        eval_batch_size = max(1, raw_eval_batch)
     eval_prefetch = max(2, int(os.getenv("MEDSAM_EVAL_PREFETCH", "4")))
     pin_memory = device == "cuda"
 
@@ -1551,6 +1867,184 @@ def evaluate_dataset(
     return results, stats
 
 
+def evaluate_dataset_ood_only(
+    dataset: Any,
+    dataset_name: str,
+    model: Any,
+    processor: Any,
+    device: str,
+    ood_detector: OODDetector,
+    pred_cache: Optional[PredictionCache] = None,
+    profiler: Optional[PerformanceProfiler] = None,
+    profile_prefix: str = "",
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Fast OOD-only evaluation path.
+
+    This path intentionally skips segmentation metrics (dice/jaccard/hd95/ece)
+    and only computes baseline prediction + OOD score for subset selection.
+    """
+    results: List[Dict[str, Any]] = []
+    ood_scores: List[float] = []
+    ood_eval_scores: List[float] = []
+    ood_eval_labels: List[int] = []
+    inference_times: List[float] = []
+    data_times: List[float] = []
+    ood_times: List[float] = []
+
+    start = time.perf_counter()
+
+    default_eval_workers = _auto_eval_workers(device)
+    if device == "cuda":
+        default_eval_batch = 16
+    else:
+        default_eval_batch = 1
+    raw_eval_workers = int(os.getenv("MEDSAM_EVAL_WORKERS", "0"))
+    eval_workers = default_eval_workers if raw_eval_workers <= 0 else max(0, raw_eval_workers)
+    raw_eval_batch = int(os.getenv("MEDSAM_EVAL_BATCH", "0"))
+    if raw_eval_batch <= 0:
+        eval_batch_size = _auto_tune_eval_batch_size(
+            dataset=dataset,
+            dataset_name=dataset_name,
+            mode="ood_only",
+            model=model,
+            processor=processor,
+            device=device,
+            default_eval_batch=default_eval_batch,
+            ood_detector=ood_detector,
+            tta_predictor=None,
+        )
+    else:
+        eval_batch_size = max(1, raw_eval_batch)
+    eval_prefetch = max(2, int(os.getenv("MEDSAM_EVAL_PREFETCH", "4")))
+    pin_memory = device == "cuda"
+
+    _maybe_warm_dataset_cache(dataset=dataset, dataset_name=dataset_name, profiler=profiler, profile_prefix=profile_prefix)
+
+    if eval_workers > 0:
+        loader = DataLoader(
+            dataset,
+            batch_size=eval_batch_size,
+            shuffle=False,
+            num_workers=eval_workers,
+            pin_memory=pin_memory,
+            persistent_workers=True,
+            prefetch_factor=eval_prefetch,
+            collate_fn=lambda b: b,
+        )
+        iterable = loader
+        total = len(loader)
+    else:
+        iterable = ([dataset[idx]] for idx in range(len(dataset)))
+        total = len(dataset)
+
+    sample_index = 0
+    for batch_samples in tqdm(iterable, total=total, desc=f"Evaluating {dataset_name} (ood-only)"):
+        pending: List[List[Dict[str, Any]]] = [batch_samples]
+        while pending:
+            cur = pending.pop(0)
+            batch_start = time.perf_counter()
+            images = [s["image"] for s in cur]
+            bboxes = [s["bbox"] for s in cur]
+            sample_names = [str(s.get("name", f"sample_{sample_index + i}")) for i, s in enumerate(cur)]
+            batch_ood_labels: List[Optional[int]] = []
+            for s in cur:
+                raw_label = s.get("ood_label", s.get("is_ood_gt", s.get("is_ood", None)))
+                if raw_label is None:
+                    batch_ood_labels.append(None)
+                else:
+                    batch_ood_labels.append(int(bool(raw_label)))
+            per_sample_data_time = (time.perf_counter() - batch_start) / max(1, len(cur))
+            data_times.extend([per_sample_data_time] * len(cur))
+
+            try:
+                t_inf = time.perf_counter()
+                _, prob_for_ood_t = _predict_baseline_batch_tensor(
+                    model=model,
+                    processor=processor,
+                    images=images,
+                    bboxes=bboxes,
+                    dataset_name=dataset_name,
+                    sample_names=sample_names,
+                    device=device,
+                    pred_cache=pred_cache,
+                    profiler=profiler,
+                    profile_prefix=profile_prefix,
+                )
+                inf_elapsed = time.perf_counter() - t_inf
+                inference_times.extend([inf_elapsed / max(1, len(cur))] * len(cur))
+
+                t_ood = time.perf_counter()
+                prob_batch_t = torch.stack(prob_for_ood_t, dim=0)
+                ood_batch = ood_detector.detect_batch_tensor(prob_batch_t)
+                ood_elapsed = time.perf_counter() - t_ood
+                ood_times.extend([ood_elapsed / max(1, len(cur))] * len(cur))
+            except RuntimeError as exc:
+                if device == "cuda" and _is_cuda_oom_error(exc) and len(cur) > 1:
+                    torch.cuda.empty_cache()
+                    pending = _iter_with_oom_backoff(cur) + pending
+                    continue
+                raise
+
+            for i in range(len(cur)):
+                ood = ood_batch[i]
+                ood_score = float(ood["ood_score"])
+                is_ood = bool(ood["is_ood"])
+                confidence = float(ood["confidence"])
+                ood_scores.append(ood_score)
+                if batch_ood_labels[i] is not None:
+                    ood_eval_scores.append(ood_score)
+                    ood_eval_labels.append(int(batch_ood_labels[i]))
+
+                results.append(
+                    {
+                        "index": int(sample_index),
+                        "name": sample_names[i],
+                        "ood_score": ood_score,
+                        "is_ood": is_ood,
+                        "ood_label": batch_ood_labels[i],
+                        "confidence": confidence,
+                    }
+                )
+                sample_index += 1
+
+    total_time = time.perf_counter() - start
+    stats: Dict[str, Any] = {
+        "dataset": dataset_name,
+        "num_samples": int(len(results)),
+        "num_ood_detected": int(sum(1 for r in results if r.get("is_ood", False))),
+        "ood_ratio": float(sum(1 for r in results if r.get("is_ood", False)) / max(1, len(results))),
+        "mean_ood_score": float(np.mean(ood_scores)) if ood_scores else 0.0,
+        "std_ood_score": float(np.std(ood_scores)) if ood_scores else 0.0,
+        "total_time_sec": float(total_time),
+        "avg_inference_time_ms": float(np.mean(inference_times) * 1000.0) if inference_times else 0.0,
+        "avg_data_time_ms": float(np.mean(data_times) * 1000.0) if data_times else 0.0,
+        "avg_ood_time_ms": float(np.mean(ood_times) * 1000.0) if ood_times else 0.0,
+        "throughput_samples_per_sec": float(len(results) / total_time if total_time > 0 else 0.0),
+    }
+
+    if ood_eval_scores and ood_eval_labels:
+        stats.update(_compute_ood_detection_stats(ood_eval_scores, ood_eval_labels))
+
+    component_totals = {
+        "data": float(np.sum(data_times)),
+        "inference": float(np.sum(inference_times)),
+        "ood": float(np.sum(ood_times)),
+    }
+    bottleneck_name, bottleneck_total = max(component_totals.items(), key=lambda kv: kv[1])
+    stats["bottleneck_component"] = bottleneck_name
+    stats["bottleneck_component_ratio"] = float(bottleneck_total / max(1e-8, total_time))
+
+    if profiler is not None and profiler.enabled:
+        prefix = profile_prefix or f"eval.{dataset_name}.ood_only"
+        profiler.record_duration(f"{prefix}.data", component_totals["data"], count=max(1, len(data_times)))
+        profiler.record_duration(f"{prefix}.inference", component_totals["inference"], count=max(1, len(inference_times)))
+        profiler.record_duration(f"{prefix}.ood", component_totals["ood"], count=max(1, len(ood_times)))
+        profiler.record_duration(f"{prefix}.total", total_time, count=max(1, len(results)))
+        profiler.flush()
+
+    return results, stats
+
+
 def evaluate_dataset_ood_tta(
     dataset: Any,
     dataset_name: str,
@@ -1582,14 +2076,29 @@ def evaluate_dataset_ood_tta(
     post_times: List[float] = []
 
     start = time.perf_counter()
-    default_eval_workers = str(_auto_eval_workers(device))
+    default_eval_workers = _auto_eval_workers(device)
     if device == "cuda":
         cuda_mem_gb = _cuda_total_memory_gb()
-        default_eval_batch = "2" if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else "4"
+        default_eval_batch = 2 if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else 4
     else:
-        default_eval_batch = "1"
-    eval_workers = max(0, int(os.getenv("MEDSAM_EVAL_WORKERS", default_eval_workers)))
-    eval_batch_size = max(1, int(os.getenv("MEDSAM_EVAL_BATCH", default_eval_batch)))
+        default_eval_batch = 1
+    raw_eval_workers = int(os.getenv("MEDSAM_EVAL_WORKERS", "0"))
+    eval_workers = default_eval_workers if raw_eval_workers <= 0 else max(0, raw_eval_workers)
+    raw_eval_batch = int(os.getenv("MEDSAM_EVAL_BATCH", "0"))
+    if raw_eval_batch <= 0:
+        eval_batch_size = _auto_tune_eval_batch_size(
+            dataset=dataset,
+            dataset_name=dataset_name,
+            mode="ood_tta",
+            model=model,
+            processor=processor,
+            device=device,
+            default_eval_batch=default_eval_batch,
+            ood_detector=ood_detector,
+            tta_predictor=tta_predictor,
+        )
+    else:
+        eval_batch_size = max(1, raw_eval_batch)
     eval_prefetch = max(2, int(os.getenv("MEDSAM_EVAL_PREFETCH", "4")))
     pin_memory = device == "cuda"
 
@@ -1614,141 +2123,151 @@ def evaluate_dataset_ood_tta(
 
     sample_index = 0
     for batch_samples in tqdm(iterable, total=total, desc=f"Evaluating {dataset_name} (ood+tta)"):
-        batch_start = time.perf_counter()
-        images = [s["image"] for s in batch_samples]
-        bboxes = [s["bbox"] for s in batch_samples]
-        sample_names = [str(s.get("name", f"sample_{sample_index + i}")) for i, s in enumerate(batch_samples)]
-        batch_ood_labels: List[Optional[int]] = []
-        for s in batch_samples:
-            raw_label = s.get("ood_label", s.get("is_ood_gt", s.get("is_ood", None)))
-            if raw_label is None:
-                batch_ood_labels.append(None)
-            else:
-                batch_ood_labels.append(int(bool(raw_label)))
-        gt_masks_t = [
-            (s["mask"] if isinstance(s["mask"], torch.Tensor) else torch.as_tensor(s["mask"]))
-            .to(device=device, dtype=torch.float32, non_blocking=(device == "cuda"))
-            for s in batch_samples
-        ]
-        per_sample_data_time = (time.perf_counter() - batch_start) / max(1, len(batch_samples))
-        data_times.extend([per_sample_data_time] * len(batch_samples))
+        pending: List[List[Dict[str, Any]]] = [batch_samples]
+        while pending:
+            cur = pending.pop(0)
+            batch_start = time.perf_counter()
+            images = [s["image"] for s in cur]
+            bboxes = [s["bbox"] for s in cur]
+            sample_names = [str(s.get("name", f"sample_{sample_index + i}")) for i, s in enumerate(cur)]
+            batch_ood_labels: List[Optional[int]] = []
+            for s in cur:
+                raw_label = s.get("ood_label", s.get("is_ood_gt", s.get("is_ood", None)))
+                if raw_label is None:
+                    batch_ood_labels.append(None)
+                else:
+                    batch_ood_labels.append(int(bool(raw_label)))
+            gt_masks_t = [
+                (s["mask"] if isinstance(s["mask"], torch.Tensor) else torch.as_tensor(s["mask"]))
+                .to(device=device, dtype=torch.float32, non_blocking=(device == "cuda"))
+                for s in cur
+            ]
+            per_sample_data_time = (time.perf_counter() - batch_start) / max(1, len(cur))
+            data_times.extend([per_sample_data_time] * len(cur))
 
-        t_ood_inf = time.perf_counter()
-        ood_pred_masks_t, ood_prob_t = _predict_baseline_batch_tensor(
-            model=model,
-            processor=processor,
-            images=images,
-            bboxes=bboxes,
-            dataset_name=dataset_name,
-            sample_names=sample_names,
-            device=device,
-            pred_cache=pred_cache,
-            profiler=profiler,
-            profile_prefix=f"{profile_prefix}.ood" if profile_prefix else f"eval.{dataset_name}.ood",
-        )
-        inference_times_ood.extend([(time.perf_counter() - t_ood_inf) / max(1, len(batch_samples))] * len(batch_samples))
+            try:
+                t_ood_inf = time.perf_counter()
+                ood_pred_masks_t, ood_prob_t = _predict_baseline_batch_tensor(
+                    model=model,
+                    processor=processor,
+                    images=images,
+                    bboxes=bboxes,
+                    dataset_name=dataset_name,
+                    sample_names=sample_names,
+                    device=device,
+                    pred_cache=pred_cache,
+                    profiler=profiler,
+                    profile_prefix=f"{profile_prefix}.ood" if profile_prefix else f"eval.{dataset_name}.ood",
+                )
+                inference_times_ood.extend([(time.perf_counter() - t_ood_inf) / max(1, len(cur))] * len(cur))
 
-        t_tta_inf = time.perf_counter()
-        tta_prob_t, tta_batch_uncertainties = _tta_predict_with_oom_recovery(
-            tta_predictor=tta_predictor,
-            model=model,
-            processor=processor,
-            images=images,
-            bboxes=bboxes,
-            device=device,
-        )
-        tta_pred_masks_t = [(prob_t > 0.5).to(torch.uint8) for prob_t in tta_prob_t]
-        uncertainties.extend([float(u) for u in tta_batch_uncertainties])
-        inference_times_tta.extend([(time.perf_counter() - t_tta_inf) / max(1, len(batch_samples))] * len(batch_samples))
+                t_tta_inf = time.perf_counter()
+                tta_prob_t, tta_batch_uncertainties = _tta_predict_with_oom_recovery(
+                    tta_predictor=tta_predictor,
+                    model=model,
+                    processor=processor,
+                    images=images,
+                    bboxes=bboxes,
+                    device=device,
+                )
+                tta_pred_masks_t = [(prob_t > 0.5).to(torch.uint8) for prob_t in tta_prob_t]
+                uncertainties.extend([float(u) for u in tta_batch_uncertainties])
+                inference_times_tta.extend([(time.perf_counter() - t_tta_inf) / max(1, len(cur))] * len(cur))
 
-        t_ood = time.perf_counter()
-        ood_prob_stack = torch.stack(ood_prob_t, dim=0)
-        tta_prob_stack = torch.stack(tta_prob_t, dim=0)
-        ood_pred_stack = torch.stack(ood_pred_masks_t, dim=0)
-        tta_pred_stack = torch.stack(tta_pred_masks_t, dim=0)
-        ood_batch = ood_detector.detect_batch_tensor(ood_prob_stack)
-        ood_elapsed = time.perf_counter() - t_ood
-        ood_times.extend([ood_elapsed / max(1, len(batch_samples))] * len(batch_samples))
+                t_ood = time.perf_counter()
+                ood_prob_stack = torch.stack(ood_prob_t, dim=0)
+                tta_prob_stack = torch.stack(tta_prob_t, dim=0)
+                ood_pred_stack = torch.stack(ood_pred_masks_t, dim=0)
+                tta_pred_stack = torch.stack(tta_pred_masks_t, dim=0)
+                ood_batch = ood_detector.detect_batch_tensor(ood_prob_stack)
+                ood_elapsed = time.perf_counter() - t_ood
+                ood_times.extend([ood_elapsed / max(1, len(cur))] * len(cur))
 
-        t_metric = time.perf_counter()
-        gt_stack = torch.stack(gt_masks_t, dim=0)
-        ood_batch_metrics = compute_metrics_batch_tensor(ood_pred_stack, gt_stack)
-        ood_batch_metrics["bce"] = compute_bce_batch_tensor(ood_prob_stack, gt_stack)
-        ood_surface_metrics = compute_surface_metrics_batch_tensor(ood_pred_stack, gt_stack)
-        ood_batch_metrics["hd95"] = ood_surface_metrics["hd95"]
-        ood_batch_metrics["assd"] = ood_surface_metrics["assd"]
-        ood_batch_metrics["ece"] = compute_ece_batch_tensor(ood_prob_stack, gt_stack)
-        tta_batch_metrics = compute_metrics_batch_tensor(tta_pred_stack, gt_stack)
-        tta_batch_metrics["bce"] = compute_bce_batch_tensor(tta_prob_stack, gt_stack)
-        tta_surface_metrics = compute_surface_metrics_batch_tensor(tta_pred_stack, gt_stack)
-        tta_batch_metrics["hd95"] = tta_surface_metrics["hd95"]
-        tta_batch_metrics["assd"] = tta_surface_metrics["assd"]
-        tta_batch_metrics["ece"] = compute_ece_batch_tensor(tta_prob_stack, gt_stack)
-        metric_elapsed = time.perf_counter() - t_metric
-        metrics_times.extend([metric_elapsed / max(1, len(batch_samples))] * len(batch_samples))
+                t_metric = time.perf_counter()
+                gt_stack = torch.stack(gt_masks_t, dim=0)
+                ood_batch_metrics = compute_metrics_batch_tensor(ood_pred_stack, gt_stack)
+                ood_batch_metrics["bce"] = compute_bce_batch_tensor(ood_prob_stack, gt_stack)
+                ood_surface_metrics = compute_surface_metrics_batch_tensor(ood_pred_stack, gt_stack)
+                ood_batch_metrics["hd95"] = ood_surface_metrics["hd95"]
+                ood_batch_metrics["assd"] = ood_surface_metrics["assd"]
+                ood_batch_metrics["ece"] = compute_ece_batch_tensor(ood_prob_stack, gt_stack)
+                tta_batch_metrics = compute_metrics_batch_tensor(tta_pred_stack, gt_stack)
+                tta_batch_metrics["bce"] = compute_bce_batch_tensor(tta_prob_stack, gt_stack)
+                tta_surface_metrics = compute_surface_metrics_batch_tensor(tta_pred_stack, gt_stack)
+                tta_batch_metrics["hd95"] = tta_surface_metrics["hd95"]
+                tta_batch_metrics["assd"] = tta_surface_metrics["assd"]
+                tta_batch_metrics["ece"] = compute_ece_batch_tensor(tta_prob_stack, gt_stack)
+                metric_elapsed = time.perf_counter() - t_metric
+                metrics_times.extend([metric_elapsed / max(1, len(cur))] * len(cur))
+            except RuntimeError as exc:
+                if device == "cuda" and _is_cuda_oom_error(exc) and len(cur) > 1:
+                    torch.cuda.empty_cache()
+                    pending = _iter_with_oom_backoff(cur) + pending
+                    continue
+                raise
 
-        t_post = time.perf_counter()
-        for i in range(len(batch_samples)):
-            ood_info = ood_batch[i]
-            ood_score = float(ood_info["ood_score"])
-            is_ood = bool(ood_info["is_ood"])
-            confidence = float(ood_info["confidence"])
-            ood_scores.append(ood_score)
-            if batch_ood_labels[i] is not None:
-                ood_eval_scores.append(ood_score)
-                ood_eval_labels.append(int(batch_ood_labels[i]))
+            t_post = time.perf_counter()
+            for i in range(len(cur)):
+                ood_info = ood_batch[i]
+                ood_score = float(ood_info["ood_score"])
+                is_ood = bool(ood_info["is_ood"])
+                confidence = float(ood_info["confidence"])
+                ood_scores.append(ood_score)
+                if batch_ood_labels[i] is not None:
+                    ood_eval_scores.append(ood_score)
+                    ood_eval_labels.append(int(batch_ood_labels[i]))
 
-            ood_m = {k: float(ood_batch_metrics[k][i].item()) for k in metrics_keys}
-            tta_m = {k: float(tta_batch_metrics[k][i].item()) for k in metrics_keys}
-            for k in metrics_keys:
-                ood_metrics_store[k].append(ood_m[k])
-                tta_metrics_store[k].append(tta_m[k])
+                ood_m = {k: float(ood_batch_metrics[k][i].item()) for k in metrics_keys}
+                tta_m = {k: float(tta_batch_metrics[k][i].item()) for k in metrics_keys}
+                for k in metrics_keys:
+                    ood_metrics_store[k].append(ood_m[k])
+                    tta_metrics_store[k].append(tta_m[k])
 
-            ood_results.append(
-                {
-                    "index": int(sample_index),
-                    "name": sample_names[i],
-                    "dice": float(ood_m["dice"]),
-                    "jaccard": float(ood_m["jaccard"]),
-                    "precision": float(ood_m["precision"]),
-                    "recall": float(ood_m["recall"]),
-                    "sensitivity": float(ood_m["sensitivity"]),
-                    "f1": float(ood_m["f1"]),
-                    "bce": float(ood_m["bce"]),
-                    "hd95": float(ood_m["hd95"]),
-                    "assd": float(ood_m["assd"]),
-                    "ece": float(ood_m["ece"]),
-                    "ood_score": ood_score,
-                    "is_ood": is_ood,
-                    "ood_label": batch_ood_labels[i],
-                    "confidence": confidence,
-                    "uncertainty": 0.0,
-                }
-            )
-            tta_results.append(
-                {
-                    "index": int(sample_index),
-                    "name": sample_names[i],
-                    "dice": float(tta_m["dice"]),
-                    "jaccard": float(tta_m["jaccard"]),
-                    "precision": float(tta_m["precision"]),
-                    "recall": float(tta_m["recall"]),
-                    "sensitivity": float(tta_m["sensitivity"]),
-                    "f1": float(tta_m["f1"]),
-                    "bce": float(tta_m["bce"]),
-                    "hd95": float(tta_m["hd95"]),
-                    "assd": float(tta_m["assd"]),
-                    "ece": float(tta_m["ece"]),
-                    "ood_score": 0.0,
-                    "is_ood": False,
-                    "ood_label": batch_ood_labels[i],
-                    "confidence": 0.0,
-                    "uncertainty": float(tta_batch_uncertainties[i]),
-                }
-            )
-            sample_index += 1
-        post_elapsed = time.perf_counter() - t_post
-        post_times.extend([post_elapsed / max(1, len(batch_samples))] * len(batch_samples))
+                ood_results.append(
+                    {
+                        "index": int(sample_index),
+                        "name": sample_names[i],
+                        "dice": float(ood_m["dice"]),
+                        "jaccard": float(ood_m["jaccard"]),
+                        "precision": float(ood_m["precision"]),
+                        "recall": float(ood_m["recall"]),
+                        "sensitivity": float(ood_m["sensitivity"]),
+                        "f1": float(ood_m["f1"]),
+                        "bce": float(ood_m["bce"]),
+                        "hd95": float(ood_m["hd95"]),
+                        "assd": float(ood_m["assd"]),
+                        "ece": float(ood_m["ece"]),
+                        "ood_score": ood_score,
+                        "is_ood": is_ood,
+                        "ood_label": batch_ood_labels[i],
+                        "confidence": confidence,
+                        "uncertainty": 0.0,
+                    }
+                )
+                tta_results.append(
+                    {
+                        "index": int(sample_index),
+                        "name": sample_names[i],
+                        "dice": float(tta_m["dice"]),
+                        "jaccard": float(tta_m["jaccard"]),
+                        "precision": float(tta_m["precision"]),
+                        "recall": float(tta_m["recall"]),
+                        "sensitivity": float(tta_m["sensitivity"]),
+                        "f1": float(tta_m["f1"]),
+                        "bce": float(tta_m["bce"]),
+                        "hd95": float(tta_m["hd95"]),
+                        "assd": float(tta_m["assd"]),
+                        "ece": float(tta_m["ece"]),
+                        "ood_score": 0.0,
+                        "is_ood": False,
+                        "ood_label": batch_ood_labels[i],
+                        "confidence": 0.0,
+                        "uncertainty": float(tta_batch_uncertainties[i]),
+                    }
+                )
+                sample_index += 1
+            post_elapsed = time.perf_counter() - t_post
+            post_times.extend([post_elapsed / max(1, len(cur))] * len(cur))
 
     total_time = time.perf_counter() - start
     ood_stats = _build_stats_from_store(

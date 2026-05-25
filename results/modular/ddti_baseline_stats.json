@@ -21,13 +21,13 @@
   "std_assd": 242.09318762799376,
   "mean_ece": 0.05968672535981577,
   "std_ece": 0.12351125480419133,
-  "total_time_sec": 22.65274331799992,
-  "avg_inference_time_ms": 8.54141413857169,
-  "avg_data_time_ms": 2.5832381683592236,
-  "avg_ood_time_ms": 0.0031146831557040547,
-  "avg_metrics_time_ms": 194.06965451483725,
-  "avg_post_time_ms": 1.1361629702979272,
-  "throughput_samples_per_sec": 4.458621129554104,
+  "total_time_sec": 21.746543850997114,
+  "avg_inference_time_ms": 7.777414416045983,
+  "avg_data_time_ms": 1.9993840396637097,
+  "avg_ood_time_ms": 0.0024629210895342328,
+  "avg_metrics_time_ms": 184.6279384751169,
+  "avg_post_time_ms": 1.0363913462773924,
+  "throughput_samples_per_sec": 4.644416174451969,
   "bottleneck_component": "metrics",
-  "bottleneck_component_ratio": 0.8652830622251185
+  "bottleneck_component_ratio": 0.857488983709556
 }

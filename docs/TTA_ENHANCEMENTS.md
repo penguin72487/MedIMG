@@ -15,7 +15,7 @@
 ### 方案 1：快速 TTA (推荐用于快速测试)
 ```bash
 # 快速模式：仅使用翻转增强，计算量低
-conda run -n medsam python main.py --tta-fast
+conda run -n medsam python main.py --tta-augmentations "none,hflip,vflip,hvflip"
 ```
 
 **特点**：
@@ -47,10 +47,10 @@ conda run -n medsam python main.py \
 
 ### 命令行参数
 
-#### `--tta-fast`
+#### `--tta-augmentations "none,hflip,vflip,hvflip"`
 启用快速 TTA 模式（仅翻转增强）
 ```bash
-python main.py --tta-fast
+python main.py --tta-augmentations "none,hflip,vflip,hvflip"
 ```
 
 #### `--tta-fusion` {mean|median|entropy_weighted}
@@ -90,7 +90,7 @@ python main.py --tta-augmentations \
 export MEDSAM_TTA_FUSION=entropy_weighted
 
 # 启用快速模式
-export MEDSAM_TTA_FAST=1
+export MEDSAM_TTA_AUGMENTATIONS="none,hflip,vflip,hvflip"
 
 # 自定义增强方式
 export MEDSAM_TTA_AUGMENTATIONS="none,hflip,vflip,rotate_90"
@@ -182,13 +182,13 @@ fused = weighted_average(predictions, weights)
 
 ### 场景 1：追求速度 ⚡
 ```bash
-python main.py --tta-fast --tta-fusion mean
+python main.py --tta-augmentations "none,hflip,vflip,hvflip" --tta-fusion mean
 # 预计：10-15 秒/100样本
 ```
 
 ### 场景 2：平衡速度和准确度 ⚙️
 ```bash
-python main.py --tta-fast --tta-fusion entropy_weighted
+python main.py --tta-augmentations "none,hflip,vflip,hvflip" --tta-fusion entropy_weighted
 # 预计：12-18 秒/100样本，性能接近完整TTA
 ```
 
@@ -245,8 +245,7 @@ from medsam_modular.eval import TTAPredictor
 augmentations = ["none", "hflip", "vflip", "rotate_90"]
 tta = TTAPredictor(
     augmentations=augmentations,
-    fusion_mode="entropy_weighted",
-    use_fast_mode=False
+  fusion_mode="entropy_weighted"
 )
 ```
 

@@ -9,7 +9,9 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 
-from medsam_modular.profiler import get_active_profiler
+
+def get_active_profiler() -> None:
+    return None
 
 
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".xml")

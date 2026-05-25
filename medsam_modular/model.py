@@ -19,7 +19,9 @@ import torch.nn.functional as F
 from PIL import Image
 from transformers import SamModel, SamProcessor
 
-from medsam_modular.profiler import get_active_profiler
+
+def get_active_profiler() -> Optional[Any]:
+    return None
 
 
 _SAM_NORM_CACHE: Dict[int, Tuple[torch.Tensor, torch.Tensor]] = {}

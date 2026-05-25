@@ -1,0 +1,22 @@
+{
+  "num_samples": 3500,
+  "num_ood": 2,
+  "ood_ratio": 0.0005714285714285715,
+  "ood_threshold": 0.5,
+  "ood_method": "entropy",
+  "eval_stats": {
+    "dataset": "TN5000",
+    "num_samples": 3500,
+    "num_ood_detected": 2,
+    "ood_ratio": 0.0005714285714285715,
+    "mean_ood_score": 0.14775790584619555,
+    "std_ood_score": 0.06297172622131078,
+    "total_time_sec": 76.51973405000172,
+    "avg_inference_time_ms": 14.738511156573493,
+    "avg_data_time_ms": 0.11425928278393778,
+    "avg_ood_time_ms": 3.2975492505231943,
+    "throughput_samples_per_sec": 45.73983487335345,
+    "bottleneck_component": "inference",
+    "bottleneck_component_ratio": 0.6741370665807491
+  }
+}

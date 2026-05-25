@@ -1,0 +1,22 @@
+{
+  "num_samples": 2015,
+  "num_ood": 6,
+  "ood_ratio": 0.002977667493796526,
+  "ood_threshold": 0.5,
+  "ood_method": "entropy",
+  "eval_stats": {
+    "dataset": "TN3K",
+    "num_samples": 2015,
+    "num_ood_detected": 6,
+    "ood_ratio": 0.002977667493796526,
+    "mean_ood_score": 0.24073667562296314,
+    "std_ood_score": 0.10823714898441815,
+    "total_time_sec": 112.18651226800284,
+    "avg_inference_time_ms": 12.615434918054333,
+    "avg_data_time_ms": 0.02051213156866954,
+    "avg_ood_time_ms": 2.492111424411267,
+    "throughput_samples_per_sec": 17.96116092089892,
+    "bottleneck_component": "inference",
+    "bottleneck_component_ratio": 0.22658785665030118
+  }
+}

@@ -71,7 +71,7 @@ fused = weighted_average(predictions, weights)
 
 #### 方案 A：快速模式 (推荐)
 ```python
-tta = TTAPredictor(use_fast_mode=True)  # 仅 4 种翻转增强
+tta = TTAPredictor(augmentations=["none", "hflip", "vflip", "hvflip"])  # 仅 4 种翻转增强
 ```
 - **性能**：降速 60-75%
 - **精度**：损失 < 0.5%
@@ -102,7 +102,7 @@ tta = TTAPredictor(
 #### 命令行参数（main.py）
 ```bash
 # 快速模式
-python main.py --tta-fast
+python main.py --tta-augmentations "none,hflip,vflip,hvflip"
 
 # 自定义融合策略
 python main.py --tta-fusion entropy_weighted|median|mean
@@ -113,7 +113,7 @@ python main.py --tta-augmentations "none,hflip,vflip,rotate_90"
 
 #### 环境变量配置（runner.py）
 ```bash
-export MEDSAM_TTA_FAST=0|1
+export MEDSAM_TTA_AUGMENTATIONS="none,hflip,vflip,hvflip"
 export MEDSAM_TTA_FUSION=entropy_weighted|median|mean
 export MEDSAM_TTA_AUGMENTATIONS="aug1,aug2,aug3"
 ```
@@ -192,7 +192,7 @@ export MEDSAM_TTA_AUGMENTATIONS="aug1,aug2,aug3"
 
 ### 推荐配置 1：快速评估 ⚡ (推荐)
 ```bash
-conda run -n medsam python main.py --tta-fast --tta-fusion entropy_weighted
+conda run -n medsam python main.py --tta-augmentations "none,hflip,vflip,hvflip" --tta-fusion entropy_weighted
 ```
 - 时间：12-18 秒 / 100 样本
 - 精度：接近完整 TTA

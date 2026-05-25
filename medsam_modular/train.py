@@ -3,17 +3,17 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
+from PIL import Image
 import torch
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
 import torch.nn.functional as F
 from tqdm import tqdm
 
-from medsam_modular.data import prepare_datasets_by_split
+from medsam_modular.data import compute_bbox_from_mask_np, prepare_datasets_by_split
 from medsam_modular.model import load_state_dict_compat, normalize_pred_masks_to_4d
-from medsam_modular.profiler import PerformanceProfiler
 
 
 class _AsyncCheckpointSaver:
@@ -217,6 +217,108 @@ class FinetuneProcessorDataset(Dataset):
         return packed
 
 
+class NameFilteredDataset(Dataset):
+    """Filter a dataset by sample names while preserving original sample payload."""
+
+    def __init__(self, base: Dataset, keep_names: Set[str]) -> None:
+        self.base = base
+        self.indices: List[int] = []
+        for idx in range(len(base)):
+            sample_name = self._extract_name(base, idx)
+            if sample_name in keep_names:
+                self.indices.append(idx)
+
+    @staticmethod
+    def _extract_name(base: Dataset, idx: int) -> str:
+        samples = getattr(base, "samples", None)
+        if isinstance(samples, list) and 0 <= idx < len(samples):
+            entry = samples[idx]
+            if isinstance(entry, dict):
+                if "name" in entry:
+                    return str(entry["name"])
+                if "image_id" in entry:
+                    return str(entry["image_id"])
+
+        item = base[idx]
+        return str(item.get("name", f"sample_{idx}"))
+
+    def __len__(self) -> int:
+        return len(self.indices)
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        return self.base[self.indices[idx]]
+
+
+class TTAAugmentedRawDataset(Dataset):
+    """Deterministically expands raw train samples with TTA-style augmentations."""
+
+    def __init__(self, base: Dataset, augmentations: List[str]) -> None:
+        self.base = base
+        self.augmentations = self._canonicalize(augmentations)
+        self.base_len = len(base)
+
+    @staticmethod
+    def _canonicalize(augmentations: List[str]) -> List[str]:
+        canonical_map = {"rotate_180": "hvflip"}
+        valid = {"none", "hflip", "vflip", "hvflip", "rotate_90", "rotate_270"}
+        out: List[str] = []
+        seen: Set[str] = set()
+        for aug in augmentations:
+            name = canonical_map.get(str(aug).strip(), str(aug).strip())
+            if name not in valid:
+                continue
+            if name not in seen:
+                out.append(name)
+                seen.add(name)
+        return out or ["none"]
+
+    def __len__(self) -> int:
+        return self.base_len * len(self.augmentations)
+
+    def _apply_aug(self, sample: Dict[str, Any], aug: str) -> Dict[str, Any]:
+        image = sample["image"]
+        mask_t = sample["mask"] if isinstance(sample["mask"], torch.Tensor) else torch.as_tensor(sample["mask"])
+        mask_t = mask_t.to(dtype=torch.float32)
+
+        if aug == "hflip":
+            image = image.transpose(method=Image.Transpose.FLIP_LEFT_RIGHT)
+            mask_t = torch.flip(mask_t, dims=[1])
+        elif aug == "vflip":
+            image = image.transpose(method=Image.Transpose.FLIP_TOP_BOTTOM)
+            mask_t = torch.flip(mask_t, dims=[0])
+        elif aug == "hvflip":
+            image = image.transpose(method=Image.Transpose.FLIP_LEFT_RIGHT).transpose(method=Image.Transpose.FLIP_TOP_BOTTOM)
+            mask_t = torch.flip(mask_t, dims=[0, 1])
+        elif aug == "rotate_90":
+            image = image.transpose(method=Image.Transpose.ROTATE_90)
+            mask_t = torch.rot90(mask_t, k=1, dims=[0, 1])
+        elif aug == "rotate_270":
+            image = image.transpose(method=Image.Transpose.ROTATE_270)
+            mask_t = torch.rot90(mask_t, k=3, dims=[0, 1])
+
+        mask_np = (mask_t.detach().cpu().numpy() >= 0.5).astype(np.uint8)
+        bbox = compute_bbox_from_mask_np(mask_np)
+        name = str(sample.get("name", "sample"))
+        return {
+            "image": image,
+            "mask": mask_t,
+            "bbox": bbox,
+            "name": f"{name}__aug_{aug}",
+        }
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        base_idx = idx % self.base_len
+        aug_idx = idx // self.base_len
+        aug = self.augmentations[aug_idx]
+        sample = self.base[base_idx]
+        if aug == "none":
+            keep = dict(sample)
+            keep_name = str(keep.get("name", f"sample_{base_idx}"))
+            keep["name"] = f"{keep_name}__aug_none"
+            return keep
+        return self._apply_aug(sample, aug)
+
+
 def _finetune_collate(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
     collated: Dict[str, Any] = {}
     # Pre-computed embedding path: no pixel_values, use image_embedding instead
@@ -249,7 +351,27 @@ def _build_finetune_datasets(config: Dict[str, Any], processor: Any) -> Tuple[Da
         image_size=image_size,
     )
 
-    train_concat = ConcatDataset([ds for ds in train_sets.values() if len(ds) > 0])
+    subset_by_name_raw = config.get("finetune_subset_by_name", {})
+    subset_by_name: Dict[str, Set[str]] = {}
+    if isinstance(subset_by_name_raw, dict):
+        for ds_name, values in subset_by_name_raw.items():
+            if values is None:
+                continue
+            subset_by_name[str(ds_name)] = {str(v) for v in values}
+
+    filtered_train_parts: List[Dataset] = []
+    for ds_name, ds in train_sets.items():
+        if len(ds) == 0:
+            continue
+        keep_names = subset_by_name.get(ds_name)
+        if keep_names is None:
+            filtered_train_parts.append(ds)
+            continue
+        filtered = NameFilteredDataset(ds, keep_names)
+        if len(filtered) > 0:
+            filtered_train_parts.append(filtered)
+
+    train_concat = ConcatDataset(filtered_train_parts)
     if len(train_concat) == 0:
         raise RuntimeError("No train samples found for fine-tune. Check split files and dataset paths.")
 
@@ -268,7 +390,25 @@ def _build_finetune_datasets(config: Dict[str, Any], processor: Any) -> Tuple[Da
             generator=torch.Generator().manual_seed(42),
         )
 
-    return FinetuneProcessorDataset(train_concat, processor), FinetuneProcessorDataset(val_concat, processor)
+    train_raw: Dataset = train_concat
+    use_tta_aug = _env_bool("MEDSAM_FINETUNE_USE_TTA_AUG", False)
+    cfg_tta_aug = config.get("finetune_use_tta_augment", use_tta_aug)
+    if isinstance(cfg_tta_aug, bool):
+        use_tta_aug = cfg_tta_aug
+    elif cfg_tta_aug is not None:
+        use_tta_aug = str(cfg_tta_aug).strip().lower() in {"1", "true", "yes", "y", "on"}
+    tta_augs_cfg = config.get("finetune_tta_augmentations", ["none", "hflip", "vflip", "hvflip"])
+    if isinstance(tta_augs_cfg, str):
+        tta_augs = [v.strip() for v in tta_augs_cfg.split(",") if v.strip()]
+    elif isinstance(tta_augs_cfg, list):
+        tta_augs = [str(v).strip() for v in tta_augs_cfg if str(v).strip()]
+    else:
+        tta_augs = ["none", "hflip", "vflip", "hvflip"]
+
+    if use_tta_aug:
+        train_raw = TTAAugmentedRawDataset(train_concat, tta_augs)
+
+    return FinetuneProcessorDataset(train_raw, processor), FinetuneProcessorDataset(val_concat, processor)
 
 
 def _configure_trainable_params(model: Any, train_backbone: bool) -> None:
@@ -374,7 +514,7 @@ def _build_checkpoint_payload(
     }
 
 
-def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler: Optional[PerformanceProfiler] = None) -> Any:
+def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler: Optional[Any] = None) -> Any:
     def _get_bool(key: str, default: bool = False) -> bool:
         """從config字典讀取布林值"""
         val = config.get(key, default)
@@ -614,8 +754,10 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
 
     scaler = torch.amp.GradScaler("cuda", enabled=use_scaler)
     best_val_loss = float("inf")
-    best_path = output_dir / "medsam_finetuned_best.pth"
-    last_path = output_dir / "medsam_finetuned_last.pth"
+    weight_prefix = str(config.get("finetune_weight_prefix", "medsam_finetuned")).strip() or "medsam_finetuned"
+    stats_prefix = str(config.get("finetune_stats_prefix", "finetune")).strip() or "finetune"
+    best_path = output_dir / f"{weight_prefix}_best.pth"
+    last_path = output_dir / f"{weight_prefix}_last.pth"
     async_saver = _AsyncCheckpointSaver()
 
     wait = 0
@@ -859,7 +1001,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
     else:
         print("  ⚠️ No checkpoint found to reload; keeping current in-memory weights.")
 
-    stats_path = output_dir / "finetune_stats.json"
+    stats_path = output_dir / f"{stats_prefix}_stats.json"
     t_save_json = time.perf_counter()
     stats_path.write_text(
         json.dumps(
@@ -888,7 +1030,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
             "batch_size": batch_size,
             "lr": lr,
         },
-        output_dir / "finetune_stats.pt",
+        output_dir / f"{stats_prefix}_stats.pt",
     )
     save_pt_total = time.perf_counter() - t_save_pt
 

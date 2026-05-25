@@ -28,13 +28,13 @@ def example_1_default_tta():
     print()
 
 
-def example_2_fast_mode():
-    """示例 2：快速模式 TTA"""
+def example_2_flip_only_tta():
+    """示例 2：翻转增强 TTA（轻量配置）"""
     print("=" * 60)
-    print("示例 2：快速模式 TTA（推荐）")
+    print("示例 2：翻转增强 TTA（轻量配置）")
     print("=" * 60)
     
-    tta = TTAPredictor(use_fast_mode=True)
+    tta = TTAPredictor(augmentations=["none", "hflip", "vflip", "hvflip"])
     print(f"增强方式: {tta.augmentations}")
     print(f"融合策略: {tta.fusion_mode}")
     print(f"增强数量: {len(tta.augmentations)}")
@@ -153,7 +153,7 @@ def example_6_command_line_usage():
     examples = [
         {
             "title": "快速评估（推荐日常使用）",
-            "cmd": "python main.py --tta-fast --tta-fusion entropy_weighted",
+            "cmd": "python main.py --tta-augmentations 'none,hflip,vflip,hvflip' --tta-fusion entropy_weighted",
             "time": "~15秒/100样本",
             "accuracy": "接近完整TTA"
         },
@@ -171,7 +171,7 @@ def example_6_command_line_usage():
         },
         {
             "title": "超快速（仅翻转）",
-            "cmd": "python main.py --tta-fast --tta-fusion mean",
+            "cmd": "python main.py --tta-augmentations 'none,hflip,vflip,hvflip' --tta-fusion mean",
             "time": "~10秒/100样本",
             "accuracy": "接近baseline"
         }
@@ -192,9 +192,9 @@ def example_7_environment_variables():
     
     config_examples = [
         {
-            "name": "快速模式",
+            "name": "翻转增强模式",
             "env": [
-                "export MEDSAM_TTA_FAST=1",
+                "export MEDSAM_TTA_AUGMENTATIONS='none,hflip,vflip,hvflip'",
                 "export MEDSAM_TTA_FUSION=entropy_weighted",
                 "conda run -n medsam python main.py"
             ]
@@ -235,7 +235,7 @@ def main():
     print()
     
     example_1_default_tta()
-    example_2_fast_mode()
+    example_2_flip_only_tta()
     example_3_custom_augmentations()
     example_4_fusion_modes()
     example_5_medical_image_focus()

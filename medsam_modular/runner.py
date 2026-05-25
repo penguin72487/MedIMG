@@ -2,22 +2,33 @@ import json
 import os
 import shutil
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import torch
 
 from medsam_modular.cache import PredictionCache
 from medsam_modular.data import prepare_datasets_by_split
-from medsam_modular.eval import OODDetector, TTAPredictor, evaluate_dataset, evaluate_dataset_ood_tta
+from medsam_modular.eval import OODDetector, TTAPredictor, evaluate_dataset, evaluate_dataset_ood_only, evaluate_dataset_ood_tta
 from medsam_modular.io_async import get_global_async_writer, shutdown_global_async_writer
 from medsam_modular.model import load_medsam, load_state_dict_compat
-from medsam_modular.profiler import PerformanceProfiler, set_active_profiler
 from medsam_modular.train import maybe_finetune
 from medsam_modular.visualize import build_comparison_table, save_comparison_chart
 
 
 _TRUE_SET = {"1", "true", "yes", "y", "on"}
+
+
+class _NullProfiler:
+    enabled = False
+
+    @contextmanager
+    def section_and_flush(self, _section: str):
+        yield
+
+    def flush(self) -> Dict[str, Any]:
+        return {}
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -32,6 +43,41 @@ def _cpu_count() -> int:
 def _auto_cpu_threads(device: str) -> int:
     _ = device
     return _cpu_count()
+
+
+def _setup_cuda_accel() -> Dict[str, Any]:
+    status: Dict[str, Any] = {
+        "enabled": False,
+        "flash_sdp": None,
+        "mem_efficient_sdp": None,
+        "math_sdp": None,
+        "matmul_precision": None,
+    }
+    if not torch.cuda.is_available():
+        return status
+
+    status["enabled"] = True
+    try:
+        torch.set_float32_matmul_precision("high")
+        status["matmul_precision"] = "high"
+    except Exception:
+        status["matmul_precision"] = "<unsupported>"
+
+    try:
+        torch.backends.cuda.enable_flash_sdp(True)
+        torch.backends.cuda.enable_mem_efficient_sdp(True)
+        torch.backends.cuda.enable_math_sdp(True)
+    except Exception:
+        pass
+
+    try:
+        status["flash_sdp"] = bool(torch.backends.cuda.flash_sdp_enabled())
+        status["mem_efficient_sdp"] = bool(torch.backends.cuda.mem_efficient_sdp_enabled())
+        status["math_sdp"] = bool(torch.backends.cuda.math_sdp_enabled())
+    except Exception:
+        pass
+
+    return status
 
 
 def _project_root() -> Path:
@@ -110,9 +156,13 @@ def _resolve_baseline_weight_path(project_root: Path) -> str:
 
 def _resolve_resume_weight_path(project_root: Path, output_dir: Path) -> str:
     candidates = [
+        output_dir / "medsam_OOD_finetuned_best.pth",
+        output_dir / "medsam_OOD_finetuned_last.pth",
         output_dir / "medsam_finetuned_best.pth",
         output_dir / "medsam_finetuned_last.pth",
         output_dir / "medsam_finetuned.pth",
+        project_root / "results" / "medsam_OOD_finetuned_best.pth",
+        project_root / "results" / "medsam_OOD_finetuned_last.pth",
         project_root / "results" / "medsam_finetuned_best.pth",
         project_root / "results" / "medsam_finetuned_last.pth",
         project_root / "results" / "medsam_finetuned.pth",
@@ -123,18 +173,8 @@ def _resolve_resume_weight_path(project_root: Path, output_dir: Path) -> str:
 
 
 def _save_json(path: Path, payload: Any) -> None:
-    profiler = None
-    try:
-        from medsam_modular.profiler import get_active_profiler
-
-        profiler = get_active_profiler()
-    except Exception:
-        profiler = None
-    t0 = time.perf_counter() if profiler is not None and profiler.enabled else 0.0
     writer = get_global_async_writer()
     writer.submit_text(path, json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-    if profiler is not None and profiler.enabled:
-        profiler.record_duration("io.save_json", time.perf_counter() - t0)
 
 
 def _fmt_metric(value: Any) -> str:
@@ -144,10 +184,17 @@ def _fmt_metric(value: Any) -> str:
         return "N/A"
 
 
-def _build_train_config(project_root: Path, data_paths: Dict[str, str], image_size: int, device: str, output_dir: Path) -> Dict[str, Any]:
+def _build_train_config(
+    project_root: Path,
+    data_paths: Dict[str, str],
+    image_size: int,
+    device: str,
+    output_dir: Path,
+    extra: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     split_root = Path(os.getenv("MEDSAM_SPLIT_ROOT", str(project_root / "splits")))
     resume_weight_path = _resolve_resume_weight_path(project_root=project_root, output_dir=output_dir)
-    return {
+    cfg: Dict[str, Any] = {
         "split_root": split_root,
         "image_size": image_size,
         "data_paths": data_paths,
@@ -179,6 +226,136 @@ def _build_train_config(project_root: Path, data_paths: Dict[str, str], image_si
         "finetune_max_samples": os.getenv("MEDSAM_FINETUNE_MAX_SAMPLES", "0"),
         "finetune_use_fused_adamw": os.getenv("MEDSAM_FINETUNE_USE_FUSED_ADAMW", "1"),
     }
+    if extra:
+        cfg.update(extra)
+    return cfg
+
+
+def _detect_ood_train_subset(
+    *,
+    model: Any,
+    processor: Any,
+    data_paths: Dict[str, str],
+    split_root: Path,
+    image_size: int,
+    device: str,
+    ood_detector: OODDetector,
+    pred_cache: Optional[PredictionCache],
+    profiler: Any,
+    output_dir: Path,
+) -> Tuple[Dict[str, Set[str]], Dict[str, Any]]:
+    train_sets = prepare_datasets_by_split(
+        data_paths=data_paths,
+        split_root=split_root,
+        split_name="train",
+        image_size=image_size,
+    )
+
+    subset_by_name: Dict[str, Set[str]] = {}
+    summary: Dict[str, Any] = {}
+
+    for dataset_name, dataset in train_sets.items():
+        if len(dataset) == 0:
+            summary[dataset_name] = {
+                "num_samples": 0,
+                "num_ood": 0,
+                "ood_ratio": 0.0,
+            }
+            subset_by_name[dataset_name] = set()
+            continue
+
+        print(f"\n=== Baseline OOD detect on train: {dataset_name} ({len(dataset)} samples) ===")
+        results, stats = evaluate_dataset_ood_only(
+            dataset=dataset,
+            dataset_name=dataset_name,
+            model=model,
+            processor=processor,
+            device=device,
+            ood_detector=ood_detector,
+            pred_cache=pred_cache,
+            profiler=profiler,
+            profile_prefix=f"train_ood_detect.{dataset_name}",
+        )
+
+        ood_names = {str(r.get("name", "")) for r in results if bool(r.get("is_ood", False))}
+        ood_names.discard("")
+        subset_by_name[dataset_name] = ood_names
+
+        num_samples = int(len(results))
+        num_ood = int(len(ood_names))
+        ratio = float(num_ood / max(1, num_samples))
+        summary[dataset_name] = {
+            "num_samples": num_samples,
+            "num_ood": num_ood,
+            "ood_ratio": ratio,
+            "ood_threshold": float(getattr(ood_detector, "threshold", 0.5)),
+            "ood_method": str(getattr(ood_detector, "method", "entropy")),
+            "eval_stats": stats,
+        }
+
+        _save_json(output_dir / f"{dataset_name.lower()}_train_ood_detect_results.json", results)
+        _save_json(output_dir / f"{dataset_name.lower()}_train_ood_detect_stats.json", summary[dataset_name])
+        print(f"  [{dataset_name}] train OOD: {num_ood}/{num_samples} ({ratio:.2%})")
+
+    _save_json(output_dir / "train_ood_subset_summary.json", summary)
+    return subset_by_name, summary
+
+
+def _evaluate_test_ood_tta(
+    *,
+    model: Any,
+    processor: Any,
+    device: str,
+    test_sets: Dict[str, Any],
+    ood_detector: OODDetector,
+    tta_predictor: TTAPredictor,
+    pred_cache: PredictionCache,
+    profiler: Any,
+    output_dir: Path,
+    baseline_all_stats: Dict[str, Dict[str, Any]],
+    file_tag: str,
+) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    all_stats: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for dataset_name, dataset in test_sets.items():
+        if len(dataset) == 0:
+            print(f"\n  ⚠️ skip empty dataset: {dataset_name}")
+            continue
+
+        print(f"\n=== Evaluating {dataset_name} ({len(dataset)} samples) [{file_tag}] ===")
+        t_ds = time.time()
+        with profiler.section_and_flush(f"eval.{dataset_name}.{file_tag}.ood_tta.total"):
+            ood_results, ood_stats, tta_results, tta_stats = evaluate_dataset_ood_tta(
+                dataset=dataset,
+                dataset_name=dataset_name,
+                model=model,
+                processor=processor,
+                device=device,
+                ood_detector=ood_detector,
+                tta_predictor=tta_predictor,
+                pred_cache=pred_cache,
+                profiler=profiler,
+                profile_prefix=f"eval.{dataset_name}.{file_tag}",
+            )
+
+        baseline_stats = baseline_all_stats.get(dataset_name, {})
+        all_stats[dataset_name] = {
+            "baseline": baseline_stats,
+            "ood": ood_stats,
+            "tta": tta_stats,
+        }
+        baseline_dice = baseline_stats.get("mean_dice", baseline_stats.get("dice_mean"))
+        tta_dice = tta_stats.get("mean_dice", tta_stats.get("dice_mean"))
+        print(
+            f"  [{dataset_name}] 完成  ({time.time()-t_ds:.1f}s)  "
+            f"baseline_dice={_fmt_metric(baseline_dice)}  "
+            f"tta_dice={_fmt_metric(tta_dice)}"
+        )
+
+        _save_json(output_dir / f"{dataset_name.lower()}_{file_tag}_ood_results.json", ood_results)
+        _save_json(output_dir / f"{dataset_name.lower()}_{file_tag}_ood_stats.json", ood_stats)
+        _save_json(output_dir / f"{dataset_name.lower()}_{file_tag}_tta_results.json", tta_results)
+        _save_json(output_dir / f"{dataset_name.lower()}_{file_tag}_tta_stats.json", tta_stats)
+    return all_stats
 
 
 def main() -> None:
@@ -187,6 +364,7 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    cuda_accel = _setup_cuda_accel()
     raw_cpu_threads = int(os.getenv("MEDSAM_CPU_THREADS", "0"))
     cpu_threads = _auto_cpu_threads(device) if raw_cpu_threads <= 0 else max(1, raw_cpu_threads)
     torch.set_num_threads(cpu_threads)
@@ -201,23 +379,20 @@ def main() -> None:
     data_paths = _resolve_data_paths(project_root)
     baseline_weight_path = _resolve_baseline_weight_path(project_root)
     resume_weight_path = _resolve_resume_weight_path(project_root, output_dir)
-    profile_enabled = _env_bool("MEDSAM_PROFILE", True)
-    profile_path_env = os.getenv("MEDSAM_PROFILE_PATH", "").strip()
-    profile_path = Path(profile_path_env) if profile_path_env else (output_dir / "bottleneck_profile.json")
-    profiler = PerformanceProfiler(enabled=profile_enabled, run_name="medsam_pipeline")
-    profiler.configure_output(profile_path)
-    set_active_profiler(profiler)
-    profiler.set_metadata("device", device)
-    profiler.set_metadata("cpu_threads", cpu_threads)
-    profiler.set_metadata("model_id", model_id)
-    profiler.set_metadata("image_size", image_size)
-    profiler.set_metadata("data_paths", data_paths)
-    profiler.snapshot_cuda("startup")
+    profiler = _NullProfiler()
 
     print("=" * 80)
     print("MedSAM Modular Runner")
     print("=" * 80)
     print(f"device       : {device}")
+    if cuda_accel.get("enabled", False):
+        print(
+            "cuda accel   : "
+            f"matmul={cuda_accel.get('matmul_precision')} "
+            f"flash_sdp={cuda_accel.get('flash_sdp')} "
+            f"mem_eff_sdp={cuda_accel.get('mem_efficient_sdp')} "
+            f"math_sdp={cuda_accel.get('math_sdp')}"
+        )
     print(f"cpu threads  : {cpu_threads}")
     print(f"model_id     : {model_id}")
     print(f"image_size   : {image_size}")
@@ -226,7 +401,7 @@ def main() -> None:
     for k, v in data_paths.items():
         print(f"  {k:8s}: {v}")
 
-    print("\n[Stage 1/5] 載入模型 ...")
+    print("\n[Stage 1/7] 載入模型 ...")
     t1 = time.time()
     with profiler.section_and_flush("stage.load_model"):
         model, processor, compile_report = load_medsam(
@@ -250,7 +425,7 @@ def main() -> None:
     if require_compile and not bool(compile_report.get("compiled", False)):
         raise RuntimeError(f"torch.compile(inductor) required but unavailable: {compile_report}")
 
-    print("\n[Stage 2/5] 準備測試資料 ...")
+    print("\n[Stage 2/7] 準備測試資料 ...")
     t3 = time.time()
     split_root = Path(os.getenv("MEDSAM_SPLIT_ROOT", str(project_root / "splits")))
     with profiler.section_and_flush("stage.prepare_test_data"):
@@ -272,7 +447,6 @@ def main() -> None:
     )
 
     tta_fusion_mode = os.getenv("MEDSAM_TTA_FUSION", "entropy_weighted")
-    tta_fast_mode = os.getenv("MEDSAM_TTA_FAST", "0").lower() in ("1", "true", "yes")
     tta_augmentations = None
     tta_augs_str = os.getenv("MEDSAM_TTA_AUGMENTATIONS", "")
     if tta_augs_str:
@@ -280,45 +454,119 @@ def main() -> None:
     tta_predictor = TTAPredictor(
         augmentations=tta_augmentations,
         fusion_mode=tta_fusion_mode,
-        use_fast_mode=tta_fast_mode,
     )
 
     baseline_pred_cache = PredictionCache(output_dir / "pred_cache_baseline")
+    train_ood_detect_cache = PredictionCache(output_dir / "pred_cache_train_ood_detect")
+    ood_finetuned_pred_cache = PredictionCache(output_dir / "pred_cache_ood_finetuned")
     finetuned_pred_cache = PredictionCache(output_dir / "pred_cache_finetuned")
 
     print(f"\n=== TTA Configuration ===")
     print(f"  Fusion mode: {tta_fusion_mode}")
-    print(f"  Fast mode: {tta_fast_mode}")
     print(f"  Augmentations: {tta_predictor.augmentations}")
     print(f"  Number of augmentations: {len(tta_predictor.augmentations)}")
 
     finetune_only = _env_bool("MEDSAM_FINETUNE_ONLY", False)
     skip_finetune = _env_bool("MEDSAM_SKIP_FINETUNE", True)
 
-    print("\n[Stage 3/5] 訓練 / 微調 ...")
-    t2 = time.time()
-    with profiler.section_and_flush("stage.finetune"):
-        model = maybe_finetune(
+    split_root = Path(os.getenv("MEDSAM_SPLIT_ROOT", str(project_root / "splits")))
+
+    ood_subset_by_name: Dict[str, Set[str]] = {}
+    ood_subset_summary: Dict[str, Any] = {}
+    ood_finetuned_best_path = output_dir / "medsam_OOD_finetuned_best.pth"
+    full_finetuned_best_path = output_dir / "medsam_finetuned_best.pth"
+
+    if not skip_finetune:
+        print("\n[Stage 3/7] baseline 偵測 train split OOD ...")
+        ood_subset_by_name, ood_subset_summary = _detect_ood_train_subset(
             model=model,
             processor=processor,
-            config=_build_train_config(
-                project_root=project_root,
-                data_paths=data_paths,
-                image_size=image_size,
-                device=device,
-                output_dir=output_dir,
-            ),
+            data_paths=data_paths,
+            split_root=split_root,
+            image_size=image_size,
+            device=device,
+            ood_detector=ood_detector,
+            pred_cache=train_ood_detect_cache,
             profiler=profiler,
+            output_dir=output_dir,
         )
-    print(f"  微調耗時: {time.time()-t2:.1f}s")
+
+        total_ood = int(sum(len(v) for v in ood_subset_by_name.values()))
+        total_all = int(sum(int(v.get("num_samples", 0)) for v in ood_subset_summary.values()))
+        print(f"  OOD train subset: {total_ood}/{total_all} samples")
+
+        if total_ood > 0:
+            print("\n[Stage 4/7] OOD 子集微調（使用 TTA 增強資料）...")
+            if baseline_weight_path and Path(baseline_weight_path).exists():
+                load_state_dict_compat(model, Path(baseline_weight_path), map_location=device)
+
+            t2 = time.time()
+            with profiler.section_and_flush("stage.ood_finetune"):
+                model = maybe_finetune(
+                    model=model,
+                    processor=processor,
+                    config=_build_train_config(
+                        project_root=project_root,
+                        data_paths=data_paths,
+                        image_size=image_size,
+                        device=device,
+                        output_dir=output_dir,
+                        extra={
+                            "skip_finetune": "0",
+                            "resume_weight_path": "",
+                            "finetune_subset_by_name": {k: sorted(v) for k, v in ood_subset_by_name.items()},
+                            "finetune_use_tta_augment": True,
+                            "finetune_tta_augmentations": list(tta_predictor.augmentations),
+                            "finetune_weight_prefix": "medsam_OOD_finetuned",
+                            "finetune_stats_prefix": "ood_finetune",
+                        },
+                    ),
+                    profiler=profiler,
+                )
+            print(f"  OOD 微調耗時: {time.time()-t2:.1f}s")
+        else:
+            print("\n[Stage 4/7] OOD 子集為空，略過 OOD 微調。")
+
+        print("\n[Stage 5/7] 全資料微調（輸出 medsam_finetuned_best.pth）...")
+        if ood_finetuned_best_path.exists():
+            load_state_dict_compat(model, ood_finetuned_best_path, map_location=device)
+            print(f"  📌 全資料微調起始權重: {ood_finetuned_best_path}")
+        elif baseline_weight_path and Path(baseline_weight_path).exists():
+            load_state_dict_compat(model, Path(baseline_weight_path), map_location=device)
+            print(f"  📌 全資料微調起始權重: {baseline_weight_path}")
+
+        t2 = time.time()
+        with profiler.section_and_flush("stage.full_finetune"):
+            model = maybe_finetune(
+                model=model,
+                processor=processor,
+                config=_build_train_config(
+                    project_root=project_root,
+                    data_paths=data_paths,
+                    image_size=image_size,
+                    device=device,
+                    output_dir=output_dir,
+                    extra={
+                        "skip_finetune": "0",
+                        "resume_weight_path": "",
+                        "finetune_subset_by_name": {},
+                        "finetune_use_tta_augment": False,
+                        "finetune_weight_prefix": "medsam_finetuned",
+                        "finetune_stats_prefix": "finetune",
+                    },
+                ),
+                profiler=profiler,
+            )
+        print(f"  全資料微調耗時: {time.time()-t2:.1f}s")
+    else:
+        print("\n[Stage 3/7] 已設定 skip_finetune，略過 OOD 與全資料微調。")
 
     if finetune_only:
-        print("\n[Stage 4/5] 已啟用 finetune-only，略過後續 baseline / OOD / TTA 評估。")
-        profiler.flush()
+        print("\n[Stage 6/7] 已啟用 finetune-only，略過後續 baseline / OOD / TTA 評估。")
         shutdown_global_async_writer()
         return
 
-    print("\n[Stage 4/5] 基線評估 (vit_b) ...")
+    print("\n[Stage 6/7] 基線評估 (vit_b) ...")
     baseline_all_results: Dict[str, Any] = {}
     baseline_all_stats: Dict[str, Dict[str, Any]] = {}
     t_eval_start = time.time()
@@ -357,70 +605,67 @@ def main() -> None:
         print(f"  [{dataset_name}] 完成  ({time.time()-t_ds:.1f}s)  baseline_dice={_fmt_metric(baseline_dice)}")
         _save_json(output_dir / f"{dataset_name.lower()}_baseline_results.json", baseline_results)
         _save_json(output_dir / f"{dataset_name.lower()}_baseline_stats.json", baseline_stats)
-        latest_profile = profiler.flush() or {}
-        limit_info = latest_profile.get("optimization_limit_analysis", {})
-        print(
-            f"  [{dataset_name}] optimization headroom: {limit_info.get('status', 'unknown')} | "
-            f"{limit_info.get('message', '')}"
-        )
 
-    post_finetune_weight_path = _resolve_resume_weight_path(project_root, output_dir)
+    all_stats_ood_finetuned: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    if ood_finetuned_best_path.exists():
+        print("\n[Stage 7/7] 測試 OOD finetuned 模型：先 OOD 判斷，再 TTA inference ...")
+        load_state_dict_compat(model, ood_finetuned_best_path, map_location=device)
+        print(f"  📌 OOD finetuned 評估權重: {ood_finetuned_best_path}")
+        all_stats_ood_finetuned = _evaluate_test_ood_tta(
+            model=model,
+            processor=processor,
+            device=device,
+            test_sets=test_sets,
+            ood_detector=ood_detector,
+            tta_predictor=tta_predictor,
+            pred_cache=ood_finetuned_pred_cache,
+            profiler=profiler,
+            output_dir=output_dir,
+            baseline_all_stats=baseline_all_stats,
+            file_tag="ood_finetuned",
+        )
+        _save_json(output_dir / "summary_ood_finetuned.json", all_stats_ood_finetuned)
+    else:
+        print("\n[Stage 7/7] 找不到 medsam_OOD_finetuned_best.pth，略過 OOD finetuned 模型測試。")
+
     if skip_finetune and resume_weight_path and Path(resume_weight_path).exists():
         load_state_dict_compat(model, Path(resume_weight_path), map_location=device)
         print(f"  📌 評估使用權重: {resume_weight_path}")
-    elif (not skip_finetune) and post_finetune_weight_path and Path(post_finetune_weight_path).exists():
-        load_state_dict_compat(model, Path(post_finetune_weight_path), map_location=device)
-        print(f"  📌 評估使用權重: {post_finetune_weight_path}")
+    elif full_finetuned_best_path.exists():
+        load_state_dict_compat(model, full_finetuned_best_path, map_location=device)
+        print(f"  📌 評估使用權重: {full_finetuned_best_path}")
     else:
-        print(f"  📌 評估使用權重: <finetuned model>")
+        print("  📌 評估使用權重: <finetuned model in-memory>")
 
-    print("\n[Stage 5/5] OOD / TTA 評估 ...")
-    t_eval_start = time.time()
-    all_stats: Dict[str, Dict[str, Dict[str, Any]]] = {}
-    for dataset_name, dataset in test_sets.items():
-        if len(dataset) == 0:
-            print(f"\n  ⚠️ skip empty dataset: {dataset_name}")
-            continue
+    print("\n[Stage 7/7] 測試全資料 finetuned 模型：OOD 判斷 + TTA inference ...")
+    all_stats = _evaluate_test_ood_tta(
+        model=model,
+        processor=processor,
+        device=device,
+        test_sets=test_sets,
+        ood_detector=ood_detector,
+        tta_predictor=tta_predictor,
+        pred_cache=finetuned_pred_cache,
+        profiler=profiler,
+        output_dir=output_dir,
+        baseline_all_stats=baseline_all_stats,
+        file_tag="full_finetuned",
+    )
 
-        print(f"\n=== Evaluating {dataset_name} ({len(dataset)} samples) ===")
-        t_ds = time.time()
-        with profiler.section_and_flush(f"eval.{dataset_name}.ood_tta.total"):
-            ood_results, ood_stats, tta_results, tta_stats = evaluate_dataset_ood_tta(
-                dataset=dataset,
-                dataset_name=dataset_name,
-                model=model,
-                processor=processor,
-                device=device,
-                ood_detector=ood_detector,
-                tta_predictor=tta_predictor,
-                pred_cache=finetuned_pred_cache,
-                profiler=profiler,
-                profile_prefix=f"eval.{dataset_name}",
-            )
-
-        baseline_stats = baseline_all_stats.get(dataset_name, {})
-        baseline_results = baseline_all_results.get(dataset_name, [])
-        all_stats[dataset_name] = {
-            "baseline": baseline_stats,
-            "ood": ood_stats,
-            "tta": tta_stats,
-        }
-        baseline_dice = baseline_stats.get("mean_dice", baseline_stats.get("dice_mean"))
-        tta_dice = tta_stats.get("mean_dice", tta_stats.get("dice_mean"))
-        print(f"  [{dataset_name}] 完成  ({time.time()-t_ds:.1f}s)  "
-              f"baseline_dice={_fmt_metric(baseline_dice)}  "
-              f"tta_dice={_fmt_metric(tta_dice)}")
-
-        _save_json(output_dir / f"{dataset_name.lower()}_ood_results.json", ood_results)
-        _save_json(output_dir / f"{dataset_name.lower()}_ood_stats.json", ood_stats)
-        _save_json(output_dir / f"{dataset_name.lower()}_tta_results.json", tta_results)
-        _save_json(output_dir / f"{dataset_name.lower()}_tta_stats.json", tta_stats)
-        latest_profile = profiler.flush() or {}
-        limit_info = latest_profile.get("optimization_limit_analysis", {})
-        print(
-            f"  [{dataset_name}] optimization headroom: {limit_info.get('status', 'unknown')} | "
-            f"{limit_info.get('message', '')}"
-        )
+    # 維持相容輸出檔名（預設指向 full_finetuned 評估結果）
+    for dataset_name in all_stats:
+        src_ood = output_dir / f"{dataset_name.lower()}_full_finetuned_ood_results.json"
+        src_ood_stats = output_dir / f"{dataset_name.lower()}_full_finetuned_ood_stats.json"
+        src_tta = output_dir / f"{dataset_name.lower()}_full_finetuned_tta_results.json"
+        src_tta_stats = output_dir / f"{dataset_name.lower()}_full_finetuned_tta_stats.json"
+        if src_ood.exists():
+            shutil.copy2(src_ood, output_dir / f"{dataset_name.lower()}_ood_results.json")
+        if src_ood_stats.exists():
+            shutil.copy2(src_ood_stats, output_dir / f"{dataset_name.lower()}_ood_stats.json")
+        if src_tta.exists():
+            shutil.copy2(src_tta, output_dir / f"{dataset_name.lower()}_tta_results.json")
+        if src_tta_stats.exists():
+            shutil.copy2(src_tta_stats, output_dir / f"{dataset_name.lower()}_tta_stats.json")
 
     if not all_stats:
         raise RuntimeError("No test datasets were loaded. Check dataset paths and split files.")
@@ -439,34 +684,15 @@ def main() -> None:
         if chart_path.resolve() != top_chart_path.resolve():
             shutil.copy2(chart_path, top_chart_path)
     _save_json(output_dir / "summary.json", all_stats)
-    profiler.add_counter("datasets_evaluated", float(len(all_stats)))
-    profiler.add_counter("total_test_samples", float(total_test))
-    profiler.add_counter("eval_total_sec", float(time.time() - t_eval_start))
-    profiler.snapshot_cuda("end")
-    profile_payload = profiler.save_json(profile_path)
-    top_bottlenecks = profile_payload.get("top_bottlenecks", [])
 
     print("\nOutputs:")
     print(f"- comparison_table: {comparison_path}")
     print(f"- comparison_chart: {chart_path}")
     print(f"- comparison_chart_top: {top_chart_path}")
     print(f"- summary: {output_dir / 'summary.json'}")
-    print(f"- bottleneck_profile: {profile_path}")
-    if top_bottlenecks:
-        print("\nTop bottlenecks:")
-        for item in top_bottlenecks[:5]:
-            print(
-                f"  - {item.get('section')}: {float(item.get('total_sec', 0.0)):.3f}s "
-                f"({100.0 * float(item.get('ratio', 0.0)):.1f}%)"
-            )
-    limit_info = profile_payload.get("optimization_limit_analysis", {})
-    if limit_info:
-        print("\nOptimization limit analysis:")
-        print(f"  - status: {limit_info.get('status', 'unknown')}")
-        print(f"  - confidence: {float(limit_info.get('confidence', 0.0)):.2f}")
-        print(f"  - message: {limit_info.get('message', '')}")
+    if all_stats_ood_finetuned:
+        print(f"- summary_ood_finetuned: {output_dir / 'summary_ood_finetuned.json'}")
     shutdown_global_async_writer()
-    set_active_profiler(None)
 
 
 if __name__ == "__main__":

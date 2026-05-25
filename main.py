@@ -179,11 +179,6 @@ def _parse_args() -> argparse.Namespace:
         help="TTA 融合策略（mean: 平均, median: 中位數, entropy_weighted: 熵加權）",
     )
     eval_group.add_argument(
-        "--tta-fast",
-        action="store_true",
-        help="使用快速 TTA 模式（僅翻轉增強，加快速度）",
-    )
-    eval_group.add_argument(
         "--tta-augmentations",
         default="",
         metavar="AUGS",
@@ -211,25 +206,6 @@ def _parse_args() -> argparse.Namespace:
         default="",
         metavar="DIR",
         help="結果輸出目錄（預設: <專案根>/results/modular）",
-    )
-    out_group.add_argument(
-        "--profile",
-        dest="profile",
-        action="store_true",
-        default=True,
-        help="啟用流程瓶頸分析與 profiling 報告輸出",
-    )
-    out_group.add_argument(
-        "--no-profile",
-        dest="profile",
-        action="store_false",
-        help="停用 profiling 報告輸出",
-    )
-    out_group.add_argument(
-        "--profile-output",
-        default="",
-        metavar="FILE",
-        help="profiling JSON 輸出路徑（預設: <output-dir>/bottleneck_profile.json）",
     )
 
     return parser.parse_args()
@@ -265,7 +241,6 @@ def _apply_env(args: argparse.Namespace) -> None:
         "MEDSAM_OOD_METHOD": args.ood_method,
         "MEDSAM_TTA_FUSION": args.tta_fusion,
         "MEDSAM_TTA_AUGMENTATIONS": args.tta_augmentations,
-        "MEDSAM_PROFILE_PATH": args.profile_output,
         "MEDSAM_COMPILE_WARMUP_BATCHES": args.compile_warmup_batches,
     }.items():
         _set_env(key, value)
@@ -287,10 +262,11 @@ def _apply_env(args: argparse.Namespace) -> None:
         "MEDSAM_FINETUNE_GRAD_CLIP": args.grad_clip,
         "MEDSAM_FINETUNE_WORKERS": args.workers,
         "MEDSAM_FINETUNE_MAX_SAMPLES": args.max_samples,
-        "MEDSAM_EVAL_WORKERS": args.eval_workers,
-        "MEDSAM_CPU_THREADS": args.cpu_threads,
     }.items():
         _set_env_int(key, value, skip_zero=False)
+
+    _set_env_int("MEDSAM_EVAL_WORKERS", args.eval_workers, skip_zero=True)
+    _set_env_int("MEDSAM_CPU_THREADS", args.cpu_threads, skip_zero=True)
 
     for key, enabled in {
         "MEDSAM_SKIP_FINETUNE": args.skip_finetune,
@@ -298,8 +274,6 @@ def _apply_env(args: argparse.Namespace) -> None:
         "MEDSAM_FINETUNE_ONLY": args.finetune_only,
         "MEDSAM_FINETUNE_USE_FUSED_ADAMW": not args.no_fused_adamw,
         "MEDSAM_REQUIRE_COMPILE": args.require_compile,
-        "MEDSAM_TTA_FAST": args.tta_fast,
-        "MEDSAM_PROFILE": args.profile,
     }.items():
         _set_env_flag(key, enabled)
 
