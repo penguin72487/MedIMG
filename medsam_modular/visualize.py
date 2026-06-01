@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import json
 from datetime import datetime
@@ -18,11 +18,25 @@ def _delta_vs_baseline(current: float, baseline: float, higher_is_better: bool) 
     return current - baseline if higher_is_better else baseline - current
 
 
+def _has_any_metric(all_stats: Dict[str, Dict[str, Dict]], metric_key: str) -> bool:
+    for modes in all_stats.values():
+        for stats in modes.values():
+            try:
+                value = float(stats.get(metric_key, float("nan")))
+            except Exception:
+                value = float("nan")
+            if np.isfinite(value):
+                return True
+    return False
+
+
 def build_comparison_table(all_stats: Dict[str, Dict[str, Dict]]) -> pd.DataFrame:
     rows = []
+    include_ap50 = _has_any_metric(all_stats, "ap50")
+    include_map50_95 = _has_any_metric(all_stats, "map50_95")
     for dataset_name, modes in all_stats.items():
         baseline_dice = modes["baseline"]["mean_dice"]
-        baseline_dice_1pct_low = modes["baseline"].get("dice_1pct_low", float("nan"))
+        baseline_dice_5pct_low = modes["baseline"].get("dice_5pct_low", float("nan"))
         baseline_jaccard = modes["baseline"]["mean_jaccard"]
         baseline_f1 = modes["baseline"]["mean_f1"]
         baseline_sensitivity = modes["baseline"].get("mean_sensitivity", modes["baseline"].get("mean_recall", float("nan")))
@@ -30,7 +44,7 @@ def build_comparison_table(all_stats: Dict[str, Dict[str, Dict]]) -> pd.DataFram
         baseline_ece = modes["baseline"].get("mean_ece", float("nan"))
 
         ood_dice = modes["ood"]["mean_dice"]
-        ood_dice_1pct_low = modes["ood"].get("dice_1pct_low", float("nan"))
+        ood_dice_5pct_low = modes["ood"].get("dice_5pct_low", float("nan"))
         ood_jaccard = modes["ood"]["mean_jaccard"]
         ood_f1 = modes["ood"]["mean_f1"]
         ood_sensitivity = modes["ood"].get("mean_sensitivity", modes["ood"].get("mean_recall", float("nan")))
@@ -38,46 +52,72 @@ def build_comparison_table(all_stats: Dict[str, Dict[str, Dict]]) -> pd.DataFram
         ood_ece = modes["ood"].get("mean_ece", float("nan"))
 
         tta_dice = modes["tta"]["mean_dice"]
-        tta_dice_1pct_low = modes["tta"].get("dice_1pct_low", float("nan"))
+        tta_dice_5pct_low = modes["tta"].get("dice_5pct_low", float("nan"))
         tta_jaccard = modes["tta"]["mean_jaccard"]
         tta_f1 = modes["tta"]["mean_f1"]
         tta_sensitivity = modes["tta"].get("mean_sensitivity", modes["tta"].get("mean_recall", float("nan")))
         tta_bce = modes["tta"].get("mean_bce", float("nan"))
         tta_ece = modes["tta"].get("mean_ece", float("nan"))
 
-        rows.append(
-            {
-                "Dataset": dataset_name,
-                "Baseline Dice": f"{baseline_dice:.4f}",
-                "OOD Dice": f"{ood_dice:.4f}",
-                "TTA Dice": f"{tta_dice:.4f}",
-                "TTA Dice Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_dice, baseline_dice, True)),
-                "Baseline Dice 1% Low": f"{baseline_dice_1pct_low:.4f}",
-                "OOD Dice 1% Low": f"{ood_dice_1pct_low:.4f}",
-                "TTA Dice 1% Low": f"{tta_dice_1pct_low:.4f}",
-                "TTA Dice 1% Low Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_dice_1pct_low, baseline_dice_1pct_low, True)),
-                "Baseline Jaccard": f"{baseline_jaccard:.4f}",
-                "OOD Jaccard": f"{ood_jaccard:.4f}",
-                "TTA Jaccard": f"{tta_jaccard:.4f}",
-                "TTA Jaccard Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_jaccard, baseline_jaccard, True)),
-                "Baseline F1": f"{baseline_f1:.4f}",
-                "OOD F1": f"{ood_f1:.4f}",
-                "TTA F1": f"{tta_f1:.4f}",
-                "TTA F1 Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_f1, baseline_f1, True)),
-                "Baseline Sensitivity": f"{baseline_sensitivity:.4f}",
-                "OOD Sensitivity": f"{ood_sensitivity:.4f}",
-                "TTA Sensitivity": f"{tta_sensitivity:.4f}",
-                "TTA Sensitivity Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_sensitivity, baseline_sensitivity, True)),
-                "Baseline BCE (lower is better)": f"{baseline_bce:.4f}",
-                "OOD BCE (lower is better)": f"{ood_bce:.4f}",
-                "TTA BCE (lower is better)": f"{tta_bce:.4f}",
-                "TTA BCE Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_bce, baseline_bce, False)),
-                "Baseline ECE (lower is better)": f"{baseline_ece:.4f}",
-                "OOD ECE (lower is better)": f"{ood_ece:.4f}",
-                "TTA ECE (lower is better)": f"{tta_ece:.4f}",
-                "TTA ECE Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_ece, baseline_ece, False)),
-            }
-        )
+        row = {
+            "Dataset": dataset_name,
+            "Baseline Dice": f"{baseline_dice:.4f}",
+            "OOD Dice": f"{ood_dice:.4f}",
+            "TTA Dice": f"{tta_dice:.4f}",
+            "TTA Dice Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_dice, baseline_dice, True)),
+            "Baseline Dice 5% Low": f"{baseline_dice_5pct_low:.4f}",
+            "OOD Dice 5% Low": f"{ood_dice_5pct_low:.4f}",
+            "TTA Dice 5% Low": f"{tta_dice_5pct_low:.4f}",
+            "TTA Dice 5% Low Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_dice_5pct_low, baseline_dice_5pct_low, True)),
+            "Baseline Jaccard": f"{baseline_jaccard:.4f}",
+            "OOD Jaccard": f"{ood_jaccard:.4f}",
+            "TTA Jaccard": f"{tta_jaccard:.4f}",
+            "TTA Jaccard Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_jaccard, baseline_jaccard, True)),
+            "Baseline F1": f"{baseline_f1:.4f}",
+            "OOD F1": f"{ood_f1:.4f}",
+            "TTA F1": f"{tta_f1:.4f}",
+            "TTA F1 Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_f1, baseline_f1, True)),
+            "Baseline Sensitivity": f"{baseline_sensitivity:.4f}",
+            "OOD Sensitivity": f"{ood_sensitivity:.4f}",
+            "TTA Sensitivity": f"{tta_sensitivity:.4f}",
+            "TTA Sensitivity Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_sensitivity, baseline_sensitivity, True)),
+            "Baseline BCE (lower is better)": f"{baseline_bce:.4f}",
+            "OOD BCE (lower is better)": f"{ood_bce:.4f}",
+            "TTA BCE (lower is better)": f"{tta_bce:.4f}",
+            "TTA BCE Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_bce, baseline_bce, False)),
+            "Baseline ECE (lower is better)": f"{baseline_ece:.4f}",
+            "OOD ECE (lower is better)": f"{ood_ece:.4f}",
+            "TTA ECE (lower is better)": f"{tta_ece:.4f}",
+            "TTA ECE Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_ece, baseline_ece, False)),
+        }
+
+        if include_ap50:
+            baseline_ap50 = modes["baseline"].get("ap50", float("nan"))
+            ood_ap50 = modes["ood"].get("ap50", float("nan"))
+            tta_ap50 = modes["tta"].get("ap50", float("nan"))
+            row.update(
+                {
+                    "Baseline AP50": f"{baseline_ap50:.4f}",
+                    "OOD AP50": f"{ood_ap50:.4f}",
+                    "TTA AP50": f"{tta_ap50:.4f}",
+                    "TTA AP50 Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_ap50, baseline_ap50, True)),
+                }
+            )
+
+        if include_map50_95:
+            baseline_map = modes["baseline"].get("map50_95", float("nan"))
+            ood_map = modes["ood"].get("map50_95", float("nan"))
+            tta_map = modes["tta"].get("map50_95", float("nan"))
+            row.update(
+                {
+                    "Baseline mAP50-95": f"{baseline_map:.4f}",
+                    "OOD mAP50-95": f"{ood_map:.4f}",
+                    "TTA mAP50-95": f"{tta_map:.4f}",
+                    "TTA mAP50-95 Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_map, baseline_map, True)),
+                }
+            )
+
+        rows.append(row)
     return pd.DataFrame(rows)
 
 
@@ -104,13 +144,17 @@ def save_comparison_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir: Pat
     datasets = list(all_stats.keys())
     metric_rows = [
         ("mean_dice", "Dice", True, (0.0, 1.0)),
-        ("dice_1pct_low", "Dice 1% Low", True, (0.0, 1.0)),
+        ("dice_5pct_low", "Dice 5% Low", True, (0.0, 1.0)),
         ("mean_jaccard", "Jaccard", True, (0.0, 1.0)),
         ("mean_f1", "F1", True, (0.0, 1.0)),
         ("mean_sensitivity", "Sensitivity", True, (0.0, 1.0)),
         ("mean_bce", "BCE (lower is better)", False, None),
         ("mean_ece", "ECE (lower is better)", False, None),
     ]
+    if _has_any_metric(all_stats, "ap50"):
+        metric_rows.append(("ap50", "AP50", True, (0.0, 1.0)))
+    if _has_any_metric(all_stats, "map50_95"):
+        metric_rows.append(("map50_95", "mAP50-95", True, (0.0, 1.0)))
     fig, axes = plt.subplots(len(metric_rows), len(datasets), figsize=(6 * len(datasets), 4.5 * len(metric_rows)), squeeze=False)
 
     for i, ds in enumerate(datasets):
@@ -129,7 +173,7 @@ def save_comparison_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir: Pat
     fig.text(
         0.5,
         0.01,
-        "Dice/Jaccard/F1/Sensitivity are higher-is-better; BCE/ECE are lower-is-better.",
+        "Dice/Jaccard/F1/Sensitivity/AP/mAP are higher-is-better; BCE/ECE are lower-is-better.",
         ha="center",
         fontsize=10,
     )
@@ -167,12 +211,136 @@ def _safe_div(a: float, b: float) -> float:
     return a / b
 
 
+def _variant_specs() -> List[Tuple[str, str, str]]:
+    return [
+        ("baseline", "baseline", "#1f77b4"),
+        ("ood_finetune", "ood", "#ff7f0e"),
+        ("full_finetune", "full", "#2ca02c"),
+        ("ood_finetune_tta", "ood+TTAInference", "#d62728"),
+    ]
+
+
+def _build_variant_stats(
+    full_summary: Dict[str, Dict[str, Dict[str, Any]]],
+    ood_finetuned_summary: Dict[str, Dict[str, Dict[str, Any]]],
+) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    datasets = sorted(set(full_summary.keys()) | set(ood_finetuned_summary.keys()))
+    merged: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for dataset_name in datasets:
+        full_modes = full_summary.get(dataset_name, {})
+        ood_modes = ood_finetuned_summary.get(dataset_name, {})
+        merged[dataset_name] = {
+            "baseline": dict(full_modes.get("baseline", ood_modes.get("baseline", {}))),
+            "ood_finetune": dict(ood_modes.get("ood", {})),
+            "full_finetune": dict(full_modes.get("ood", {})),
+            "ood_finetune_tta": dict(ood_modes.get("tta", {})),
+        }
+    return merged
+
+
+def _auto_panel_limits(values: List[float], *, higher_is_better: bool, default_limits: Optional[Tuple[float, float]]) -> Optional[Tuple[float, float]]:
+    finite_vals = [float(v) for v in values if np.isfinite(v)]
+    if not finite_vals:
+        return default_limits
+
+    vmin = min(finite_vals)
+    vmax = max(finite_vals)
+    if default_limits is None:
+        span = vmax - vmin
+        pad = max(span * 0.18, 1e-4)
+        lo = vmin - pad
+        hi = vmax + pad
+        if lo == hi:
+            hi = lo + 1e-3
+        return (lo, hi)
+
+    lo_bound, hi_bound = default_limits
+    span = vmax - vmin
+    pad = max(span * 0.18, 5e-4)
+    if span < 0.02:
+        lo = max(lo_bound, vmin - pad)
+        hi = min(hi_bound, vmax + pad)
+        if hi - lo < 0.005:
+            center = 0.5 * (hi + lo)
+            lo = max(lo_bound, center - 0.0025)
+            hi = min(hi_bound, center + 0.0025)
+        if hi <= lo:
+            return default_limits
+        return (lo, hi)
+
+    return default_limits
+
+
+def save_four_way_variant_chart(
+    full_summary: Dict[str, Dict[str, Dict[str, Any]]],
+    ood_finetuned_summary: Dict[str, Dict[str, Dict[str, Any]]],
+    output_dir: Path,
+) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    all_stats = _build_variant_stats(full_summary=full_summary, ood_finetuned_summary=ood_finetuned_summary)
+    datasets = list(all_stats.keys())
+    metric_rows = [
+        ("mean_dice", "Dice", True, (0.0, 1.0)),
+        ("dice_5pct_low", "Dice 5% Low", True, (0.0, 1.0)),
+        ("mean_jaccard", "Jaccard", True, (0.0, 1.0)),
+        ("mean_f1", "F1", True, (0.0, 1.0)),
+        ("mean_sensitivity", "Sensitivity", True, (0.0, 1.0)),
+        ("mean_bce", "BCE (lower is better)", False, None),
+        ("mean_ece", "ECE (lower is better)", False, None),
+    ]
+    if _has_any_metric(all_stats, "ap50"):
+        metric_rows.append(("ap50", "AP50", True, (0.0, 1.0)))
+    if _has_any_metric(all_stats, "map50_95"):
+        metric_rows.append(("map50_95", "mAP50-95", True, (0.0, 1.0)))
+
+    fig, axes = plt.subplots(len(metric_rows), len(datasets), figsize=(7.5 * max(1, len(datasets)), 4.6 * len(metric_rows)), squeeze=False)
+    variant_specs = _variant_specs()
+
+    for col, dataset_name in enumerate(datasets):
+        for row, (metric_key, title, higher_is_better, y_limits) in enumerate(metric_rows):
+            ax = axes[row, col]
+            labels = [label for _, label, _ in variant_specs]
+            colors = [color for _, _, color in variant_specs]
+            vals = [all_stats[dataset_name].get(variant_key, {}).get(metric_key, float("nan")) for variant_key, _, _ in variant_specs]
+            ax.bar(labels, vals, color=colors)
+            ax.set_title(f"{dataset_name} {title}")
+            ax.tick_params(axis="x", rotation=18)
+            panel_limits = _auto_panel_limits(vals, higher_is_better=higher_is_better, default_limits=y_limits)
+            if panel_limits is not None:
+                ax.set_ylim(panel_limits)
+            for idx, value in enumerate(vals):
+                if not np.isfinite(value):
+                    y0, y1 = ax.get_ylim()
+                    ax.text(idx, y0 + (y1 - y0) * 0.08, "N/A", ha="center", fontsize=9)
+                    continue
+                finite_vals = [v for v in vals if np.isfinite(v)]
+                max_val = max(finite_vals) if finite_vals else 0.0
+                y0, y1 = ax.get_ylim()
+                offset = max((y1 - y0) * 0.03, 5e-4)
+                ax.text(idx, value + offset, f"{value:.3f}", ha="center", fontsize=9)
+
+    fig.suptitle("MedSAM Variant Comparison", fontsize=14)
+    fig.text(
+        0.5,
+        0.01,
+        "Variants: baseline / ood / full / ood+TTAInference. Each panel auto-zooms when differences are very small. Higher is better except BCE/ECE.",
+        ha="center",
+        fontsize=10,
+    )
+    plt.tight_layout()
+
+    out_path = output_dir / "performance_comparison_4way.png"
+    plt.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    return out_path
+
+
 def save_method_overview_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     datasets = list(all_stats.keys())
     metrics = [
         ("mean_dice", "Dice"),
-        ("dice_1pct_low", "Dice 1% Low"),
+        ("dice_5pct_low", "Dice 5% Low"),
         ("mean_f1", "F1"),
         ("mean_sensitivity", "Sensitivity"),
     ]
@@ -207,7 +375,7 @@ def save_delta_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir: Path) ->
     datasets = list(all_stats.keys())
     metrics = [
         ("mean_dice", "Delta Dice", True),
-        ("dice_1pct_low", "Delta Dice 1% Low", True),
+        ("dice_5pct_low", "Delta Dice 5% Low", True),
         ("mean_ece", "Delta ECE", False),
         ("mean_bce", "Delta BCE", False),
     ]
@@ -290,7 +458,7 @@ def save_quality_throughput_frontier(all_stats: Dict[str, Dict[str, Dict]], outp
         for method in _methods():
             stats = all_stats[ds].get(method, {})
             x = _metric(stats, "throughput_samples_per_sec")
-            y = _metric(stats, "dice_1pct_low")
+            y = _metric(stats, "dice_5pct_low")
             if not np.isfinite(y):
                 y = _metric(stats, "mean_dice")
             if not (np.isfinite(x) and np.isfinite(y)):
@@ -299,7 +467,7 @@ def save_quality_throughput_frontier(all_stats: Dict[str, Dict[str, Dict]], outp
             ax.text(x, y, f" {ds}-{_method_label(method)}", fontsize=8)
 
     ax.set_xlabel("Throughput (samples/sec)")
-    ax.set_ylabel("Quality (Dice 1% Low fallback Dice)")
+    ax.set_ylabel("Quality (Dice 5% Low fallback Dice)")
     ax.set_title("Stage 8: Quality-Throughput Frontier")
     ax.grid(alpha=0.3)
 
@@ -473,3 +641,127 @@ def save_cache_throughput_trend_chart(all_stats: Dict[str, Dict[str, Dict]], out
     plt.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     return out_path, history_path
+
+
+def _to_bool_mask(mask_like: Any) -> np.ndarray:
+    arr = np.asarray(mask_like)
+    if arr.dtype == np.bool_:
+        return arr
+    return arr > 0.5
+
+
+def save_top_bottom_case_comparison_chart(
+    dataset_name: str,
+    case_entries: List[Dict[str, Any]],
+    output_dir: Path,
+    *,
+    file_tag: str,
+) -> Optional[Path]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if not case_entries:
+        return None
+
+    n_rows = len(case_entries)
+    fig, axes = plt.subplots(n_rows, 4, figsize=(18, max(4.0, 3.8 * n_rows)), squeeze=False)
+    headers = ["Original Image", "Original Label", "Input Prompt", "Model Output"]
+
+    for col, header in enumerate(headers):
+        axes[0, col].set_title(header, fontsize=11)
+
+    for row, entry in enumerate(case_entries):
+        image_np = np.asarray(entry.get("image"), dtype=np.uint8)
+        if image_np.ndim == 2:
+            image_np = np.stack([image_np, image_np, image_np], axis=-1)
+
+        gt_mask = _to_bool_mask(entry.get("gt_mask", np.zeros(image_np.shape[:2], dtype=np.uint8)))
+        pred_mask = _to_bool_mask(entry.get("pred_mask", np.zeros(image_np.shape[:2], dtype=np.uint8)))
+        bbox = entry.get("bbox", None)
+
+        row_title = (
+            f"{entry.get('rank_label', '')} | {entry.get('name', '')} | "
+            f"Dice={float(entry.get('dice', float('nan'))):.3f} | "
+            f"OOD={bool(entry.get('is_ood', False))}"
+        )
+
+        # Col 1: original image
+        ax0 = axes[row, 0]
+        ax0.imshow(image_np)
+        ax0.axis("off")
+        ax0.set_ylabel(row_title, fontsize=9)
+
+        # Col 2: original label overlay
+        ax1 = axes[row, 1]
+        ax1.imshow(image_np)
+        overlay_gt = np.zeros((gt_mask.shape[0], gt_mask.shape[1], 4), dtype=np.float32)
+        overlay_gt[..., 1] = 1.0
+        overlay_gt[..., 3] = gt_mask.astype(np.float32) * 0.45
+        ax1.imshow(overlay_gt)
+        ax1.axis("off")
+
+        # Col 3: input prompt (bbox)
+        ax2 = axes[row, 2]
+        ax2.imshow(image_np)
+        if bbox is not None and len(bbox) >= 4:
+            x1, y1, x2, y2 = [float(v) for v in bbox[:4]]
+            rect = plt.Rectangle((x1, y1), max(1.0, x2 - x1), max(1.0, y2 - y1), fill=False, linewidth=2.0, edgecolor="#ff0000")
+            ax2.add_patch(rect)
+        ax2.axis("off")
+
+        # Col 4: output result overlay
+        ax3 = axes[row, 3]
+        ax3.imshow(image_np)
+        overlay_pred = np.zeros((pred_mask.shape[0], pred_mask.shape[1], 4), dtype=np.float32)
+        overlay_pred[..., 0] = 1.0
+        overlay_pred[..., 1] = 0.6
+        overlay_pred[..., 3] = pred_mask.astype(np.float32) * 0.45
+        ax3.imshow(overlay_pred)
+        ood_score = float(entry.get("ood_score", float("nan")))
+        ax3.text(0.02, 0.98, f"OOD score={ood_score:.3f}", transform=ax3.transAxes, va="top", ha="left", fontsize=8, color="white", bbox={"facecolor": "black", "alpha": 0.45, "pad": 2})
+        ax3.axis("off")
+
+    fig.suptitle(f"{dataset_name} Top3 vs Bottom3 Cases ({file_tag})", fontsize=14)
+    plt.tight_layout()
+    out_path = output_dir / f"{dataset_name.lower()}_{file_tag}_top3_bottom3_cases.png"
+    plt.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    return out_path
+
+
+def save_ood_train_test_count_chart(ood_counts: Dict[str, Dict[str, float]], output_dir: Path) -> Optional[Path]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if not ood_counts:
+        return None
+
+    datasets = list(ood_counts.keys())
+    train_ood = np.array([float(ood_counts[d].get("train_ood", 0.0)) for d in datasets], dtype=np.float64)
+    test_ood = np.array([float(ood_counts[d].get("test_ood", 0.0)) for d in datasets], dtype=np.float64)
+    train_ratio = np.array([float(ood_counts[d].get("train_ood_ratio", 0.0)) for d in datasets], dtype=np.float64)
+    test_ratio = np.array([float(ood_counts[d].get("test_ood_ratio", 0.0)) for d in datasets], dtype=np.float64)
+
+    x = np.arange(len(datasets))
+    width = 0.36
+    fig, axes = plt.subplots(1, 2, figsize=(7.0 + 1.5 * len(datasets), 6.2), squeeze=False)
+
+    ax0 = axes[0, 0]
+    ax0.bar(x - width / 2, train_ood, width=width, label="Train OOD samples", color="#1f77b4")
+    ax0.bar(x + width / 2, test_ood, width=width, label="Test OOD samples", color="#d62728")
+    ax0.set_xticks(x, datasets)
+    ax0.set_ylabel("OOD sample count")
+    ax0.set_title("OOD Sample Count")
+    ax0.legend(loc="best")
+
+    ax1 = axes[0, 1]
+    ax1.bar(x - width / 2, train_ratio, width=width, label="Train OOD ratio", color="#1f77b4")
+    ax1.bar(x + width / 2, test_ratio, width=width, label="Test OOD ratio", color="#d62728")
+    ax1.set_xticks(x, datasets)
+    ax1.set_ylim(0.0, 1.0)
+    ax1.set_ylabel("OOD ratio")
+    ax1.set_title("OOD Ratio")
+    ax1.legend(loc="best")
+
+    fig.suptitle("Train/Test OOD Distribution by Dataset", fontsize=14)
+    plt.tight_layout()
+    out_path = output_dir / "ood_train_test_counts.png"
+    plt.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    return out_path

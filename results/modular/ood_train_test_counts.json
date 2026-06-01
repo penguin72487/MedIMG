@@ -1,0 +1,34 @@
+{
+  "DDTI": {
+    "train_samples": 328,
+    "train_ood": 0,
+    "train_ood_ratio": 0.0,
+    "test_samples": 101,
+    "test_ood": 3,
+    "test_ood_ratio": 0.0297029702970297
+  },
+  "TG3K": {
+    "train_samples": 2015,
+    "train_ood": 7,
+    "train_ood_ratio": 0.0034739454094292804,
+    "test_samples": 577,
+    "test_ood": 0,
+    "test_ood_ratio": 0.0
+  },
+  "TN3K": {
+    "train_samples": 2015,
+    "train_ood": 6,
+    "train_ood_ratio": 0.002977667493796526,
+    "test_samples": 577,
+    "test_ood": 0,
+    "test_ood_ratio": 0.0
+  },
+  "TN5000": {
+    "train_samples": 3500,
+    "train_ood": 2,
+    "train_ood_ratio": 0.0005714285714285715,
+    "test_samples": 1000,
+    "test_ood": 0,
+    "test_ood_ratio": 0.0
+  }
+}

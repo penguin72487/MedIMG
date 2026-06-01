@@ -1,0 +1,5 @@
+dataset,train_samples,train_ood,train_ood_ratio,test_samples,test_ood,test_ood_ratio
+DDTI,328,0,0.000000,101,3,0.029703
+TG3K,2015,7,0.003474,577,0,0.000000
+TN3K,2015,6,0.002978,577,0,0.000000
+TN5000,3500,2,0.000571,1000,0,0.000000

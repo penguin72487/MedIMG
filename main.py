@@ -53,6 +53,15 @@ CLI_SETTING_KEYS = {
     "run_only_stage7",
     "run_only_stage8",
     "ood_threshold",
+    "ood_enable_collapse_detection",
+    "ood_collapse_max_prob_threshold",
+    "ood_enable_entropy_detection",
+    "ood_entropy_threshold",
+    "ood_entropy_active_prob_threshold",
+    "ood_enable_fragmentation_detection",
+    "ood_fragment_prob_threshold",
+    "ood_fragment_min_area",
+    "ood_fragment_max_large_components",
     "eval_workers",
     "eval_batch",
     "eval_ece_max_pixels",
@@ -87,6 +96,13 @@ def _ood_threshold_type(value: str) -> float:
     if threshold < 0.0 or threshold > 1.0:
         raise argparse.ArgumentTypeError("OOD threshold must be within [0.0, 1.0]")
     return threshold
+
+
+def _unit_interval_type(value: str) -> float:
+    parsed = float(value)
+    if parsed < 0.0 or parsed > 1.0:
+        raise argparse.ArgumentTypeError("value must be within [0.0, 1.0]")
+    return parsed
 
 
 def _parse_args(defaults: dict, config_path: Path) -> argparse.Namespace:
@@ -272,6 +288,95 @@ def _parse_args(defaults: dict, config_path: Path) -> argparse.Namespace:
         choices=["entropy", "confidence", "variance"],
         help="OOD 偵測方法",
     )
+    collapse_group = eval_group.add_mutually_exclusive_group()
+    collapse_group.add_argument(
+        "--ood-enable-collapse",
+        action="store_true",
+        dest="ood_enable_collapse_detection",
+        help="啟用防線一：模型崩塌檢測（max prob < 門檻）",
+    )
+    collapse_group.add_argument(
+        "--ood-disable-collapse",
+        action="store_false",
+        dest="ood_enable_collapse_detection",
+        help="停用防線一：模型崩塌檢測",
+    )
+    eval_group.add_argument(
+        "--ood-collapse-max-prob-threshold",
+        type=_unit_interval_type,
+        default=defaults["ood_collapse_max_prob_threshold"],
+        dest="ood_collapse_max_prob_threshold",
+        metavar="T",
+        help="防線一門檻：若 max(prob) < T 則判定崩塌 OOD",
+    )
+
+    entropy_group = eval_group.add_mutually_exclusive_group()
+    entropy_group.add_argument(
+        "--ood-enable-entropy",
+        action="store_true",
+        dest="ood_enable_entropy_detection",
+        help="啟用防線二：Shannon 熵全局不確定性檢測",
+    )
+    entropy_group.add_argument(
+        "--ood-disable-entropy",
+        action="store_false",
+        dest="ood_enable_entropy_detection",
+        help="停用防線二：Shannon 熵檢測",
+    )
+    eval_group.add_argument(
+        "--ood-entropy-threshold",
+        type=_unit_interval_type,
+        default=defaults["ood_entropy_threshold"],
+        dest="ood_entropy_threshold",
+        metavar="T",
+        help="防線二門檻：活躍區域平均熵 > T 判定 OOD",
+    )
+    eval_group.add_argument(
+        "--ood-entropy-active-prob-threshold",
+        type=_unit_interval_type,
+        default=defaults["ood_entropy_active_prob_threshold"],
+        dest="ood_entropy_active_prob_threshold",
+        metavar="T",
+        help="防線二活躍區域定義：prob > T 的像素參與熵平均",
+    )
+
+    fragment_group = eval_group.add_mutually_exclusive_group()
+    fragment_group.add_argument(
+        "--ood-enable-fragmentation",
+        action="store_true",
+        dest="ood_enable_fragmentation_detection",
+        help="啟用防線三：形態學碎片化檢測（連通元件）",
+    )
+    fragment_group.add_argument(
+        "--ood-disable-fragmentation",
+        action="store_false",
+        dest="ood_enable_fragmentation_detection",
+        help="停用防線三：形態學碎片化檢測",
+    )
+    eval_group.add_argument(
+        "--ood-fragment-prob-threshold",
+        type=_unit_interval_type,
+        default=defaults["ood_fragment_prob_threshold"],
+        dest="ood_fragment_prob_threshold",
+        metavar="T",
+        help="防線三二值化門檻：prob > T 視為前景",
+    )
+    eval_group.add_argument(
+        "--ood-fragment-min-area",
+        type=int,
+        default=defaults["ood_fragment_min_area"],
+        dest="ood_fragment_min_area",
+        metavar="N",
+        help="防線三大型連通塊最小面積（像素）",
+    )
+    eval_group.add_argument(
+        "--ood-fragment-max-large-components",
+        type=int,
+        default=defaults["ood_fragment_max_large_components"],
+        dest="ood_fragment_max_large_components",
+        metavar="N",
+        help="防線三門檻：大型連通塊數量大於 N 時判定 OOD",
+    )
     
     # TTA parameters
     eval_group.add_argument(
@@ -324,6 +429,9 @@ def _parse_args(defaults: dict, config_path: Path) -> argparse.Namespace:
         finetune_use_fused_adamw=bool(defaults["finetune_use_fused_adamw"]),
         run_only_stage7=bool(defaults["run_only_stage7"]),
         run_only_stage8=bool(defaults["run_only_stage8"]),
+        ood_enable_collapse_detection=bool(defaults["ood_enable_collapse_detection"]),
+        ood_enable_entropy_detection=bool(defaults["ood_enable_entropy_detection"]),
+        ood_enable_fragmentation_detection=bool(defaults["ood_enable_fragmentation_detection"]),
     )
 
     return parser.parse_args()

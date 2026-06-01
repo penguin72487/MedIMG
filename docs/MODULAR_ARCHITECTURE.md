@@ -19,8 +19,8 @@ flowchart TD
     F --> I[visualize.build_comparison_table]
     G --> I
     H --> I
-    I --> J[visualize.save_comparison_chart]
-    J --> K[results/*.json + comparison_table.csv + performance_comparison.png]
+    I --> J[visualize.save_four_way_variant_chart]
+    J --> K[results/*.json + comparison_table.csv + performance_comparison_4way.png]
 ```
 
 ## 各模組職責
@@ -66,7 +66,7 @@ flowchart TD
 
 ### medsam_modular/visualize.py
 - 建立比較表與輸出圖表。
-- 統一產生 `comparison_table.csv` 與 `performance_comparison.png`。
+- 統一產生 `comparison_table.csv` 與 `performance_comparison_4way.png`。
 
 ## 重要環境變數
 

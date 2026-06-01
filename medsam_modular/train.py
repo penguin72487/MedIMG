@@ -504,8 +504,7 @@ def _build_checkpoint_payload(
     model: torch.nn.Module,
     epoch: int,
     best_val_loss: float,
-    wait: int,
-    history: Dict[str, List[float]],
+    wait: int,    history: Dict[str, List[float]],
 ) -> Dict[str, Any]:
     return {
         "model_state_dict": model.state_dict(),

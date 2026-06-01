@@ -1,6 +1,7 @@
 import time
 import os
 import hashlib
+from collections import deque
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -55,10 +56,10 @@ def _build_stats_from_store(
     mean_f1, std_f1 = _mean_std(metrics_store["f1"])
     mean_bce, std_bce = _mean_std(metrics_store.get("bce", [0.0]))
     mean_ece, std_ece = _mean_std(metrics_store.get("ece", [float("nan")]))
-    dice_1pct_low = _percentile(metrics_store["dice"], 1.0)
-    jaccard_1pct_low = _percentile(metrics_store["jaccard"], 1.0)
-    f1_1pct_low = _percentile(metrics_store["f1"], 1.0)
-    sensitivity_1pct_low = _percentile(metrics_store.get("sensitivity", metrics_store["recall"]), 1.0)
+    dice_5pct_low = _percentile(metrics_store["dice"], 5.0)
+    jaccard_5pct_low = _percentile(metrics_store["jaccard"], 5.0)
+    f1_5pct_low = _percentile(metrics_store["f1"], 5.0)
+    sensitivity_5pct_low = _percentile(metrics_store.get("sensitivity", metrics_store["recall"]), 5.0)
 
     stats: Dict[str, Any] = {
         "dataset": dataset_name,
@@ -79,10 +80,10 @@ def _build_stats_from_store(
         "std_bce": std_bce,
         "mean_ece": mean_ece,
         "std_ece": std_ece,
-        "dice_1pct_low": dice_1pct_low,
-        "jaccard_1pct_low": jaccard_1pct_low,
-        "f1_1pct_low": f1_1pct_low,
-        "sensitivity_1pct_low": sensitivity_1pct_low,
+        "dice_5pct_low": dice_5pct_low,
+        "jaccard_5pct_low": jaccard_5pct_low,
+        "f1_5pct_low": f1_5pct_low,
+        "sensitivity_5pct_low": sensitivity_5pct_low,
         "total_time_sec": float(total_time),
         "avg_inference_time_ms": float(np.mean(inference_times) * 1000.0),
         "avg_data_time_ms": float(np.mean(data_times) * 1000.0),
@@ -513,11 +514,22 @@ class OODDetector:
         self.method = method
         self.max_side = max(8, int(_env("MEDSAM_OOD_MAX_SIDE", "64")))
 
-    def _score_from_tensor(self, p: torch.Tensor) -> Tuple[float, float]:
-        p = p.to(dtype=torch.float32)
-        if p.numel() == 0:
-            return 0.0, 1.0
+        # Defense 1: collapse detection
+        self.enable_collapse_detection = _env_bool("MEDSAM_OOD_ENABLE_COLLAPSE_DETECTION", True)
+        self.collapse_max_prob_threshold = float(_env("MEDSAM_OOD_COLLAPSE_MAX_PROB_THRESHOLD", "0.5"))
 
+        # Defense 2: active-region entropy detection
+        self.enable_entropy_detection = _env_bool("MEDSAM_OOD_ENABLE_ENTROPY_DETECTION", True)
+        self.entropy_threshold = float(_env("MEDSAM_OOD_ENTROPY_THRESHOLD", "0.5"))
+        self.entropy_active_prob_threshold = float(_env("MEDSAM_OOD_ENTROPY_ACTIVE_PROB_THRESHOLD", "0.05"))
+
+        # Defense 3: fragmentation detection by connected components
+        self.enable_fragmentation_detection = _env_bool("MEDSAM_OOD_ENABLE_FRAGMENTATION_DETECTION", True)
+        self.fragment_prob_threshold = float(_env("MEDSAM_OOD_FRAGMENT_PROB_THRESHOLD", "0.5"))
+        self.fragment_min_area = max(1, int(_env("MEDSAM_OOD_FRAGMENT_MIN_AREA", "80")))
+        self.fragment_max_large_components = max(0, int(_env("MEDSAM_OOD_FRAGMENT_MAX_LARGE_COMPONENTS", "3")))
+
+    def _resize_prob_if_needed(self, p: torch.Tensor) -> torch.Tensor:
         if p.dim() == 2:
             h, w = int(p.shape[0]), int(p.shape[1])
             max_dim = max(h, w)
@@ -530,6 +542,72 @@ class OODDetector:
                     size=(new_h, new_w),
                     mode="area",
                 ).squeeze(0).squeeze(0)
+        return p
+
+    def _normalize_prob_map(self, p: torch.Tensor) -> torch.Tensor:
+        p = p.to(dtype=torch.float32)
+        if p.dim() > 2:
+            p = p.squeeze()
+        if p.dim() == 0:
+            p = p.reshape(1, 1)
+        elif p.dim() == 1:
+            p = p.reshape(1, -1)
+        elif p.dim() > 2:
+            p = p.reshape(int(p.shape[-2]), int(p.shape[-1]))
+        p = self._resize_prob_if_needed(p)
+        return p
+
+    def _count_large_components(self, binary_mask: np.ndarray) -> int:
+        if binary_mask.size == 0:
+            return 0
+        h, w = binary_mask.shape
+        visited = np.zeros((h, w), dtype=np.uint8)
+        large_components = 0
+
+        for y in range(h):
+            for x in range(w):
+                if binary_mask[y, x] == 0 or visited[y, x] == 1:
+                    continue
+
+                q: deque = deque()
+                q.append((y, x))
+                visited[y, x] = 1
+                area = 0
+
+                while q:
+                    cy, cx = q.popleft()
+                    area += 1
+
+                    y0 = max(0, cy - 1)
+                    y1 = min(h - 1, cy + 1)
+                    x0 = max(0, cx - 1)
+                    x1 = min(w - 1, cx + 1)
+                    for ny in range(y0, y1 + 1):
+                        for nx in range(x0, x1 + 1):
+                            if visited[ny, nx] == 1 or binary_mask[ny, nx] == 0:
+                                continue
+                            visited[ny, nx] = 1
+                            q.append((ny, nx))
+
+                if area >= self.fragment_min_area:
+                    large_components += 1
+
+        return int(large_components)
+
+    def _active_entropy_mean(self, p: torch.Tensor) -> float:
+        if p.numel() == 0:
+            return 0.0
+        p_safe = p.clamp(1e-6, 1.0 - 1e-6)
+        entropy_t = -(p_safe * torch.log(p_safe) + (1.0 - p_safe) * torch.log1p(-p_safe))
+        active_mask = p_safe > self.entropy_active_prob_threshold
+        if bool(active_mask.any().item()):
+            return float(entropy_t[active_mask].mean().item())
+        return float(entropy_t.mean().item())
+
+    def _score_from_tensor(self, p: torch.Tensor) -> Tuple[float, float]:
+        p = p.to(dtype=torch.float32)
+        if p.numel() == 0:
+            return 0.0, 1.0
 
         p = p.reshape(-1)
         hard_binary = torch.all((p <= 0.0) | (p >= 1.0))
@@ -556,69 +634,79 @@ class OODDetector:
         confidence_t = torch.clamp(1.0 - score_t, min=0.0)
         return float(score_t.item()), float(confidence_t.item())
 
-    def _score_batch_from_tensor(self, mask_prob_batch: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _detect_single_tensor(self, mask_prob: torch.Tensor) -> Dict[str, Any]:
+        p2d = self._normalize_prob_map(mask_prob)
+
+        score, confidence = self._score_from_tensor(p2d)
+        score_is_ood = bool(score > self.threshold)
+
+        max_prob = float(p2d.max().item()) if p2d.numel() > 0 else 0.0
+        collapse_is_ood = bool(
+            self.enable_collapse_detection and (max_prob < self.collapse_max_prob_threshold)
+        )
+
+        active_entropy = self._active_entropy_mean(p2d)
+        entropy_is_ood = bool(
+            self.enable_entropy_detection and (active_entropy > self.entropy_threshold)
+        )
+
+        fragment_binary = (p2d > self.fragment_prob_threshold).to(dtype=torch.uint8).cpu().numpy()
+        large_component_count = self._count_large_components(fragment_binary)
+        fragmentation_is_ood = bool(
+            self.enable_fragmentation_detection
+            and (large_component_count > self.fragment_max_large_components)
+        )
+
+        reason_codes: List[str] = []
+        if collapse_is_ood:
+            reason_codes.append("collapse")
+        if entropy_is_ood:
+            reason_codes.append("entropy")
+        if fragmentation_is_ood:
+            reason_codes.append("fragmentation")
+        if score_is_ood:
+            reason_codes.append("score")
+
+        is_ood = bool(collapse_is_ood or entropy_is_ood or fragmentation_is_ood or score_is_ood)
+
+        return {
+            "ood_score": score,
+            "is_ood": is_ood,
+            "confidence": confidence,
+            "ood_by_score": score_is_ood,
+            "ood_reason_codes": reason_codes,
+            "collapse": {
+                "enabled": bool(self.enable_collapse_detection),
+                "is_ood": collapse_is_ood,
+                "max_prob": max_prob,
+                "threshold": float(self.collapse_max_prob_threshold),
+            },
+            "entropy": {
+                "enabled": bool(self.enable_entropy_detection),
+                "is_ood": entropy_is_ood,
+                "active_mean": active_entropy,
+                "threshold": float(self.entropy_threshold),
+                "active_prob_threshold": float(self.entropy_active_prob_threshold),
+            },
+            "fragmentation": {
+                "enabled": bool(self.enable_fragmentation_detection),
+                "is_ood": fragmentation_is_ood,
+                "large_component_count": int(large_component_count),
+                "min_area": int(self.fragment_min_area),
+                "max_large_components": int(self.fragment_max_large_components),
+                "prob_threshold": float(self.fragment_prob_threshold),
+            },
+        }
+
+    def detect_tensor(self, mask_prob: torch.Tensor) -> Dict[str, Any]:
+        return self._detect_single_tensor(mask_prob)
+
+    def detect_batch_tensor(self, mask_prob_batch: torch.Tensor) -> List[Dict[str, Any]]:
         if mask_prob_batch.dim() == 2:
             mask_prob_batch = mask_prob_batch.unsqueeze(0)
         if mask_prob_batch.dim() != 3:
             raise ValueError(f"Expected [B,H,W] tensor, got shape {tuple(mask_prob_batch.shape)}")
-
-        p = mask_prob_batch.to(dtype=torch.float32)
-        if p.numel() == 0:
-            zeros = torch.zeros((p.shape[0],), dtype=torch.float32, device=p.device)
-            ones = torch.ones((p.shape[0],), dtype=torch.float32, device=p.device)
-            return zeros, ones
-
-        h, w = int(p.shape[-2]), int(p.shape[-1])
-        max_dim = max(h, w)
-        if max_dim > self.max_side:
-            scale = float(self.max_side) / float(max_dim)
-            new_w = max(1, int(round(w * scale)))
-            new_h = max(1, int(round(h * scale)))
-            p = F.interpolate(p.unsqueeze(1), size=(new_h, new_w), mode="area").squeeze(1)
-
-        flat = p.reshape(p.shape[0], -1)
-        hard_binary = torch.all((flat <= 0.0) | (flat >= 1.0), dim=1)
-        clamped = flat.clamp(1e-6, 1.0 - 1e-6)
-
-        if self.method == "confidence":
-            soft_score = -(torch.abs(clamped - 0.5) * 2.0).mean(dim=1)
-            hard_score = torch.full_like(soft_score, -1.0)
-            hard_conf = torch.ones_like(soft_score)
-        elif self.method == "variance":
-            soft_score = torch.var(clamped, dim=1)
-            hard_score = torch.var(flat, dim=1)
-            hard_conf = torch.clamp(1.0 - hard_score, min=0.0)
-        else:
-            soft_score = -(clamped * clamped.log() + (1.0 - clamped) * (1.0 - clamped).log()).mean(dim=1)
-            hard_score = torch.zeros_like(soft_score)
-            hard_conf = torch.ones_like(soft_score)
-
-        confidence = torch.clamp(1.0 - soft_score, min=0.0)
-        score = torch.where(hard_binary, hard_score, soft_score)
-        confidence = torch.where(hard_binary, hard_conf, confidence)
-        return score, confidence
-
-    def detect_tensor(self, mask_prob: torch.Tensor) -> Dict[str, Any]:
-        p = mask_prob
-        if p.dim() > 2:
-            p = p.squeeze()
-        score, confidence = self._score_from_tensor(p)
-        return {
-            "ood_score": score,
-            "is_ood": bool(score > self.threshold),
-            "confidence": confidence,
-        }
-
-    def detect_batch_tensor(self, mask_prob_batch: torch.Tensor) -> List[Dict[str, Any]]:
-        scores, confidences = self._score_batch_from_tensor(mask_prob_batch)
-        return [
-            {
-                "ood_score": float(scores[i].item()),
-                "is_ood": bool(scores[i].item() > self.threshold),
-                "confidence": float(confidences[i].item()),
-            }
-            for i in range(scores.shape[0])
-        ]
+        return [self._detect_single_tensor(mask_prob_batch[i]) for i in range(mask_prob_batch.shape[0])]
 
 
 class TTAPredictor:

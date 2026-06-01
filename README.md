@@ -30,6 +30,28 @@ conda run --no-capture-output -n medsam python -u main.py --finetune --epochs 20
 - 可用 CLI 覆蓋: `--ood-threshold`
 - 範圍: `0.0 ~ 1.0`（越低越容易判定為 OOD）
 
+### 三道 OOD 防線設定
+
+目前 OOD 偵測已支援三道防線，並且可獨立開關：
+
+- 防線一（崩塌）
+	- `ood_enable_collapse_detection`
+	- `ood_collapse_max_prob_threshold`（預設 `0.5`）
+	- CLI: `--ood-enable-collapse|--ood-disable-collapse`、`--ood-collapse-max-prob-threshold`
+- 防線二（Shannon 熵）
+	- `ood_enable_entropy_detection`
+	- `ood_entropy_threshold`（預設 `0.5`）
+	- `ood_entropy_active_prob_threshold`（預設 `0.05`，定義活躍區域）
+	- CLI: `--ood-enable-entropy|--ood-disable-entropy`、`--ood-entropy-threshold`、`--ood-entropy-active-prob-threshold`
+- 防線三（形態碎裂 / 連通元件）
+	- `ood_enable_fragmentation_detection`
+	- `ood_fragment_prob_threshold`（預設 `0.5`）
+	- `ood_fragment_min_area`（預設 `80`）
+	- `ood_fragment_max_large_components`（預設 `3`）
+	- CLI: `--ood-enable-fragmentation|--ood-disable-fragmentation`、`--ood-fragment-prob-threshold`、`--ood-fragment-min-area`、`--ood-fragment-max-large-components`
+
+註：最終判定採聯集規則，只要任一道防線命中即視為 OOD；同時仍保留 `ood_method + ood_threshold` 分數閾值判定作為相容 fallback。
+
 ```shell
 conda run --no-capture-output -n medsam python -u main.py --ood-threshold 0.35
 ```

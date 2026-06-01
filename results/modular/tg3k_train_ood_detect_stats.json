@@ -18,5 +18,9 @@
     "throughput_samples_per_sec": 41.661886998927685,
     "bottleneck_component": "inference",
     "bottleneck_component_ratio": 0.6441082763316404
-  }
+  },
+  "dice_5pct_low": NaN,
+  "jaccard_5pct_low": NaN,
+  "f1_5pct_low": NaN,
+  "sensitivity_5pct_low": NaN
 }

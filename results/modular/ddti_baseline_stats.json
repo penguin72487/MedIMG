@@ -17,10 +17,6 @@
   "std_bce": 0.2780903662398342,
   "mean_ece": 0.05968672784026897,
   "std_ece": 0.1235112652009562,
-  "dice_1pct_low": 0.0,
-  "jaccard_1pct_low": 0.0,
-  "f1_1pct_low": 0.0,
-  "sensitivity_1pct_low": 0.0,
   "total_time_sec": 23.25981758099806,
   "avg_inference_time_ms": 54.90128111885515,
   "avg_data_time_ms": 0.2914524744068835,
@@ -44,5 +40,9 @@
     "baseline_cache_misses": 101
   },
   "bottleneck_component": "inference",
-  "bottleneck_component_ratio": 0.2383952227352953
+  "bottleneck_component_ratio": 0.2383952227352953,
+  "dice_5pct_low": 0.0035742653999477625,
+  "jaccard_5pct_low": 0.0017903322586789727,
+  "f1_5pct_low": 0.003574265632778406,
+  "sensitivity_5pct_low": 0.0017903322586789727
 }

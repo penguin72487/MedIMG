@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import time
+import csv
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -19,12 +20,14 @@ from medsam_modular.visualize import (
     build_comparison_table,
     save_calibration_ece_chart,
     save_cache_throughput_trend_chart,
-    save_comparison_chart,
     save_cost_breakdown_chart,
     save_delta_chart,
+    save_four_way_variant_chart,
     save_method_overview_chart,
+    save_ood_train_test_count_chart,
     save_ood_detection_chart,
     save_quality_throughput_frontier,
+    save_top_bottom_case_comparison_chart,
     save_tta_cache_hit_chart,
 )
 
@@ -228,12 +231,13 @@ def _all_have_baseline_stats(all_stats: Dict[str, Dict[str, Dict[str, Any]]]) ->
 def _run_stage8_plotting(
     *,
     all_stats: Dict[str, Dict[str, Dict[str, Any]]],
+    all_stats_ood_finetuned: Optional[Dict[str, Dict[str, Dict[str, Any]]]],
     output_dir: Path,
     project_root: Path,
     profiler: Any,
 ) -> Tuple[Path, Path, Path, Dict[str, Path], Optional[Path]]:
     comparison_path = output_dir / "comparison_table.csv"
-    chart_path = output_dir / "performance_comparison.png"
+    chart_path = output_dir / "performance_comparison_4way.png"
     top_chart_path = (project_root / "results") / chart_path.name
     stage8_paths: Dict[str, Path] = {}
     stage8_history_path: Optional[Path] = None
@@ -245,8 +249,12 @@ def _run_stage8_plotting(
             comparison_table = build_comparison_table(all_stats)
         with profiler.section_and_flush("stage.save_comparison_csv"):
             comparison_table.to_csv(comparison_path, index=False)
-        with profiler.section_and_flush("stage.save_comparison_chart"):
-            chart_path = save_comparison_chart(all_stats, output_dir)
+        with profiler.section_and_flush("stage.save_comparison_chart_4way"):
+            chart_path = save_four_way_variant_chart(
+                full_summary=all_stats,
+                ood_finetuned_summary=all_stats_ood_finetuned or {},
+                output_dir=output_dir,
+            )
 
     with profiler.section_and_flush("stage.save_stage8_method_overview"):
         stage8_paths["method_overview"] = save_method_overview_chart(all_stats, output_dir)
@@ -275,6 +283,227 @@ def _run_stage8_plotting(
             shutil.copy2(chart_path, top_chart_path)
 
     return comparison_path, chart_path, top_chart_path, stage8_paths, stage8_history_path
+
+
+def _dataset_name_to_index_map(dataset: Any) -> Dict[str, int]:
+    out: Dict[str, int] = {}
+    samples = getattr(dataset, "samples", None)
+    if isinstance(samples, list):
+        for idx, s in enumerate(samples):
+            if isinstance(s, dict):
+                name = str(s.get("name", s.get("image_id", f"sample_{idx}")))
+            else:
+                name = f"sample_{idx}"
+            out[name] = idx
+        return out
+
+    if hasattr(dataset, "__len__"):
+        for idx in range(int(len(dataset))):
+            sample = dataset[idx]
+            out[str(sample.get("name", f"sample_{idx}"))] = idx
+    return out
+
+
+def _select_top_bottom_samples(results: List[Dict[str, Any]], top_k: int = 3, bottom_k: int = 3) -> List[Dict[str, Any]]:
+    finite_results: List[Dict[str, Any]] = []
+    for r in results:
+        try:
+            _ = float(r.get("dice", float("nan")))
+            finite_results.append(r)
+        except Exception:
+            continue
+    if not finite_results:
+        return []
+
+    sorted_results = sorted(finite_results, key=lambda r: float(r.get("dice", float("nan"))))
+    bottom = sorted_results[: max(0, int(bottom_k))]
+
+    used_names = {str(r.get("name", "")) for r in bottom}
+    top_candidates = list(reversed(sorted_results))
+    top: List[Dict[str, Any]] = []
+    for r in top_candidates:
+        name = str(r.get("name", ""))
+        if name in used_names:
+            continue
+        top.append(r)
+        if len(top) >= max(0, int(top_k)):
+            break
+
+    out: List[Dict[str, Any]] = []
+    for idx, r in enumerate(top):
+        rec = dict(r)
+        rec["rank_label"] = f"Best #{idx + 1}"
+        out.append(rec)
+    for idx, r in enumerate(bottom):
+        rec = dict(r)
+        rec["rank_label"] = f"Worst #{idx + 1}"
+        out.append(rec)
+    return out
+
+
+def _generate_top_bottom_case_charts(
+    *,
+    output_dir: Path,
+    test_sets: Dict[str, Any],
+    model: Any,
+    processor: Any,
+    device: str,
+    ood_detector: OODDetector,
+    tta_predictor: TTAPredictor,
+    file_tag: str,
+) -> Dict[str, Path]:
+    case_dir = output_dir / "case_comparisons"
+    case_dir.mkdir(parents=True, exist_ok=True)
+    out_paths: Dict[str, Path] = {}
+
+    for dataset_name, dataset in test_sets.items():
+        tta_results_path = output_dir / f"{dataset_name.lower()}_{file_tag}_tta_results.json"
+        ood_results_path = output_dir / f"{dataset_name.lower()}_{file_tag}_ood_results.json"
+        if not tta_results_path.exists():
+            continue
+
+        try:
+            tta_results = json.loads(tta_results_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(tta_results, list) or not tta_results:
+            continue
+
+        ood_by_name: Dict[str, Dict[str, Any]] = {}
+        if ood_results_path.exists():
+            try:
+                ood_results = json.loads(ood_results_path.read_text(encoding="utf-8"))
+                if isinstance(ood_results, list):
+                    for r in ood_results:
+                        name = str(r.get("name", ""))
+                        if name:
+                            ood_by_name[name] = r
+            except Exception:
+                pass
+
+        picked = _select_top_bottom_samples(tta_results, top_k=3, bottom_k=3)
+        if not picked:
+            continue
+
+        name_to_idx = _dataset_name_to_index_map(dataset)
+        case_entries: List[Dict[str, Any]] = []
+        for row in picked:
+            sample_name = str(row.get("name", ""))
+            if sample_name not in name_to_idx:
+                continue
+
+            sample = dataset[name_to_idx[sample_name]]
+            image = sample.get("image")
+            if image is None:
+                continue
+
+            gt_mask = sample.get("mask")
+            if isinstance(gt_mask, torch.Tensor):
+                gt_mask_np = gt_mask.detach().cpu().numpy()
+            else:
+                gt_mask_np = gt_mask
+
+            bbox = sample.get("bbox", None)
+            prob_t, _unc = tta_predictor.predict(
+                model=model,
+                processor=processor,
+                image=image,
+                bbox=bbox,
+                device=device,
+            )
+            pred_mask_np = (prob_t > 0.5).to(torch.uint8).detach().cpu().numpy()
+            ood_pred = ood_detector.detect_tensor(prob_t)
+            ood_row = ood_by_name.get(sample_name, {})
+
+            case_entries.append(
+                {
+                    "rank_label": row.get("rank_label", ""),
+                    "name": sample_name,
+                    "dice": float(row.get("dice", float("nan"))),
+                    "ood_score": float(ood_pred.get("ood_score", ood_row.get("ood_score", 0.0))),
+                    "is_ood": bool(ood_pred.get("is_ood", ood_row.get("is_ood", False))),
+                    "image": image,
+                    "gt_mask": gt_mask_np,
+                    "bbox": bbox,
+                    "pred_mask": pred_mask_np,
+                }
+            )
+
+        out_path = save_top_bottom_case_comparison_chart(
+            dataset_name=dataset_name,
+            case_entries=case_entries,
+            output_dir=case_dir,
+            file_tag=file_tag,
+        )
+        if out_path is not None:
+            out_paths[dataset_name] = out_path
+
+    return out_paths
+
+
+def _save_train_test_ood_summary(
+    *,
+    output_dir: Path,
+    train_ood_summary: Dict[str, Any],
+    test_all_stats: Dict[str, Dict[str, Dict[str, Any]]],
+) -> Tuple[Path, Path, Optional[Path]]:
+    datasets = sorted(set(train_ood_summary.keys()) | set(test_all_stats.keys()))
+    payload: Dict[str, Dict[str, Any]] = {}
+    chart_in: Dict[str, Dict[str, float]] = {}
+
+    for dataset_name in datasets:
+        train_row = train_ood_summary.get(dataset_name, {}) if isinstance(train_ood_summary, dict) else {}
+        test_row = (test_all_stats.get(dataset_name, {}) or {}).get("ood", {})
+
+        train_n = int(train_row.get("num_samples", 0) or 0)
+        train_ood = int(train_row.get("num_ood", train_row.get("num_ood_detected", 0)) or 0)
+        test_n = int(test_row.get("num_samples", 0) or 0)
+        test_ood = int(test_row.get("num_ood_detected", 0) or 0)
+
+        payload[dataset_name] = {
+            "train_samples": train_n,
+            "train_ood": train_ood,
+            "train_ood_ratio": float(train_ood / max(1, train_n)),
+            "test_samples": test_n,
+            "test_ood": test_ood,
+            "test_ood_ratio": float(test_ood / max(1, test_n)),
+        }
+        chart_in[dataset_name] = {
+            "train_ood": float(train_ood),
+            "test_ood": float(test_ood),
+            "train_ood_ratio": float(train_ood / max(1, train_n)),
+            "test_ood_ratio": float(test_ood / max(1, test_n)),
+        }
+
+    json_path = output_dir / "ood_train_test_counts.json"
+    _save_json(json_path, payload)
+
+    csv_path = output_dir / "ood_train_test_counts.csv"
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "dataset",
+            "train_samples",
+            "train_ood",
+            "train_ood_ratio",
+            "test_samples",
+            "test_ood",
+            "test_ood_ratio",
+        ])
+        for dataset_name in datasets:
+            row = payload[dataset_name]
+            writer.writerow([
+                dataset_name,
+                row["train_samples"],
+                row["train_ood"],
+                f"{float(row['train_ood_ratio']):.6f}",
+                row["test_samples"],
+                row["test_ood"],
+                f"{float(row['test_ood_ratio']):.6f}",
+            ])
+
+    chart_path = save_ood_train_test_count_chart(chart_in, output_dir)
+    return json_path, csv_path, chart_path
 
 
 def _fmt_metric(value: Any) -> str:
@@ -491,15 +720,21 @@ def main() -> None:
     if run_only_stage8:
         print("\n[Mode] stage8-only enabled: load summary and generate plots only.")
         summary_path = output_dir / "summary.json"
+        summary_ood_finetuned_path = output_dir / "summary_ood_finetuned.json"
         if not summary_path.exists():
             raise RuntimeError(f"Stage8-only requires summary file: {summary_path}")
         all_stats = json.loads(summary_path.read_text(encoding="utf-8"))
+        if summary_ood_finetuned_path.exists():
+            all_stats_ood_finetuned = json.loads(summary_ood_finetuned_path.read_text(encoding="utf-8"))
+        else:
+            all_stats_ood_finetuned = {}
         if not isinstance(all_stats, dict) or not all_stats:
             raise RuntimeError(f"Invalid summary content for Stage8-only: {summary_path}")
 
         print("\n[Stage 8/8] 產生 comparison table / chart ...")
         comparison_path, chart_path, top_chart_path, stage8_paths, stage8_history_path = _run_stage8_plotting(
             all_stats=all_stats,
+            all_stats_ood_finetuned=all_stats_ood_finetuned,
             output_dir=output_dir,
             project_root=project_root,
             profiler=profiler,
@@ -624,7 +859,18 @@ def main() -> None:
     ood_finetuned_best_path = output_dir / "medsam_OOD_finetuned_best.pth"
     full_finetuned_best_path = output_dir / "medsam_finetuned_best.pth"
 
-    if not skip_finetune:
+    if run_only_stage7:
+        existing_train_ood_summary = output_dir / "train_ood_subset_summary.json"
+        if existing_train_ood_summary.exists():
+            try:
+                ood_subset_summary = json.loads(existing_train_ood_summary.read_text(encoding="utf-8"))
+                if isinstance(ood_subset_summary, dict):
+                    for ds_name, row in ood_subset_summary.items():
+                        if isinstance(row, dict) and int(row.get("num_ood", 0)) > 0:
+                            ood_subset_by_name[str(ds_name)] = set()
+            except Exception:
+                ood_subset_summary = {}
+    else:
         print("\n[Stage 3/8] baseline 偵測 train split OOD ...")
         ood_subset_by_name, ood_subset_summary = _detect_ood_train_subset(
             model=model,
@@ -643,6 +889,7 @@ def main() -> None:
         total_all = int(sum(int(v.get("num_samples", 0)) for v in ood_subset_summary.values()))
         print(f"  OOD train subset: {total_ood}/{total_all} samples")
 
+    if not skip_finetune:
         if total_ood > 0:
             print("\n[Stage 4/8] OOD 子集微調（使用 TTA 增強資料）...")
             if baseline_weight_path and Path(baseline_weight_path).exists():
@@ -828,8 +1075,25 @@ def main() -> None:
 
     _save_json(output_dir / "summary.json", all_stats)
 
+    case_chart_paths = _generate_top_bottom_case_charts(
+        output_dir=output_dir,
+        test_sets=test_sets,
+        model=model,
+        processor=processor,
+        device=device,
+        ood_detector=ood_detector,
+        tta_predictor=tta_predictor,
+        file_tag="full_finetuned",
+    )
+
+    ood_summary_json, ood_summary_csv, ood_summary_chart = _save_train_test_ood_summary(
+        output_dir=output_dir,
+        train_ood_summary=ood_subset_summary,
+        test_all_stats=all_stats,
+    )
+
     comparison_path = output_dir / "comparison_table.csv"
-    chart_path = output_dir / "performance_comparison.png"
+    chart_path = output_dir / "performance_comparison_4way.png"
     top_chart_path = (project_root / "results") / chart_path.name
     stage8_paths: Dict[str, Path] = {}
     stage8_history_path: Optional[Path] = None
@@ -840,6 +1104,7 @@ def main() -> None:
         print("\n[Stage 8/8] 產生 comparison table / chart ...")
         comparison_path, chart_path, top_chart_path, stage8_paths, stage8_history_path = _run_stage8_plotting(
             all_stats=all_stats,
+            all_stats_ood_finetuned=all_stats_ood_finetuned,
             output_dir=output_dir,
             project_root=project_root,
             profiler=profiler,
@@ -860,6 +1125,15 @@ def main() -> None:
     print(f"- summary: {output_dir / 'summary.json'}")
     if all_stats_ood_finetuned:
         print(f"- summary_ood_finetuned: {output_dir / 'summary_ood_finetuned.json'}")
+    if case_chart_paths:
+        for ds_name in sorted(case_chart_paths.keys()):
+            print(f"- top_bottom_cases_{ds_name}: {case_chart_paths[ds_name]}")
+    if ood_summary_json.exists():
+        print(f"- ood_train_test_counts_json: {ood_summary_json}")
+    if ood_summary_csv.exists():
+        print(f"- ood_train_test_counts_csv: {ood_summary_csv}")
+    if ood_summary_chart is not None and ood_summary_chart.exists():
+        print(f"- ood_train_test_counts_chart: {ood_summary_chart}")
     shutdown_global_async_writer()
 
 
