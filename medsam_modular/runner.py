@@ -20,7 +20,6 @@ from medsam_modular.train import maybe_finetune
 from medsam_modular.visualize import (
     build_comparison_table,
     merge_stage8_stats,
-    save_calibration_ece_chart,
     save_cache_throughput_trend_chart,
     save_cost_breakdown_chart,
     save_delta_chart,
@@ -35,6 +34,27 @@ from medsam_modular.visualize import (
 
 
 _TRUE_SET = {"1", "true", "yes", "y", "on"}
+
+
+def _fmt_elapsed(seconds: float) -> str:
+    seconds = max(0.0, float(seconds))
+    if seconds < 60.0:
+        return f"{seconds:.1f}s"
+    minutes, sec = divmod(seconds, 60.0)
+    if minutes < 60.0:
+        return f"{int(minutes)}m {sec:.1f}s"
+    hours, minutes = divmod(minutes, 60.0)
+    return f"{int(hours)}h {int(minutes)}m {sec:.1f}s"
+
+
+@contextmanager
+def _timed_log(label: str):
+    start = time.perf_counter()
+    print(f"[START] {label}", flush=True)
+    try:
+        yield
+    finally:
+        print(f"[DONE]  {label} | elapsed={_fmt_elapsed(time.perf_counter() - start)}", flush=True)
 
 
 class _NullProfiler:
@@ -251,42 +271,51 @@ def _run_stage8_plotting(
     if not _all_have_baseline_stats(all_stats):
         print("\n[Stage 8/8] baseline stats 缺失，略過 comparison table/chart 產生。")
     else:
-        with profiler.section_and_flush("stage.build_comparison"):
-            comparison_table = build_comparison_table(all_stats)
-        with profiler.section_and_flush("stage.save_comparison_csv"):
-            comparison_table.to_csv(comparison_path, index=False)
-        with profiler.section_and_flush("stage.save_comparison_chart_4way"):
-            chart_path = save_four_way_variant_chart(
-                full_summary=all_stats,
-                ood_finetuned_summary=all_stats_ood_finetuned or {},
-                output_dir=output_dir,
-            )
+        with _timed_log("Stage 8: build comparison table"):
+            with profiler.section_and_flush("stage.build_comparison"):
+                comparison_table = build_comparison_table(all_stats)
+        with _timed_log("Stage 8: save comparison CSV"):
+            with profiler.section_and_flush("stage.save_comparison_csv"):
+                comparison_table.to_csv(comparison_path, index=False)
+        with _timed_log("Stage 8: save 4-way comparison chart"):
+            with profiler.section_and_flush("stage.save_comparison_chart_4way"):
+                chart_path = save_four_way_variant_chart(
+                    full_summary=all_stats,
+                    ood_finetuned_summary=all_stats_ood_finetuned or {},
+                    output_dir=output_dir,
+                )
 
-    with profiler.section_and_flush("stage.save_stage8_method_overview"):
-        stage8_paths["method_overview"] = save_method_overview_chart(stage8_plot_stats, output_dir)
-    with profiler.section_and_flush("stage.save_stage8_delta"):
-        stage8_paths["delta_vs_baseline"] = save_delta_chart(stage8_plot_stats, output_dir)
-    with profiler.section_and_flush("stage.save_stage8_cost_breakdown"):
-        stage8_paths["cost_breakdown"] = save_cost_breakdown_chart(stage8_plot_stats, output_dir)
-    with profiler.section_and_flush("stage.save_stage8_frontier"):
-        stage8_paths["quality_throughput_frontier"] = save_quality_throughput_frontier(stage8_plot_stats, output_dir)
-    with profiler.section_and_flush("stage.save_stage8_calibration"):
-        stage8_paths["calibration_ece"] = save_calibration_ece_chart(stage8_plot_stats, output_dir)
-    with profiler.section_and_flush("stage.save_stage8_ood_detection"):
-        stage8_paths["ood_detection_quality"] = save_ood_detection_chart(stage8_plot_stats, output_dir)
-    with profiler.section_and_flush("stage.save_stage8_tta_cache"):
-        stage8_paths["tta_cache_hits"] = save_tta_cache_hit_chart(stage8_plot_stats, output_dir)
-    with profiler.section_and_flush("stage.save_stage8_cache_throughput_trend"):
-        trend_path, history_path = save_cache_throughput_trend_chart(stage8_plot_stats, output_dir)
-        stage8_paths["cache_throughput_trend"] = trend_path
-        stage8_history_path = history_path
+    with _timed_log("Stage 8: save method overview chart"):
+        with profiler.section_and_flush("stage.save_stage8_method_overview"):
+            stage8_paths["method_overview"] = save_method_overview_chart(stage8_plot_stats, output_dir)
+    with _timed_log("Stage 8: save delta chart"):
+        with profiler.section_and_flush("stage.save_stage8_delta"):
+            stage8_paths["delta_vs_baseline"] = save_delta_chart(stage8_plot_stats, output_dir)
+    with _timed_log("Stage 8: save cost breakdown chart"):
+        with profiler.section_and_flush("stage.save_stage8_cost_breakdown"):
+            stage8_paths["cost_breakdown"] = save_cost_breakdown_chart(stage8_plot_stats, output_dir)
+    with _timed_log("Stage 8: save quality-throughput frontier"):
+        with profiler.section_and_flush("stage.save_stage8_frontier"):
+            stage8_paths["quality_throughput_frontier"] = save_quality_throughput_frontier(stage8_plot_stats, output_dir)
+    with _timed_log("Stage 8: save OOD detection chart"):
+        with profiler.section_and_flush("stage.save_stage8_ood_detection"):
+            stage8_paths["ood_detection_quality"] = save_ood_detection_chart(stage8_plot_stats, output_dir)
+    with _timed_log("Stage 8: save TTA cache chart"):
+        with profiler.section_and_flush("stage.save_stage8_tta_cache"):
+            stage8_paths["tta_cache_hits"] = save_tta_cache_hit_chart(stage8_plot_stats, output_dir)
+    with _timed_log("Stage 8: save cache throughput trend"):
+        with profiler.section_and_flush("stage.save_stage8_cache_throughput_trend"):
+            trend_path, history_path = save_cache_throughput_trend_chart(stage8_plot_stats, output_dir)
+            stage8_paths["cache_throughput_trend"] = trend_path
+            stage8_history_path = history_path
 
     top_results_dir = project_root / "results"
     top_results_dir.mkdir(parents=True, exist_ok=True)
     top_chart_path = top_results_dir / chart_path.name
-    with profiler.section_and_flush("stage.copy_chart"):
-        if chart_path.exists() and chart_path.resolve() != top_chart_path.resolve():
-            shutil.copy2(chart_path, top_chart_path)
+    with _timed_log("Stage 8: copy top-level comparison chart"):
+        with profiler.section_and_flush("stage.copy_chart"):
+            if chart_path.exists() and chart_path.resolve() != top_chart_path.resolve():
+                shutil.copy2(chart_path, top_chart_path)
 
     return comparison_path, chart_path, top_chart_path, stage8_paths, stage8_history_path
 
@@ -749,12 +778,13 @@ def _detect_ood_train_subset(
     profiler: Any,
     output_dir: Path,
 ) -> Tuple[Dict[str, Set[str]], Dict[str, Any]]:
-    train_sets = prepare_datasets_by_split(
-        data_paths=data_paths,
-        split_root=split_root,
-        split_name="train",
-        image_size=image_size,
-    )
+    with _timed_log("Stage 3: prepare train datasets for OOD detection"):
+        train_sets = prepare_datasets_by_split(
+            data_paths=data_paths,
+            split_root=split_root,
+            split_name="train",
+            image_size=image_size,
+        )
 
     subset_by_name: Dict[str, Set[str]] = {}
     summary: Dict[str, Any] = {}
@@ -770,17 +800,18 @@ def _detect_ood_train_subset(
             continue
 
         print(f"\n=== Baseline OOD detect on train: {dataset_name} ({len(dataset)} samples) ===")
-        results, stats = evaluate_dataset_ood_only(
-            dataset=dataset,
-            dataset_name=dataset_name,
-            model=model,
-            processor=processor,
-            device=device,
-            ood_detector=ood_detector,
-            pred_cache=pred_cache,
-            profiler=profiler,
-            profile_prefix=f"train_ood_detect.{dataset_name}",
-        )
+        with _timed_log(f"Stage 3: OOD detect train dataset {dataset_name}"):
+            results, stats = evaluate_dataset_ood_only(
+                dataset=dataset,
+                dataset_name=dataset_name,
+                model=model,
+                processor=processor,
+                device=device,
+                ood_detector=ood_detector,
+                pred_cache=pred_cache,
+                profiler=profiler,
+                profile_prefix=f"train_ood_detect.{dataset_name}",
+            )
 
         ood_names = {str(r.get("name", "")) for r in results if bool(r.get("is_ood", False))}
         ood_names.discard("")
@@ -798,11 +829,13 @@ def _detect_ood_train_subset(
             "eval_stats": stats,
         }
 
-        _save_json(output_dir / f"{dataset_name.lower()}_train_ood_detect_results.json", results)
-        _save_json(output_dir / f"{dataset_name.lower()}_train_ood_detect_stats.json", summary[dataset_name])
+        with _timed_log(f"Stage 3: save train OOD outputs for {dataset_name}"):
+            _save_json(output_dir / f"{dataset_name.lower()}_train_ood_detect_results.json", results)
+            _save_json(output_dir / f"{dataset_name.lower()}_train_ood_detect_stats.json", summary[dataset_name])
         print(f"  [{dataset_name}] train OOD: {num_ood}/{num_samples} ({ratio:.2%})")
 
-    _save_json(output_dir / "train_ood_subset_summary.json", summary)
+    with _timed_log("Stage 3: save train OOD subset summary"):
+        _save_json(output_dir / "train_ood_subset_summary.json", summary)
     return subset_by_name, summary
 
 
@@ -884,19 +917,20 @@ def _evaluate_test_ood_tta(
 
         print(f"\n=== Evaluating {dataset_name} ({len(dataset)} samples) [{file_tag}] ===")
         t_ds = time.time()
-        with profiler.section_and_flush(f"eval.{dataset_name}.{file_tag}.ood_tta.total"):
-            ood_results, ood_stats, tta_results, tta_stats = evaluate_dataset_ood_tta(
-                dataset=dataset,
-                dataset_name=dataset_name,
-                model=model,
-                processor=processor,
-                device=device,
-                ood_detector=ood_detector,
-                tta_predictor=tta_predictor,
-                pred_cache=pred_cache,
-                profiler=profiler,
-                profile_prefix=f"eval.{dataset_name}.{file_tag}",
-            )
+        with _timed_log(f"Stage 7: evaluate {dataset_name} [{file_tag}]"):
+            with profiler.section_and_flush(f"eval.{dataset_name}.{file_tag}.ood_tta.total"):
+                ood_results, ood_stats, tta_results, tta_stats = evaluate_dataset_ood_tta(
+                    dataset=dataset,
+                    dataset_name=dataset_name,
+                    model=model,
+                    processor=processor,
+                    device=device,
+                    ood_detector=ood_detector,
+                    tta_predictor=tta_predictor,
+                    pred_cache=pred_cache,
+                    profiler=profiler,
+                    profile_prefix=f"eval.{dataset_name}.{file_tag}",
+                )
 
         ood_stats["ood_threshold"] = float(getattr(ood_detector, "threshold", 0.5))
         ood_stats["ood_method"] = str(getattr(ood_detector, "method", "entropy"))
@@ -917,14 +951,16 @@ def _evaluate_test_ood_tta(
             f"tta_dice={_fmt_metric(tta_dice)}"
         )
 
-        _save_json(output_dir / f"{dataset_name.lower()}_{file_tag}_ood_results.json", ood_results)
-        _save_json(output_dir / f"{dataset_name.lower()}_{file_tag}_ood_stats.json", ood_stats)
-        _save_json(output_dir / f"{dataset_name.lower()}_{file_tag}_tta_results.json", tta_results)
-        _save_json(output_dir / f"{dataset_name.lower()}_{file_tag}_tta_stats.json", tta_stats)
+        with _timed_log(f"Stage 7: save {dataset_name} [{file_tag}] outputs"):
+            _save_json(output_dir / f"{dataset_name.lower()}_{file_tag}_ood_results.json", ood_results)
+            _save_json(output_dir / f"{dataset_name.lower()}_{file_tag}_ood_stats.json", ood_stats)
+            _save_json(output_dir / f"{dataset_name.lower()}_{file_tag}_tta_results.json", tta_results)
+            _save_json(output_dir / f"{dataset_name.lower()}_{file_tag}_tta_stats.json", tta_stats)
     return all_stats
 
 
 def main() -> None:
+    pipeline_start = time.perf_counter()
     project_root = _project_root()
     output_dir_raw = _env("MEDSAM_OUTPUT_DIR").strip()
     output_dir = Path(output_dir_raw) if output_dir_raw else (project_root / DEFAULT_OUTPUT_DIR_REL)
@@ -970,13 +1006,14 @@ def main() -> None:
 
     print("\n[Stage 1/8] 載入模型 ...")
     t1 = time.time()
-    with profiler.section_and_flush("stage.load_model"):
-        model, processor, compile_report = load_medsam(
-            model_id=model_id,
-            device=device,
-            image_size=image_size,
-            local_weight_path=baseline_weight_path,
-        )
+    with _timed_log("Stage 1/8: load model"):
+        with profiler.section_and_flush("stage.load_model"):
+            model, processor, compile_report = load_medsam(
+                model_id=model_id,
+                device=device,
+                image_size=image_size,
+                local_weight_path=baseline_weight_path,
+            )
     compile_backend = compile_report.get("backend", "<none>")
     compile_mode = compile_report.get("compile_mode", "<none>")
     compile_dynamic = compile_report.get("compile_dynamic", "<unknown>")
@@ -995,13 +1032,14 @@ def main() -> None:
     print("\n[Stage 2/8] 準備測試資料 ...")
     t3 = time.time()
     split_root = _resolve_split_root(project_root)
-    with profiler.section_and_flush("stage.prepare_test_data"):
-        test_sets = prepare_datasets_by_split(
-            data_paths=data_paths,
-            split_root=split_root,
-            split_name="test",
-            image_size=image_size,
-        )
+    with _timed_log("Stage 2/8: prepare test datasets"):
+        with profiler.section_and_flush("stage.prepare_test_data"):
+            test_sets = prepare_datasets_by_split(
+                data_paths=data_paths,
+                split_root=split_root,
+                split_name="test",
+                image_size=image_size,
+            )
     total_test = sum(len(ds) for ds in test_sets.values())
     print(f"  資料準備耗時: {time.time()-t3:.1f}s")
     for name, ds in test_sets.items():
@@ -1064,18 +1102,19 @@ def main() -> None:
 
     if run_stage3_detect_train_ood:
         print("\n[Stage 3/8] baseline 偵測 train split OOD ...")
-        ood_subset_by_name, ood_subset_summary = _detect_ood_train_subset(
-            model=model,
-            processor=processor,
-            data_paths=data_paths,
-            split_root=split_root,
-            image_size=image_size,
-            device=device,
-            ood_detector=ood_detector,
-            pred_cache=train_ood_detect_cache,
-            profiler=profiler,
-            output_dir=output_dir,
-        )
+        with _timed_log("Stage 3/8: detect train split OOD"):
+            ood_subset_by_name, ood_subset_summary = _detect_ood_train_subset(
+                model=model,
+                processor=processor,
+                data_paths=data_paths,
+                split_root=split_root,
+                image_size=image_size,
+                device=device,
+                ood_detector=ood_detector,
+                pred_cache=train_ood_detect_cache,
+                profiler=profiler,
+                output_dir=output_dir,
+            )
 
         total_ood = int(sum(len(v) for v in ood_subset_by_name.values()))
         total_all = int(sum(int(v.get("num_samples", 0)) for v in ood_subset_summary.values()))
@@ -1096,31 +1135,33 @@ def main() -> None:
     if run_stage4_ood_finetune and total_ood > 0:
         print("\n[Stage 4/8] OOD 子集微調（使用 TTA 增強資料）...")
         if baseline_weight_path and Path(baseline_weight_path).exists():
-            load_state_dict_compat(model, Path(baseline_weight_path), map_location=device)
+            with _timed_log("Stage 4: load baseline weights before OOD fine-tune"):
+                load_state_dict_compat(model, Path(baseline_weight_path), map_location=device)
 
         t2 = time.time()
-        with profiler.section_and_flush("stage.ood_finetune"):
-            model = maybe_finetune(
-                model=model,
-                processor=processor,
-                config=_build_train_config(
-                    project_root=project_root,
-                    data_paths=data_paths,
-                    image_size=image_size,
-                    device=device,
-                    output_dir=output_dir,
-                    extra={
-                        "skip_finetune": "0",
-                        "resume_weight_path": "",
-                        "finetune_subset_by_name": {k: sorted(v) for k, v in ood_subset_by_name.items()},
-                        "finetune_use_tta_augment": True,
-                        "finetune_tta_augmentations": list(tta_predictor.augmentations),
-                        "finetune_weight_prefix": "medsam_OOD_finetuned",
-                        "finetune_stats_prefix": "ood_finetune",
-                    },
-                ),
-                profiler=profiler,
-            )
+        with _timed_log("Stage 4/8: OOD subset fine-tune"):
+            with profiler.section_and_flush("stage.ood_finetune"):
+                model = maybe_finetune(
+                    model=model,
+                    processor=processor,
+                    config=_build_train_config(
+                        project_root=project_root,
+                        data_paths=data_paths,
+                        image_size=image_size,
+                        device=device,
+                        output_dir=output_dir,
+                        extra={
+                            "skip_finetune": "0",
+                            "resume_weight_path": "",
+                            "finetune_subset_by_name": {k: sorted(v) for k, v in ood_subset_by_name.items()},
+                            "finetune_use_tta_augment": True,
+                            "finetune_tta_augmentations": list(tta_predictor.augmentations),
+                            "finetune_weight_prefix": "medsam_OOD_finetuned",
+                            "finetune_stats_prefix": "ood_finetune",
+                        },
+                    ),
+                    profiler=profiler,
+                )
         print(f"  OOD 微調耗時: {time.time()-t2:.1f}s")
     elif run_stage4_ood_finetune:
         print("\n[Stage 4/8] OOD 子集為空，略過 OOD 微調。")
@@ -1130,34 +1171,37 @@ def main() -> None:
     if run_stage5_full_finetune:
         print("\n[Stage 5/8] 全資料微調（輸出 medsam_finetuned_best.pth）...")
         if ood_finetuned_best_path.exists():
-            load_state_dict_compat(model, ood_finetuned_best_path, map_location=device)
+            with _timed_log("Stage 5: load OOD fine-tuned weights before full fine-tune"):
+                load_state_dict_compat(model, ood_finetuned_best_path, map_location=device)
             print(f"  📌 全資料微調起始權重: {ood_finetuned_best_path}")
         elif baseline_weight_path and Path(baseline_weight_path).exists():
-            load_state_dict_compat(model, Path(baseline_weight_path), map_location=device)
+            with _timed_log("Stage 5: load baseline weights before full fine-tune"):
+                load_state_dict_compat(model, Path(baseline_weight_path), map_location=device)
             print(f"  📌 全資料微調起始權重: {baseline_weight_path}")
 
         t2 = time.time()
-        with profiler.section_and_flush("stage.full_finetune"):
-            model = maybe_finetune(
-                model=model,
-                processor=processor,
-                config=_build_train_config(
-                    project_root=project_root,
-                    data_paths=data_paths,
-                    image_size=image_size,
-                    device=device,
-                    output_dir=output_dir,
-                    extra={
-                        "skip_finetune": "0",
-                        "resume_weight_path": "",
-                        "finetune_subset_by_name": {},
-                        "finetune_use_tta_augment": False,
-                        "finetune_weight_prefix": "medsam_finetuned",
-                        "finetune_stats_prefix": "finetune",
-                    },
-                ),
-                profiler=profiler,
-            )
+        with _timed_log("Stage 5/8: full-data fine-tune"):
+            with profiler.section_and_flush("stage.full_finetune"):
+                model = maybe_finetune(
+                    model=model,
+                    processor=processor,
+                    config=_build_train_config(
+                        project_root=project_root,
+                        data_paths=data_paths,
+                        image_size=image_size,
+                        device=device,
+                        output_dir=output_dir,
+                        extra={
+                            "skip_finetune": "0",
+                            "resume_weight_path": "",
+                            "finetune_subset_by_name": {},
+                            "finetune_use_tta_augment": False,
+                            "finetune_weight_prefix": "medsam_finetuned",
+                            "finetune_stats_prefix": "finetune",
+                        },
+                    ),
+                    profiler=profiler,
+                )
         print(f"  全資料微調耗時: {time.time()-t2:.1f}s")
     else:
         print("\n[Stage 5/8] 依設定略過全資料微調。")
@@ -1169,7 +1213,8 @@ def main() -> None:
         t_eval_start = time.time()
         baseline_weight = Path(baseline_weight_path) if baseline_weight_path else None
         if baseline_weight is not None and baseline_weight.exists():
-            load_state_dict_compat(model, baseline_weight, map_location=device)
+            with _timed_log("Stage 6: load baseline weights"):
+                load_state_dict_compat(model, baseline_weight, map_location=device)
             print(f"  📌 baseline 使用權重: {baseline_weight}")
         else:
             print("  ⚠️ baseline 權重不存在，將使用目前模型權重進行 baseline 評估。")
@@ -1181,27 +1226,29 @@ def main() -> None:
 
             print(f"\n=== Baseline {dataset_name} ({len(dataset)} samples) ===")
             t_ds = time.time()
-            with profiler.section_and_flush(f"eval.{dataset_name}.baseline.total"):
-                baseline_results, baseline_stats = evaluate_dataset(
-                    dataset=dataset,
-                    dataset_name=dataset_name,
-                    model=model,
-                    processor=processor,
-                    device=device,
-                    use_ood=False,
-                    use_tta=False,
-                    ood_detector=None,
-                    tta_predictor=None,
-                    pred_cache=baseline_pred_cache,
-                    profiler=profiler,
-                    profile_prefix=f"eval.{dataset_name}.baseline",
-                )
+            with _timed_log(f"Stage 6: baseline evaluate {dataset_name}"):
+                with profiler.section_and_flush(f"eval.{dataset_name}.baseline.total"):
+                    baseline_results, baseline_stats = evaluate_dataset(
+                        dataset=dataset,
+                        dataset_name=dataset_name,
+                        model=model,
+                        processor=processor,
+                        device=device,
+                        use_ood=False,
+                        use_tta=False,
+                        ood_detector=None,
+                        tta_predictor=None,
+                        pred_cache=baseline_pred_cache,
+                        profiler=profiler,
+                        profile_prefix=f"eval.{dataset_name}.baseline",
+                    )
             baseline_all_results[dataset_name] = baseline_results
             baseline_all_stats[dataset_name] = baseline_stats
             baseline_dice = baseline_stats.get("mean_dice", baseline_stats.get("dice_mean"))
             print(f"  [{dataset_name}] 完成  ({time.time()-t_ds:.1f}s)  baseline_dice={_fmt_metric(baseline_dice)}")
-            _save_json(output_dir / f"{dataset_name.lower()}_baseline_results.json", baseline_results)
-            _save_json(output_dir / f"{dataset_name.lower()}_baseline_stats.json", baseline_stats)
+            with _timed_log(f"Stage 6: save baseline outputs for {dataset_name}"):
+                _save_json(output_dir / f"{dataset_name.lower()}_baseline_results.json", baseline_results)
+                _save_json(output_dir / f"{dataset_name.lower()}_baseline_stats.json", baseline_stats)
     else:
         print("\n[Stage 6/8] 依設定略過 baseline 評估，嘗試載入既有 baseline stats ...")
         baseline_all_stats = _load_existing_baseline_stats(test_sets=test_sets, output_dir=output_dir)
@@ -1213,22 +1260,25 @@ def main() -> None:
     all_stats_ood_finetuned: Dict[str, Dict[str, Dict[str, Any]]] = {}
     if run_stage7_eval_ood_finetuned and ood_finetuned_best_path.exists():
         print("\n[Stage 7/8] 測試 OOD finetuned 模型：先 OOD 判斷，再 TTA inference ...")
-        load_state_dict_compat(model, ood_finetuned_best_path, map_location=device)
+        with _timed_log("Stage 7: load OOD fine-tuned weights"):
+            load_state_dict_compat(model, ood_finetuned_best_path, map_location=device)
         print(f"  📌 OOD finetuned 評估權重: {ood_finetuned_best_path}")
-        all_stats_ood_finetuned = _evaluate_test_ood_tta(
-            model=model,
-            processor=processor,
-            device=device,
-            test_sets=test_sets,
-            ood_detector=ood_detector,
-            tta_predictor=tta_predictor,
-            pred_cache=ood_finetuned_pred_cache,
-            profiler=profiler,
-            output_dir=output_dir,
-            baseline_all_stats=baseline_all_stats,
-            file_tag="ood_finetuned",
-        )
-        _save_json(output_dir / "summary_ood_finetuned.json", all_stats_ood_finetuned)
+        with _timed_log("Stage 7/8: evaluate OOD fine-tuned model"):
+            all_stats_ood_finetuned = _evaluate_test_ood_tta(
+                model=model,
+                processor=processor,
+                device=device,
+                test_sets=test_sets,
+                ood_detector=ood_detector,
+                tta_predictor=tta_predictor,
+                pred_cache=ood_finetuned_pred_cache,
+                profiler=profiler,
+                output_dir=output_dir,
+                baseline_all_stats=baseline_all_stats,
+                file_tag="ood_finetuned",
+            )
+        with _timed_log("Stage 7: save OOD fine-tuned summary"):
+            _save_json(output_dir / "summary_ood_finetuned.json", all_stats_ood_finetuned)
     elif run_stage7_eval_ood_finetuned:
         print("\n[Stage 7/8] 找不到 medsam_OOD_finetuned_best.pth，略過 OOD finetuned 模型測試。")
     else:
@@ -1237,28 +1287,31 @@ def main() -> None:
     all_stats: Dict[str, Dict[str, Dict[str, Any]]] = {}
     if run_stage7_eval_full_finetuned:
         if full_finetuned_best_path.exists():
-            load_state_dict_compat(model, full_finetuned_best_path, map_location=device)
+            with _timed_log("Stage 7: load full fine-tuned weights"):
+                load_state_dict_compat(model, full_finetuned_best_path, map_location=device)
             print(f"  📌 評估使用權重: {full_finetuned_best_path}")
         elif resume_weight_path and Path(resume_weight_path).exists():
-            load_state_dict_compat(model, Path(resume_weight_path), map_location=device)
+            with _timed_log("Stage 7: load resume weights"):
+                load_state_dict_compat(model, Path(resume_weight_path), map_location=device)
             print(f"  📌 評估使用權重: {resume_weight_path}")
         else:
             print("  📌 評估使用權重: <finetuned model in-memory>")
 
         print("\n[Stage 7/8] 測試全資料 finetuned 模型：OOD 判斷 + TTA inference ...")
-        all_stats = _evaluate_test_ood_tta(
-            model=model,
-            processor=processor,
-            device=device,
-            test_sets=test_sets,
-            ood_detector=ood_detector,
-            tta_predictor=tta_predictor,
-            pred_cache=finetuned_pred_cache,
-            profiler=profiler,
-            output_dir=output_dir,
-            baseline_all_stats=baseline_all_stats,
-            file_tag="full_finetuned",
-        )
+        with _timed_log("Stage 7/8: evaluate full fine-tuned model"):
+            all_stats = _evaluate_test_ood_tta(
+                model=model,
+                processor=processor,
+                device=device,
+                test_sets=test_sets,
+                ood_detector=ood_detector,
+                tta_predictor=tta_predictor,
+                pred_cache=finetuned_pred_cache,
+                profiler=profiler,
+                output_dir=output_dir,
+                baseline_all_stats=baseline_all_stats,
+                file_tag="full_finetuned",
+            )
 
         # 維持相容輸出檔名（預設指向 full_finetuned 評估結果）
         for dataset_name in all_stats:
@@ -1275,7 +1328,8 @@ def main() -> None:
             if src_tta_stats.exists():
                 shutil.copy2(src_tta_stats, output_dir / f"{dataset_name.lower()}_tta_stats.json")
 
-        _save_json(output_dir / "summary.json", all_stats)
+        with _timed_log("Stage 7: save full fine-tuned summary"):
+            _save_json(output_dir / "summary.json", all_stats)
     else:
         print("\n[Stage 7/8] 依設定略過 full finetuned 模型測試。")
         summary_path = output_dir / "summary.json"
@@ -1293,26 +1347,28 @@ def main() -> None:
 
     case_chart_paths: Dict[str, Path] = {}
     if run_stage7_eval_full_finetuned:
-        case_chart_paths = _generate_top_bottom_case_charts(
-            output_dir=output_dir,
-            test_sets=test_sets,
-            model=model,
-            processor=processor,
-            device=device,
-            ood_detector=ood_detector,
-            tta_predictor=tta_predictor,
-            baseline_weight_path=baseline_weight_path,
-            ood_finetuned_best_path=ood_finetuned_best_path,
-            full_finetuned_best_path=full_finetuned_best_path,
-            resume_weight_path=resume_weight_path,
-            file_tag="4way",
-        )
+        with _timed_log("Stage 7: generate top/bottom case charts"):
+            case_chart_paths = _generate_top_bottom_case_charts(
+                output_dir=output_dir,
+                test_sets=test_sets,
+                model=model,
+                processor=processor,
+                device=device,
+                ood_detector=ood_detector,
+                tta_predictor=tta_predictor,
+                baseline_weight_path=baseline_weight_path,
+                ood_finetuned_best_path=ood_finetuned_best_path,
+                full_finetuned_best_path=full_finetuned_best_path,
+                resume_weight_path=resume_weight_path,
+                file_tag="4way",
+            )
 
-    ood_summary_json, ood_summary_csv, ood_summary_chart = _save_train_test_ood_summary(
-        output_dir=output_dir,
-        train_ood_summary=ood_subset_summary,
-        test_all_stats=all_stats,
-    )
+    with _timed_log("Stage 7: save train/test OOD summary"):
+        ood_summary_json, ood_summary_csv, ood_summary_chart = _save_train_test_ood_summary(
+            output_dir=output_dir,
+            train_ood_summary=ood_subset_summary,
+            test_all_stats=all_stats,
+        )
 
     comparison_path = output_dir / "comparison_table.csv"
     chart_path = output_dir / "performance_comparison_4way.png"
@@ -1324,13 +1380,14 @@ def main() -> None:
         print("\n[Stage 8/8] 依設定略過繪圖階段。")
     else:
         print("\n[Stage 8/8] 產生 comparison table / chart ...")
-        comparison_path, chart_path, top_chart_path, stage8_paths, stage8_history_path = _run_stage8_plotting(
-            all_stats=all_stats,
-            all_stats_ood_finetuned=all_stats_ood_finetuned,
-            output_dir=output_dir,
-            project_root=project_root,
-            profiler=profiler,
-        )
+        with _timed_log("Stage 8/8: plotting and report charts"):
+            comparison_path, chart_path, top_chart_path, stage8_paths, stage8_history_path = _run_stage8_plotting(
+                all_stats=all_stats,
+                all_stats_ood_finetuned=all_stats_ood_finetuned,
+                output_dir=output_dir,
+                project_root=project_root,
+                profiler=profiler,
+            )
 
     print("\nOutputs:")
     if comparison_path.exists():
@@ -1356,7 +1413,9 @@ def main() -> None:
         print(f"- ood_train_test_counts_csv: {ood_summary_csv}")
     if ood_summary_chart is not None and ood_summary_chart.exists():
         print(f"- ood_train_test_counts_chart: {ood_summary_chart}")
-    shutdown_global_async_writer()
+    with _timed_log("Shutdown async writer"):
+        shutdown_global_async_writer()
+    print(f"\nPipeline total elapsed: {_fmt_elapsed(time.perf_counter() - pipeline_start)}")
 
 
 if __name__ == "__main__":

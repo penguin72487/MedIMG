@@ -729,6 +729,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
     trainable_count = sum(p.numel() for p in params)
     total_count = sum(p.numel() for p in base_model.parameters())
     print(f"\n[2/4] 設定優化器 ...")
+    setup_t0 = time.perf_counter()
     print(f"  可訓練參數: {trainable_count:,} / {total_count:,} ({100*trainable_count/total_count:.1f}%)")
 
     param_groups = _build_adamw_param_groups(base_model, weight_decay=weight_decay)
@@ -801,6 +802,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
             f"  🔁 Resume checkpoint: {resume_weight_path} | "
             f"start_epoch={start_epoch} best_val={best_val_loss:.6f} wait={wait}"
         )
+    print(f"  優化器/排程器設定耗時: {time.perf_counter() - setup_t0:.1f}s")
 
     print(f"\n[3/4] 開始訓練 (共 {epochs} epochs) ...")
     epoch_bar = tqdm(range(start_epoch, epochs + 1), desc="Epoch", unit="ep", dynamic_ncols=True)
@@ -994,6 +996,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
 
     epoch_bar.close()
     print(f"\n[4/4] 載入最佳權重 ...")
+    reload_t0 = time.perf_counter()
     async_saver.wait_for_save()
     if best_path.exists():
         load_state_dict_compat(base_model, best_path, map_location=device)
@@ -1003,6 +1006,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
         print(f"  ⚠️ Best checkpoint missing, fallback to last weights: {last_path}")
     else:
         print("  ⚠️ No checkpoint found to reload; keeping current in-memory weights.")
+    print(f"  載入/等待 checkpoint 耗時: {time.perf_counter() - reload_t0:.1f}s")
 
     epochs_ran = int(len(history.get("val_loss", [])))
     best_epoch = 0
@@ -1041,6 +1045,8 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
     t_save_pt = time.perf_counter()
     torch.save(stats_payload, output_dir / f"{stats_prefix}_stats.pt")
     save_pt_total = time.perf_counter() - t_save_pt
+    print(f"  stats JSON 保存耗時: {save_json_total:.3f}s")
+    print(f"  stats PT 保存耗時  : {save_pt_total:.3f}s")
 
     base_model.eval()
     for p in base_model.parameters():
@@ -1063,5 +1069,12 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
 
     print("=" * 80)
     print("Fine-tune completed")
+    print(f"  total_finetune: {ft_total_sec:.1f}s")
+    print(f"  avg_epoch     : {avg_epoch_sec:.1f}s")
+    print(f"  train_forward : {train_forward_total:.1f}s")
+    print(f"  train_backward: {train_backward_total:.1f}s")
+    print(f"  val_forward   : {val_forward_total:.1f}s")
+    print(f"  optimizer     : {train_optimizer_total:.1f}s")
+    print(f"  data_move     : {train_data_move_total:.1f}s")
     print("=" * 80)
     return model

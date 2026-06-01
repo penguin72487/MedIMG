@@ -9,6 +9,7 @@ MedSAM 模組化流程入口
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 
 from medsam_modular.config import (
@@ -67,7 +68,6 @@ CLI_SETTING_KEYS = {
     "ood_fragment_max_large_components",
     "eval_workers",
     "eval_batch",
-    "eval_ece_max_pixels",
     "cpu_threads",
     "ood_method",
     "tta_fusion",
@@ -254,14 +254,6 @@ def _parse_args(defaults: dict, config_path: Path) -> argparse.Namespace:
         help="評估批次大小（0 表示依模式自動）",
     )
     eval_group.add_argument(
-        "--eval-ece-max-pixels",
-        type=int,
-        default=defaults["eval_ece_max_pixels"],
-        dest="eval_ece_max_pixels",
-        metavar="N",
-        help="ECE 每張圖最多使用像素數（0=全像素；>0 可加速，屬近似）",
-    )
-    eval_group.add_argument(
         "--cpu-threads",
         type=int,
         default=defaults["cpu_threads"],
@@ -437,6 +429,7 @@ def _apply_env(settings: dict) -> None:
 
 
 def main() -> None:
+    main_start = time.perf_counter()
     project_root = Path(__file__).resolve().parent
 
     # 確保專案根目錄在 sys.path 中，方便從任意目錄執行
@@ -444,8 +437,10 @@ def main() -> None:
         sys.path.insert(0, str(project_root))
 
     config_path = _resolve_config_path(project_root)
+    t_config = time.perf_counter()
     loaded_defaults, resolved_config_path = load_settings(project_root=project_root, config_path=config_path)
     args = _parse_args(loaded_defaults, resolved_config_path)
+    config_elapsed = time.perf_counter() - t_config
 
     effective_settings = dict(loaded_defaults)
     arg_values = vars(args)
@@ -467,10 +462,12 @@ def main() -> None:
     )
     print(f"  影像尺寸: {effective_settings['image_size']}")
     print(f"  輸出目錄: {output_dir}")
+    print(f"  設定/CLI 載入耗時: {config_elapsed:.2f}s")
     print("  即時輸出提示: conda run 請使用 --no-capture-output")
     print("=" * 80)
 
     runner_main()
+    print(f"  main.py 總耗時: {time.perf_counter() - main_start:.1f}s")
 
 
 if __name__ == "__main__":

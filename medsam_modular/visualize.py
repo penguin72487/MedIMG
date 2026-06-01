@@ -41,7 +41,6 @@ def build_comparison_table(all_stats: Dict[str, Dict[str, Dict]]) -> pd.DataFram
         baseline_f1 = modes["baseline"]["mean_f1"]
         baseline_sensitivity = modes["baseline"].get("mean_sensitivity", modes["baseline"].get("mean_recall", float("nan")))
         baseline_bce = modes["baseline"].get("mean_bce", float("nan"))
-        baseline_ece = modes["baseline"].get("mean_ece", float("nan"))
 
         ood_dice = modes["ood"]["mean_dice"]
         ood_dice_5pct_low = modes["ood"].get("dice_5pct_low", float("nan"))
@@ -49,7 +48,6 @@ def build_comparison_table(all_stats: Dict[str, Dict[str, Dict]]) -> pd.DataFram
         ood_f1 = modes["ood"]["mean_f1"]
         ood_sensitivity = modes["ood"].get("mean_sensitivity", modes["ood"].get("mean_recall", float("nan")))
         ood_bce = modes["ood"].get("mean_bce", float("nan"))
-        ood_ece = modes["ood"].get("mean_ece", float("nan"))
 
         tta_dice = modes["tta"]["mean_dice"]
         tta_dice_5pct_low = modes["tta"].get("dice_5pct_low", float("nan"))
@@ -57,7 +55,6 @@ def build_comparison_table(all_stats: Dict[str, Dict[str, Dict]]) -> pd.DataFram
         tta_f1 = modes["tta"]["mean_f1"]
         tta_sensitivity = modes["tta"].get("mean_sensitivity", modes["tta"].get("mean_recall", float("nan")))
         tta_bce = modes["tta"].get("mean_bce", float("nan"))
-        tta_ece = modes["tta"].get("mean_ece", float("nan"))
 
         row = {
             "Dataset": dataset_name,
@@ -85,10 +82,6 @@ def build_comparison_table(all_stats: Dict[str, Dict[str, Dict]]) -> pd.DataFram
             "OOD BCE (lower is better)": f"{ood_bce:.4f}",
             "TTA BCE (lower is better)": f"{tta_bce:.4f}",
             "TTA BCE Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_bce, baseline_bce, False)),
-            "Baseline ECE (lower is better)": f"{baseline_ece:.4f}",
-            "OOD ECE (lower is better)": f"{ood_ece:.4f}",
-            "TTA ECE (lower is better)": f"{tta_ece:.4f}",
-            "TTA ECE Delta vs Baseline": _fmt_delta(_delta_vs_baseline(tta_ece, baseline_ece, False)),
         }
 
         if include_ap50:
@@ -149,7 +142,6 @@ def save_comparison_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir: Pat
         ("mean_f1", "F1", True, (0.0, 1.0)),
         ("mean_sensitivity", "Sensitivity", True, (0.0, 1.0)),
         ("mean_bce", "BCE (lower is better)", False, None),
-        ("mean_ece", "ECE (lower is better)", False, None),
     ]
     if _has_any_metric(all_stats, "ap50"):
         metric_rows.append(("ap50", "AP50", True, (0.0, 1.0)))
@@ -173,7 +165,7 @@ def save_comparison_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir: Pat
     fig.text(
         0.5,
         0.01,
-        "Dice/Jaccard/F1/Sensitivity/AP/mAP are higher-is-better; BCE/ECE are lower-is-better.",
+        "Dice/Jaccard/F1/Sensitivity/AP/mAP are higher-is-better; BCE is lower-is-better.",
         ha="center",
         fontsize=10,
     )
@@ -319,7 +311,6 @@ def save_four_way_variant_chart(
         ("mean_f1", "F1", True, (0.0, 1.0)),
         ("mean_sensitivity", "Sensitivity", True, (0.0, 1.0)),
         ("mean_bce", "BCE (lower is better)", False, None),
-        ("mean_ece", "ECE (lower is better)", False, None),
     ]
     if _has_any_metric(all_stats, "ap50"):
         metric_rows.append(("ap50", "AP50", True, (0.0, 1.0)))
@@ -356,7 +347,7 @@ def save_four_way_variant_chart(
     fig.text(
         0.5,
         0.01,
-        "Variants: baseline / ood / full / ood+TTAInference. Each panel auto-zooms when differences are very small. Higher is better except BCE/ECE.",
+        "Variants: baseline / ood / full / ood+TTAInference. Each panel auto-zooms when differences are very small. Higher is better except BCE.",
         ha="center",
         fontsize=10,
     )
@@ -410,7 +401,6 @@ def save_delta_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir: Path) ->
     metrics = [
         ("mean_dice", "Delta Dice", True),
         ("dice_5pct_low", "Delta Dice 5% Low", True),
-        ("mean_ece", "Delta ECE", False),
         ("mean_bce", "Delta BCE", False),
     ]
 
@@ -505,32 +495,6 @@ def save_quality_throughput_frontier(all_stats: Dict[str, Dict[str, Dict]], outp
     ax.grid(alpha=0.3)
 
     out_path = output_dir / "stage8_quality_throughput_frontier.png"
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
-    return out_path
-
-
-def save_calibration_ece_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir: Path) -> Path:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    datasets = list(all_stats.keys())
-    methods = _methods(all_stats)
-
-    fig, ax = plt.subplots(figsize=(8 + 1.2 * len(datasets), 6))
-    x = np.arange(len(datasets))
-    width = 0.75 / max(1, len(methods))
-    for idx, method in enumerate(methods):
-        vals = [_metric(all_stats[ds].get(method, {}), "mean_ece") for ds in datasets]
-        vals = np.nan_to_num(np.asarray(vals, dtype=np.float64), nan=0.0)
-        offset = (idx - (len(methods) - 1) / 2.0) * width
-        ax.bar(x + offset, vals, width=width, color=_method_color(method), label=_method_label(method))
-
-    ax.set_xticks(x, datasets)
-    ax.set_ylabel("ECE (lower is better)")
-    ax.set_title("Stage 8: Calibration (ECE)")
-    ax.legend(loc="best")
-
-    out_path = output_dir / "stage8_calibration_ece.png"
     plt.tight_layout()
     plt.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)

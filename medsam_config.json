@@ -35,7 +35,7 @@
   "finetune_workers": 0,
   "finetune_max_samples": 0,
   "finetune_use_fused_adamw": true,
-  "run_stage3_detect_train_ood": true,
+  "run_stage3_detect_train_ood": false,
   "run_stage4_ood_finetune": true,
   "run_stage5_full_finetune": false,
   "run_stage6_baseline_eval": true,
@@ -76,6 +76,5 @@
   "eval_autobatch_safety": "",
   "ood_max_side": 64,
   "tta_autotune": true,
-  "eval_prefetch": 4,
-  "eval_ece_max_pixels": 0
+  "eval_prefetch": 4
 }

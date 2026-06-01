@@ -91,7 +91,6 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "ood_max_side": 64,
     "tta_autotune": True,
     "eval_prefetch": 4,
-    "eval_ece_max_pixels": 0,
 }
 
 
@@ -174,7 +173,6 @@ SETTING_ENV_MAP: Dict[str, str] = {
     "ood_max_side": "MEDSAM_OOD_MAX_SIDE",
     "tta_autotune": "MEDSAM_TTA_AUTOTUNE",
     "eval_prefetch": "MEDSAM_EVAL_PREFETCH",
-    "eval_ece_max_pixels": "MEDSAM_EVAL_ECE_MAX_PIXELS",
 }
 
 
@@ -230,7 +228,6 @@ INT_SETTING_KEYS = {
     "ood_fragment_min_area",
     "ood_fragment_max_large_components",
     "eval_prefetch",
-    "eval_ece_max_pixels",
 }
 
 FLOAT_SETTING_KEYS = {

@@ -15,6 +15,11 @@ from medsam_modular.cache import PredictionCache, make_cache_key
 from medsam_modular.config import ENV_DEFAULTS
 from medsam_modular.model import build_inputs_batch, predict_prob_masks_from_inputs
 
+try:
+    import cv2
+except Exception:
+    cv2 = None
+
 PerformanceProfiler = Any
 
 
@@ -55,7 +60,6 @@ def _build_stats_from_store(
     mean_sensitivity, std_sensitivity = _mean_std(metrics_store.get("sensitivity", metrics_store["recall"]))
     mean_f1, std_f1 = _mean_std(metrics_store["f1"])
     mean_bce, std_bce = _mean_std(metrics_store.get("bce", [0.0]))
-    mean_ece, std_ece = _mean_std(metrics_store.get("ece", [float("nan")]))
     dice_5pct_low = _percentile(metrics_store["dice"], 5.0)
     jaccard_5pct_low = _percentile(metrics_store["jaccard"], 5.0)
     f1_5pct_low = _percentile(metrics_store["f1"], 5.0)
@@ -78,8 +82,6 @@ def _build_stats_from_store(
         "std_f1": std_f1,
         "mean_bce": mean_bce,
         "std_bce": std_bce,
-        "mean_ece": mean_ece,
-        "std_ece": std_ece,
         "dice_5pct_low": dice_5pct_low,
         "jaccard_5pct_low": jaccard_5pct_low,
         "f1_5pct_low": f1_5pct_low,
@@ -220,7 +222,6 @@ def _run_eval_probe(
         gt_batch_t = torch.stack(gt_masks_t, dim=0)
         _ = compute_metrics_batch_tensor(pred_batch_t, gt_batch_t)
         _ = compute_bce_batch_tensor(prob_batch_t, gt_batch_t)
-        _ = compute_ece_batch_tensor(prob_batch_t, gt_batch_t)
 
 
 def _benchmark_probe_throughput(
@@ -292,8 +293,6 @@ def _benchmark_probe_throughput(
         _ = compute_metrics_batch_tensor(tta_pred_stack, gt_batch_t)
         _ = compute_bce_batch_tensor(prob_batch_t, gt_batch_t)
         _ = compute_bce_batch_tensor(tta_prob_stack, gt_batch_t)
-        _ = compute_ece_batch_tensor(prob_batch_t, gt_batch_t)
-        _ = compute_ece_batch_tensor(tta_prob_stack, gt_batch_t)
 
 
 def _auto_tune_eval_batch_size(
@@ -560,6 +559,20 @@ class OODDetector:
     def _count_large_components(self, binary_mask: np.ndarray) -> int:
         if binary_mask.size == 0:
             return 0
+
+        if cv2 is not None:
+            try:
+                num_labels, _labels, stats, _centroids = cv2.connectedComponentsWithStats(
+                    binary_mask.astype(np.uint8, copy=False),
+                    connectivity=8,
+                )
+                if num_labels <= 1:
+                    return 0
+                areas = stats[1:, cv2.CC_STAT_AREA]
+                return int(np.count_nonzero(areas >= self.fragment_min_area))
+            except Exception:
+                pass
+
         h, w = binary_mask.shape
         visited = np.zeros((h, w), dtype=np.uint8)
         large_components = 0
@@ -1471,53 +1484,6 @@ def compute_bce_batch_tensor(prob_masks: torch.Tensor, gt_masks: torch.Tensor) -
     return -(g * p.log() + (1.0 - g) * (1.0 - p).log()).mean(dim=reduce_dims)
 
 
-def compute_ece_batch_tensor(prob_masks: torch.Tensor, gt_masks: torch.Tensor, n_bins: int = 15) -> torch.Tensor:
-    p = prob_masks.to(torch.float32).clamp(1e-7, 1.0 - 1e-7)
-    g = gt_masks.to(torch.float32)
-
-    if p.dim() != 3 or g.dim() != 3:
-        raise ValueError(f"Expected [B,H,W] tensors for ECE, got {tuple(p.shape)} and {tuple(g.shape)}")
-
-    bsz = int(p.shape[0])
-    p_flat = p.reshape(bsz, -1)
-    g_flat = g.reshape(bsz, -1)
-
-    max_pixels = max(0, int(_env("MEDSAM_EVAL_ECE_MAX_PIXELS", "0")))
-    if max_pixels > 0 and p_flat.shape[1] > max_pixels:
-        # Deterministic strided subsampling keeps reproducibility while reducing ECE cost.
-        step = max(1, int(np.ceil(float(p_flat.shape[1]) / float(max_pixels))))
-        p_flat = p_flat[:, ::step]
-        g_flat = g_flat[:, ::step]
-
-    numel_per_sample = float(p_flat.shape[1])
-
-    # Compute bin index in [0, n_bins-1] for each pixel probability.
-    bin_idx = torch.clamp((p_flat * float(n_bins)).to(torch.int64), min=0, max=n_bins - 1)
-
-    # Flatten (sample, bin) to one axis so we can use a single bincount pass.
-    sample_offsets = (torch.arange(bsz, device=p.device, dtype=torch.int64) * int(n_bins)).unsqueeze(1)
-    flat_idx = (bin_idx + sample_offsets).reshape(-1)
-
-    ones = torch.ones_like(flat_idx, dtype=torch.float32)
-    counts_flat = torch.bincount(flat_idx, weights=ones, minlength=bsz * n_bins)
-    prob_sums_flat = torch.bincount(flat_idx, weights=p_flat.reshape(-1), minlength=bsz * n_bins)
-    acc_sums_flat = torch.bincount(flat_idx, weights=g_flat.reshape(-1), minlength=bsz * n_bins)
-
-    counts = counts_flat.reshape(bsz, n_bins)
-    prob_sums = prob_sums_flat.reshape(bsz, n_bins)
-    acc_sums = acc_sums_flat.reshape(bsz, n_bins)
-
-    nonzero = counts > 0
-    conf = torch.zeros_like(counts)
-    acc = torch.zeros_like(counts)
-    conf[nonzero] = prob_sums[nonzero] / counts[nonzero]
-    acc[nonzero] = acc_sums[nonzero] / counts[nonzero]
-
-    weight = counts / max(1.0, numel_per_sample)
-    ece = torch.sum(torch.abs(acc - conf) * weight, dim=1)
-    return ece
-
-
 def _normalize_box_xyxy(box: Any) -> Optional[List[int]]:
     if box is None:
         return None
@@ -1912,7 +1878,7 @@ def evaluate_dataset(
     profiler: Optional[PerformanceProfiler] = None,
     profile_prefix: str = "",
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    metrics_keys = ["dice", "jaccard", "precision", "recall", "sensitivity", "f1", "bce", "ece"]
+    metrics_keys = ["dice", "jaccard", "precision", "recall", "sensitivity", "f1", "bce"]
     metrics_store: Dict[str, List[float]] = {k: [] for k in metrics_keys}
 
     results: List[Dict[str, Any]] = []
@@ -2069,7 +2035,6 @@ def evaluate_dataset(
         t_metric = time.perf_counter()
         batch_metrics = compute_metrics_batch_tensor(pred_batch_t, gt_batch_t)
         batch_metrics["bce"] = compute_bce_batch_tensor(prob_batch_t, gt_batch_t)
-        batch_metrics["ece"] = compute_ece_batch_tensor(prob_batch_t, gt_batch_t)
         batch_metrics_cpu = {k: batch_metrics[k].detach().cpu().numpy() for k in metrics_keys}
         metric_elapsed = time.perf_counter() - t_metric
         metrics_times.extend([metric_elapsed / max(1, len(batch_samples))] * len(batch_samples))
@@ -2127,7 +2092,6 @@ def evaluate_dataset(
                     "sensitivity": float(m["sensitivity"]),
                     "f1": float(m["f1"]),
                     "bce": float(m["bce"]),
-                    "ece": float(m["ece"]),
                     "ood_score": ood_score,
                     "is_ood": is_ood,
                     "ood_label": batch_ood_labels[i],
@@ -2209,7 +2173,7 @@ def evaluate_dataset_ood_only(
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Fast OOD-only evaluation path.
 
-    This path intentionally skips segmentation metrics (dice/jaccard/ece)
+    This path intentionally skips segmentation metrics (dice/jaccard)
     and only computes baseline prediction + OOD score for subset selection.
     """
     results: List[Dict[str, Any]] = []
@@ -2423,7 +2387,7 @@ def evaluate_dataset_ood_tta(
     profiler: Optional[PerformanceProfiler] = None,
     profile_prefix: str = "",
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
-    metrics_keys = ["dice", "jaccard", "precision", "recall", "sensitivity", "f1", "bce", "ece"]
+    metrics_keys = ["dice", "jaccard", "precision", "recall", "sensitivity", "f1", "bce"]
 
     ood_metrics_store: Dict[str, List[float]] = {k: [] for k in metrics_keys}
     tta_metrics_store: Dict[str, List[float]] = {k: [] for k in metrics_keys}
@@ -2675,7 +2639,6 @@ def evaluate_dataset_ood_tta(
 
                 combined_metrics = compute_metrics_batch_tensor(combined_pred_stack, combined_gt_stack)
                 combined_metrics["bce"] = compute_bce_batch_tensor(combined_prob_stack, combined_gt_stack)
-                combined_metrics["ece"] = compute_ece_batch_tensor(combined_prob_stack, combined_gt_stack)
 
                 ood_batch_metrics = {k: v[:n_cur] for k, v in combined_metrics.items()}
                 tta_batch_metrics = {k: v[n_cur:] for k, v in combined_metrics.items()}
@@ -2749,7 +2712,6 @@ def evaluate_dataset_ood_tta(
                         "sensitivity": float(ood_m["sensitivity"]),
                         "f1": float(ood_m["f1"]),
                         "bce": float(ood_m["bce"]),
-                        "ece": float(ood_m["ece"]),
                         "ood_score": ood_score,
                         "is_ood": is_ood,
                         "ood_label": batch_ood_labels[i],
@@ -2768,7 +2730,6 @@ def evaluate_dataset_ood_tta(
                         "sensitivity": float(tta_m["sensitivity"]),
                         "f1": float(tta_m["f1"]),
                         "bce": float(tta_m["bce"]),
-                        "ece": float(tta_m["ece"]),
                         "ood_score": 0.0,
                         "is_ood": False,
                         "ood_label": batch_ood_labels[i],
