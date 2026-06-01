@@ -28,7 +28,7 @@
 
 > 默认完整 TTA 配置现已改为 8 种增强：`none`, `hflip`, `vflip`, `hvflip`, `rotate_90`, `rotate_180`, `rotate_270`, `elastic_deform`
 
-**代码实现**：`eval.py` 中的 `TTAPredictor._apply_aug()` 和 `_deaugment_mask()`
+**代码实现**：`medsam_modular/eval/evaluate.py` 中的 `TTAPredictor._apply_aug()` 和 `_deaugment_mask()`
 
 ---
 
@@ -63,7 +63,7 @@ fused = weighted_average(predictions, weights)
 - **缺点**：计算稍复杂（但可忽略）
 - **推荐**：生产环境首选 🏆
 
-**代码实现**：`eval.py` 中的 `_softmax()` 和 `_fuse_predictions()`
+**代码实现**：`medsam_modular/eval/evaluate.py` 中的 `_softmax()` 和 `_fuse_predictions()`
 
 ---
 
@@ -154,7 +154,7 @@ export MEDSAM_TTA_AUGMENTATIONS="aug1,aug2,aug3"
 ## 📁 修改文件清单
 
 ### 核心实现
-1. **medsam_modular/eval.py** (~450 行 → ~550 行)
+1. **medsam_modular/eval/evaluate.py**
    - 新增：`_softmax()` 函数
    - 重写：`TTAPredictor` 类 (+200 行)
    - 新增方法：

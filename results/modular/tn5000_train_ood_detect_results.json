@@ -20706,10 +20706,10 @@
   {
     "index": 2588,
     "name": "002589",
-    "ood_score": 0.21180766820907593,
+    "ood_score": 0.3016795217990875,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7881923317909241
+    "confidence": 0.6983205080032349
   },
   {
     "index": 2589,

@@ -9,29 +9,29 @@
     "num_samples": 3500,
     "num_ood_detected": 48,
     "ood_ratio": 0.013714285714285714,
-    "mean_ood_score": 0.14775787088594267,
-    "std_ood_score": 0.06297994876845939,
-    "total_time_sec": 266.904810344,
-    "avg_inference_time_ms": 49.38615422685065,
-    "avg_data_time_ms": 0.020574502576242333,
-    "avg_ood_time_ms": 7.957613381429318,
-    "throughput_samples_per_sec": 13.113289323969203,
+    "mean_ood_score": 0.14778354855839695,
+    "std_ood_score": 0.06302436264641717,
+    "total_time_sec": 119.79895844600105,
+    "avg_inference_time_ms": 23.521868489741923,
+    "avg_data_time_ms": 0.012659202292395224,
+    "avg_ood_time_ms": 6.793663028278388,
+    "throughput_samples_per_sec": 29.215612935212725,
     "eval_config": {
       "mode": "ood_only",
-      "eval_batch": 2,
+      "eval_batch": 3,
       "eval_batch_source": "autobatch",
       "eval_workers": 16,
       "eval_prefetch": 4,
-      "autobatch_probe_tput": 19.22822805407949,
+      "autobatch_probe_tput": 21.707220054331085,
       "autobatch_reason": "ok",
-      "autobatch_raw_batch": 2,
+      "autobatch_raw_batch": 4,
       "autobatch_max_stable": 16,
-      "autobatch_safety": 1.0,
+      "autobatch_safety": 0.9,
       "baseline_cache_model_hash": "a4e156790b9cf939",
-      "baseline_cache_hits": 0,
-      "baseline_cache_misses": 3500
+      "baseline_cache_hits": 3499,
+      "baseline_cache_misses": 1
     },
     "bottleneck_component": "inference",
-    "bottleneck_component_ratio": 0.6476149289748572
+    "bottleneck_component_ratio": 0.6872058053092767
   }
 }

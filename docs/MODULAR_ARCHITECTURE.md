@@ -56,9 +56,13 @@ flowchart TD
   - best/last checkpoint 保存
   - best 權重回載
 
-### medsam_modular/eval.py
-- OODDetector、TTAPredictor、metrics 計算。
-- `evaluate_dataset` 支援 baseline / OOD / TTA。
+### medsam_modular/eval/
+- OODDetector、TTAPredictor、metrics、autobatch 與 dataset evaluation 入口。
+- `evaluate.py` 保留目前主要實作，`metrics.py`、`ood.py`、`tta.py`、`autobatch.py`、`evaluate_api.py` 提供分層匯入入口。
+
+### medsam_modular/pipeline/
+- Stage 3/4/6/7/8 的 pipeline entry points。
+- `runner.py` 負責總 orchestration，stage 模組提供後續搬移實作的穩定邊界。
 
 ### medsam_modular/cache.py
 - 推論結果快取。

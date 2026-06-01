@@ -87,7 +87,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "eval_autobatch_bench_warmup": 1,
     "eval_autobatch_bench_rounds": 2,
     "eval_autobatch_candidate_growth": 2,
-    "eval_autobatch_safety": "",
+    "eval_autobatch_safety": 0.9,
     "ood_max_side": 64,
     "tta_autotune": True,
     "eval_prefetch": 4,
@@ -246,6 +246,7 @@ FLOAT_SETTING_KEYS = {
     "ood_entropy_threshold",
     "ood_entropy_active_prob_threshold",
     "ood_fragment_prob_threshold",
+    "eval_autobatch_safety",
 }
 
 

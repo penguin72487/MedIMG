@@ -13,10 +13,17 @@ import torch
 from medsam_modular.cache import PredictionCache
 from medsam_modular.config import DEFAULT_IMAGE_SIZE, DEFAULT_MODEL_ID, DEFAULT_OUTPUT_DIR_REL, ENV_DEFAULTS
 from medsam_modular.data import prepare_datasets_by_split
-from medsam_modular.eval import OODDetector, TTAPredictor, evaluate_dataset, evaluate_dataset_ood_only, evaluate_dataset_ood_tta
+from medsam_modular.eval import OODDetector, TTAPredictor, evaluate_dataset_ood_only, evaluate_dataset_ood_tta
 from medsam_modular.io_async import get_global_async_writer, shutdown_global_async_writer
 from medsam_modular.model import build_inputs_batch, load_medsam, load_state_dict_compat, predict_prob_masks_from_inputs
-from medsam_modular.train import maybe_finetune
+from medsam_modular.pipeline.stage3_ood_detect import (
+    detect_ood_train_subset as pipeline_detect_ood_train_subset,
+    load_cached_ood_train_subset as pipeline_load_cached_ood_train_subset,
+)
+from medsam_modular.pipeline.stage4_finetune import run_finetune as pipeline_run_finetune
+from medsam_modular.pipeline.stage6_baseline import evaluate_baseline_dataset as pipeline_evaluate_baseline_dataset
+from medsam_modular.pipeline.stage7_eval import evaluate_test_ood_tta as pipeline_evaluate_test_ood_tta
+from medsam_modular.pipeline.stage8_report import run_stage8_plotting as pipeline_run_stage8_plotting
 from medsam_modular.visualize import (
     build_comparison_table,
     merge_stage8_stats,
@@ -1103,7 +1110,7 @@ def main() -> None:
     if run_stage3_detect_train_ood:
         print("\n[Stage 3/8] baseline 偵測 train split OOD ...")
         with _timed_log("Stage 3/8: detect train split OOD"):
-            ood_subset_by_name, ood_subset_summary = _detect_ood_train_subset(
+            ood_subset_by_name, ood_subset_summary = pipeline_detect_ood_train_subset(
                 model=model,
                 processor=processor,
                 data_paths=data_paths,
@@ -1121,7 +1128,7 @@ def main() -> None:
         print(f"  OOD train subset: {total_ood}/{total_all} samples")
     else:
         print("\n[Stage 3/8] 依設定略過 train OOD 偵測，嘗試載入既有結果 ...")
-        ood_subset_by_name, ood_subset_summary = _load_cached_ood_train_subset(
+        ood_subset_by_name, ood_subset_summary = pipeline_load_cached_ood_train_subset(
             output_dir=output_dir,
             dataset_names=list(test_sets.keys()),
         )
@@ -1141,7 +1148,7 @@ def main() -> None:
         t2 = time.time()
         with _timed_log("Stage 4/8: OOD subset fine-tune"):
             with profiler.section_and_flush("stage.ood_finetune"):
-                model = maybe_finetune(
+                model = pipeline_run_finetune(
                     model=model,
                     processor=processor,
                     config=_build_train_config(
@@ -1182,7 +1189,7 @@ def main() -> None:
         t2 = time.time()
         with _timed_log("Stage 5/8: full-data fine-tune"):
             with profiler.section_and_flush("stage.full_finetune"):
-                model = maybe_finetune(
+                model = pipeline_run_finetune(
                     model=model,
                     processor=processor,
                     config=_build_train_config(
@@ -1228,7 +1235,7 @@ def main() -> None:
             t_ds = time.time()
             with _timed_log(f"Stage 6: baseline evaluate {dataset_name}"):
                 with profiler.section_and_flush(f"eval.{dataset_name}.baseline.total"):
-                    baseline_results, baseline_stats = evaluate_dataset(
+                    baseline_results, baseline_stats = pipeline_evaluate_baseline_dataset(
                         dataset=dataset,
                         dataset_name=dataset_name,
                         model=model,
@@ -1264,7 +1271,7 @@ def main() -> None:
             load_state_dict_compat(model, ood_finetuned_best_path, map_location=device)
         print(f"  📌 OOD finetuned 評估權重: {ood_finetuned_best_path}")
         with _timed_log("Stage 7/8: evaluate OOD fine-tuned model"):
-            all_stats_ood_finetuned = _evaluate_test_ood_tta(
+            all_stats_ood_finetuned = pipeline_evaluate_test_ood_tta(
                 model=model,
                 processor=processor,
                 device=device,
@@ -1299,7 +1306,7 @@ def main() -> None:
 
         print("\n[Stage 7/8] 測試全資料 finetuned 模型：OOD 判斷 + TTA inference ...")
         with _timed_log("Stage 7/8: evaluate full fine-tuned model"):
-            all_stats = _evaluate_test_ood_tta(
+            all_stats = pipeline_evaluate_test_ood_tta(
                 model=model,
                 processor=processor,
                 device=device,
@@ -1381,7 +1388,7 @@ def main() -> None:
     else:
         print("\n[Stage 8/8] 產生 comparison table / chart ...")
         with _timed_log("Stage 8/8: plotting and report charts"):
-            comparison_path, chart_path, top_chart_path, stage8_paths, stage8_history_path = _run_stage8_plotting(
+            comparison_path, chart_path, top_chart_path, stage8_paths, stage8_history_path = pipeline_run_stage8_plotting(
                 all_stats=all_stats,
                 all_stats_ood_finetuned=all_stats_ood_finetuned,
                 output_dir=output_dir,

@@ -12,10 +12,18 @@ class AsyncFileWriter:
         self._futures: List[Future] = []
         self._lock = threading.Lock()
 
-    def submit_text(self, path: Path, content: str, encoding: str = "utf-8") -> None:
+    @staticmethod
+    def _write_text(target: Path, content: str, encoding: str, append: bool) -> None:
+        if append:
+            with target.open("a", encoding=encoding) as fp:
+                fp.write(content)
+            return
+        target.write_text(content, encoding=encoding)
+
+    def submit_text(self, path: Path, content: str, encoding: str = "utf-8", append: bool = False) -> None:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        future = self._executor.submit(target.write_text, content, encoding=encoding)
+        future = self._executor.submit(self._write_text, target, content, encoding, append)
         with self._lock:
             self._futures.append(future)
 

@@ -9,6 +9,8 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 
+from medsam_modular.types import SegSample
+
 
 def get_active_profiler() -> None:
     return None
@@ -201,12 +203,12 @@ class TN3KDataset(Dataset):
             bbox = compute_bbox_from_mask_np(mask_np)
         if profiler is not None and profiler.enabled:
             profiler.record_duration("data.TN3KDataset.__getitem__", (cv2.getTickCount() / cv2.getTickFrequency()) - t0)
-        return {
-            "image": image,
-            "mask": torch.tensor(mask_np.astype(np.float32), dtype=torch.float32),
-            "bbox": bbox,
-            "name": sample["name"],
-        }
+        return SegSample(
+            image=image,
+            mask=torch.tensor(mask_np.astype(np.float32), dtype=torch.float32),
+            bbox=bbox,
+            name=sample["name"],
+        ).to_dict()
 
 
 class DDTIDataset(Dataset):
@@ -272,7 +274,18 @@ class DDTIDataset(Dataset):
                 if img_path is None or not img_path.exists():
                     continue
 
-                mask = self._svg_to_mask(str(svg_elem.text or ""), self.image_size, self.image_size)
+                try:
+                    with Image.open(img_path) as im:
+                        source_size = im.size
+                except Exception:
+                    source_size = None
+
+                mask = self._svg_to_mask(
+                    str(svg_elem.text or ""),
+                    self.image_size,
+                    self.image_size,
+                    source_size=source_size,
+                )
                 components = split_connected_component_masks(mask)
                 if not components:
                     continue
@@ -286,23 +299,40 @@ class DDTIDataset(Dataset):
                             "case_id": case_id,
                             "img_idx": img_idx,
                             "svg": svg_elem.text,
+                            "source_size": source_size,
                             "name": comp_name,
                             "component_index": comp_idx,
                             "bbox": compute_bbox_from_mask_np(comp_mask),
                         }
                     )
 
-    def _svg_to_mask(self, svg_str: str, h: int, w: int) -> np.ndarray:
+    def _svg_to_mask(self, svg_str: str, h: int, w: int, source_size: Optional[Tuple[int, int]] = None) -> np.ndarray:
         mask = np.zeros((h, w), dtype=np.uint8)
         try:
             annotations = json.loads(svg_str)
+            scale_x = 1.0
+            scale_y = 1.0
+            if source_size is not None:
+                source_w, source_h = source_size
+                if source_w > 0 and source_h > 0:
+                    scale_x = float(w) / float(source_w)
+                    scale_y = float(h) / float(source_h)
             for ann in annotations:
                 if ann.get("regionType") != "freehand":
                     continue
                 points = ann.get("points", [])
                 if len(points) <= 2:
                     continue
-                pts = np.array([[p["x"], p["y"]] for p in points], dtype=np.int32)
+                pts = np.array(
+                    [
+                        [
+                            int(np.clip(round(float(p["x"]) * scale_x), 0, w - 1)),
+                            int(np.clip(round(float(p["y"]) * scale_y), 0, h - 1)),
+                        ]
+                        for p in points
+                    ],
+                    dtype=np.int32,
+                )
                 cv2.fillPoly(mask, [pts], 1)
         except Exception:
             pass
@@ -318,7 +348,10 @@ class DDTIDataset(Dataset):
         image = Image.open(sample["image_path"]).convert("RGB")
         image = image.resize((self.image_size, self.image_size), Image.BILINEAR)
 
-        mask = self._svg_to_mask(sample["svg"], self.image_size, self.image_size)
+        source_size = sample.get("source_size")
+        if source_size is None:
+            source_size = getattr(image, "size", None)
+        mask = self._svg_to_mask(sample["svg"], self.image_size, self.image_size, source_size=source_size)
         comp_masks = split_connected_component_masks(mask)
         comp_idx = int(sample.get("component_index", 0))
         if comp_masks and 0 <= comp_idx < len(comp_masks):
@@ -328,12 +361,12 @@ class DDTIDataset(Dataset):
             bbox = compute_bbox_from_mask_np(mask)
         if profiler is not None and profiler.enabled:
             profiler.record_duration("data.DDTIDataset.__getitem__", (cv2.getTickCount() / cv2.getTickFrequency()) - t0)
-        return {
-            "image": image,
-            "mask": torch.tensor(mask.astype(np.float32), dtype=torch.float32),
-            "bbox": bbox,
-            "name": sample["name"],
-        }
+        return SegSample(
+            image=image,
+            mask=torch.tensor(mask.astype(np.float32), dtype=torch.float32),
+            bbox=bbox,
+            name=sample["name"],
+        ).to_dict()
 
 
 class TN5000Dataset(Dataset):
@@ -398,11 +431,14 @@ class TN5000Dataset(Dataset):
 
             try:
                 root = ET.parse(xml_path).getroot()
-                width = int(float(root.findtext("size/width", default="0") or 0))
-                height = int(float(root.findtext("size/height", default="0") or 0))
-                if width <= 0 or height <= 0:
-                    with Image.open(img_path) as im:
-                        width, height = im.size
+                xml_width = int(float(root.findtext("size/width", default="0") or 0))
+                xml_height = int(float(root.findtext("size/height", default="0") or 0))
+                with Image.open(img_path) as im:
+                    image_width, image_height = im.size
+                if image_width > 0 and image_height > 0:
+                    width, height = image_width, image_height
+                else:
+                    width, height = xml_width, xml_height
                 boxes = self._parse_boxes(root)
                 if width > 0 and height > 0 and boxes:
                     self.samples.append(
@@ -411,6 +447,8 @@ class TN5000Dataset(Dataset):
                             "image_path": img_path,
                             "width": width,
                             "height": height,
+                            "xml_width": xml_width,
+                            "xml_height": xml_height,
                             "boxes": boxes,
                         }
                     )
@@ -444,13 +482,13 @@ class TN5000Dataset(Dataset):
         bbox = compute_bbox_from_mask_np(mask)
         if profiler is not None and profiler.enabled:
             profiler.record_duration("data.TN5000Dataset.__getitem__", (cv2.getTickCount() / cv2.getTickFrequency()) - t0)
-        return {
-            "image": image,
-            "mask": torch.tensor(mask.astype(np.float32), dtype=torch.float32),
-            "bbox": bbox,
-            "gt_boxes": gt_boxes,
-            "name": sample["image_id"],
-        }
+        return SegSample(
+            image=image,
+            mask=torch.tensor(mask.astype(np.float32), dtype=torch.float32),
+            bbox=bbox,
+            name=sample["image_id"],
+            gt_boxes=gt_boxes,
+        ).to_dict()
 
 
 def build_dataset(dataset_name: str, root_dir: str, split_name: str, image_size: int, split_ids: Optional[Set[str]]) -> Dataset:

@@ -250,7 +250,7 @@ tta = TTAPredictor(
 ```
 
 ### 自定义融合权重
-查看 `eval.py` 中的 `_fuse_predictions` 方法，可根据需要修改权重计算逻辑。
+查看 `medsam_modular/eval/evaluate.py` 中的 `_fuse_predictions` 方法，可根据需要修改权重计算逻辑。
 
 ---
 
@@ -258,14 +258,14 @@ tta = TTAPredictor(
 
 1. **内存占用**：TTA 会在内存中存储多个预测结果，注意 GPU 显存
 2. **旋转增强**：对于方向敏感的医学图像，谨慎使用
-3. **弹性形变**：参数 `alpha` 和 `sigma` 可在 `eval.py` 中调整
+3. **弹性形变**：参数 `alpha` 和 `sigma` 可在 `medsam_modular/eval/evaluate.py` 中调整
 4. **缓存**：TTA 模式不使用预测缓存以获得独立预测
 
 ---
 
 ## 📚 相关文件
 
-- 实现代码：[eval.py](../medsam_modular/eval.py)
+- 实现代码：[evaluate.py](../medsam_modular/eval/evaluate.py)
 - 配置入口：[main.py](../main.py)
 - 运行脚本：[runner.py](../medsam_modular/runner.py)
 

@@ -259,3 +259,7 @@ tempCodeRunnerFile.py
 .LSOverride/
 TG3K/*
 *.npy
+ddti_kaggle/*
+tn3k_kaggle/*
+tg3k_kaggle/*
+tn5000_kaggle/*
