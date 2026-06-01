@@ -769,6 +769,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
         "val_dice": [],
         "lr": [],
     }
+    epoch_durations_sec: List[float] = []
     start_epoch = 1
 
     if resume_weight_path is not None and resume_weight_path.exists():
@@ -929,6 +930,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
             torch.cuda.empty_cache()
 
         elapsed = time.time() - epoch_t0
+        epoch_durations_sec.append(float(elapsed))
         improved_mark = "★" if val_loss < (best_val_loss - min_delta) else " "
         epoch_bar.set_postfix(
             train=f"{train_loss:.4f}",
@@ -1002,37 +1004,42 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
     else:
         print("  ⚠️ No checkpoint found to reload; keeping current in-memory weights.")
 
+    epochs_ran = int(len(history.get("val_loss", [])))
+    best_epoch = 0
+    val_losses = history.get("val_loss", [])
+    if val_losses:
+        try:
+            best_epoch = int(np.argmin(np.asarray(val_losses, dtype=np.float64))) + 1
+        except Exception:
+            best_epoch = 0
+
+    ft_total_sec = float(time.perf_counter() - ft_total_start)
+    avg_epoch_sec = float(np.mean(epoch_durations_sec)) if epoch_durations_sec else 0.0
+
+    stats_payload = {
+        "history": history,
+        "best_val_loss": best_val_loss,
+        "train_samples": len(train_dataset),
+        "val_samples": len(val_dataset),
+        "epochs_config": epochs,
+        "epochs_ran": epochs_ran,
+        "convergence_epoch": best_epoch,
+        "epoch_durations_sec": epoch_durations_sec,
+        "avg_epoch_sec": avg_epoch_sec,
+        "total_finetune_sec": ft_total_sec,
+        "batch_size": batch_size,
+        "lr": lr,
+    }
+
     stats_path = output_dir / f"{stats_prefix}_stats.json"
     t_save_json = time.perf_counter()
     stats_path.write_text(
-        json.dumps(
-            {
-                "history": history,
-                "best_val_loss": best_val_loss,
-                "train_samples": len(train_dataset),
-                "val_samples": len(val_dataset),
-                "epochs_config": epochs,
-                "batch_size": batch_size,
-                "lr": lr,
-            },
-            indent=2,
-        ),
+        json.dumps(stats_payload, indent=2),
         encoding="utf-8",
     )
     save_json_total = time.perf_counter() - t_save_json
     t_save_pt = time.perf_counter()
-    torch.save(
-        {
-            "history": history,
-            "best_val_loss": best_val_loss,
-            "train_samples": len(train_dataset),
-            "val_samples": len(val_dataset),
-            "epochs_config": epochs,
-            "batch_size": batch_size,
-            "lr": lr,
-        },
-        output_dir / f"{stats_prefix}_stats.pt",
-    )
+    torch.save(stats_payload, output_dir / f"{stats_prefix}_stats.pt")
     save_pt_total = time.perf_counter() - t_save_pt
 
     base_model.eval()
@@ -1040,7 +1047,6 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
         p.requires_grad = False
 
     if profiler is not None and profiler.enabled:
-        ft_total_sec = time.perf_counter() - ft_total_start
         profiler.record_duration("finetune.total", ft_total_sec)
         profiler.record_duration("finetune.data_move", train_data_move_total)
         profiler.record_duration("finetune.train_forward", train_forward_total)

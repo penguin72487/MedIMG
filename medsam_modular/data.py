@@ -33,6 +33,26 @@ def compute_bbox_from_mask_np(mask_np: np.ndarray, jitter: int = 10) -> List[int
     return [int(x_min), int(y_min), int(x_max), int(y_max)]
 
 
+def split_connected_component_masks(mask_np: np.ndarray) -> List[np.ndarray]:
+    mask_u8 = (mask_np > 0).astype(np.uint8)
+    if int(mask_u8.sum()) == 0:
+        return []
+
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask_u8, connectivity=8)
+    components: List[Tuple[int, int, np.ndarray]] = []
+    for label_idx in range(1, int(num_labels)):
+        area = int(stats[label_idx, cv2.CC_STAT_AREA])
+        if area <= 0:
+            continue
+        y = int(stats[label_idx, cv2.CC_STAT_TOP])
+        x = int(stats[label_idx, cv2.CC_STAT_LEFT])
+        comp = (labels == label_idx).astype(np.uint8)
+        components.append((y, x, comp))
+
+    components.sort(key=lambda item: (item[0], item[1]))
+    return [c for _, _, c in components]
+
+
 def canonical_split_id(raw_id: Any) -> str:
     sample_id = str(raw_id).strip()
     if not sample_id:
@@ -110,13 +130,38 @@ class TN3KDataset(Dataset):
         return None
 
     def _load_samples(self) -> None:
+        def _append_expanded_samples(img_path: Path, mask_path: Path, base_name: str) -> None:
+            try:
+                mask = Image.open(mask_path).convert("L")
+                mask = mask.resize((self.image_size, self.image_size), Image.NEAREST)
+                mask_np = (np.array(mask) > 127).astype(np.uint8)
+            except Exception:
+                return
+
+            components = split_connected_component_masks(mask_np)
+            if not components:
+                return
+
+            multi = len(components) > 1
+            for comp_idx, comp_mask in enumerate(components):
+                comp_name = f"{base_name}#cc{comp_idx + 1}" if multi else base_name
+                self.samples.append(
+                    {
+                        "image_path": img_path,
+                        "mask_path": mask_path,
+                        "name": comp_name,
+                        "component_index": comp_idx,
+                        "bbox": compute_bbox_from_mask_np(comp_mask),
+                    }
+                )
+
         if self.split_ids is not None:
             for sid in sorted(self.split_ids):
                 pair = self._resolve_pair(sid)
                 if pair is None:
                     continue
                 img_path, mask_path = pair
-                self.samples.append({"image_path": img_path, "mask_path": mask_path, "name": sid})
+                _append_expanded_samples(img_path=img_path, mask_path=mask_path, base_name=sid)
             return
 
         for image_dir, mask_dir in self._candidate_dirs():
@@ -129,7 +174,7 @@ class TN3KDataset(Dataset):
                 mask_file = self._resolve_mask_path(mask_dir, img_file.stem)
                 if mask_file is None:
                     continue
-                self.samples.append({"image_path": img_file, "mask_path": mask_file, "name": img_file.stem})
+                _append_expanded_samples(img_path=img_file, mask_path=mask_file, base_name=img_file.stem)
             if self.samples:
                 return
 
@@ -146,8 +191,14 @@ class TN3KDataset(Dataset):
         image = image.resize((self.image_size, self.image_size), Image.BILINEAR)
         mask = mask.resize((self.image_size, self.image_size), Image.NEAREST)
 
-        mask_np = np.array(mask) > 127
-        bbox = compute_bbox_from_mask_np(mask_np.astype(np.uint8))
+        mask_np = (np.array(mask) > 127).astype(np.uint8)
+        comp_masks = split_connected_component_masks(mask_np)
+        comp_idx = int(sample.get("component_index", 0))
+        if comp_masks and 0 <= comp_idx < len(comp_masks):
+            mask_np = comp_masks[comp_idx]
+        bbox = sample.get("bbox")
+        if not isinstance(bbox, list) or len(bbox) != 4:
+            bbox = compute_bbox_from_mask_np(mask_np)
         if profiler is not None and profiler.enabled:
             profiler.record_duration("data.TN3KDataset.__getitem__", (cv2.getTickCount() / cv2.getTickFrequency()) - t0)
         return {
@@ -218,14 +269,26 @@ class DDTIDataset(Dataset):
                     continue
 
                 img_path = self._resolve_image_path(image_root, case_stem, img_idx, str(img_elem.text or ""))
-                if img_path.exists():
+                if img_path is None or not img_path.exists():
+                    continue
+
+                mask = self._svg_to_mask(str(svg_elem.text or ""), self.image_size, self.image_size)
+                components = split_connected_component_masks(mask)
+                if not components:
+                    continue
+
+                multi = len(components) > 1
+                for comp_idx, comp_mask in enumerate(components):
+                    comp_name = f"{sample_name}#cc{comp_idx + 1}" if multi else sample_name
                     self.samples.append(
                         {
                             "image_path": img_path,
                             "case_id": case_id,
                             "img_idx": img_idx,
                             "svg": svg_elem.text,
-                            "name": sample_name,
+                            "name": comp_name,
+                            "component_index": comp_idx,
+                            "bbox": compute_bbox_from_mask_np(comp_mask),
                         }
                     )
 
@@ -256,7 +319,13 @@ class DDTIDataset(Dataset):
         image = image.resize((self.image_size, self.image_size), Image.BILINEAR)
 
         mask = self._svg_to_mask(sample["svg"], self.image_size, self.image_size)
-        bbox = compute_bbox_from_mask_np(mask)
+        comp_masks = split_connected_component_masks(mask)
+        comp_idx = int(sample.get("component_index", 0))
+        if comp_masks and 0 <= comp_idx < len(comp_masks):
+            mask = comp_masks[comp_idx]
+        bbox = sample.get("bbox")
+        if not isinstance(bbox, list) or len(bbox) != 4:
+            bbox = compute_bbox_from_mask_np(mask)
         if profiler is not None and profiler.enabled:
             profiler.record_duration("data.DDTIDataset.__getitem__", (cv2.getTickCount() / cv2.getTickFrequency()) - t0)
         return {

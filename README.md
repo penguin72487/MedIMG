@@ -6,6 +6,8 @@ MedSAM+OOD+TTA in TN3K,TG3K,TN5000,DDTI
 現在可透過專案根目錄的 `medsam_config.json` 統一管理主要參數（資料路徑、訓練、評估、TTA、compile 等）。
 包含進階執行參數（例如 cache、autobatch、warm cache、precompute）也已整合在同一檔案中。
 
+Pipeline 分步控制（含 OOD fine-tune / full fine-tune 拆分）說明請見：`docs/PIPELINE_STAGE_CONTROL.md`
+
 - 預設執行會自動讀取 `medsam_config.json`
 - 也可用 `--config` 指定其他設定檔
 - CLI 參數會覆蓋設定檔對應欄位

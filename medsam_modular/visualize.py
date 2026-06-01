@@ -185,16 +185,49 @@ def save_comparison_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir: Pat
     return out_path
 
 
-def _methods() -> List[str]:
+def _methods(all_stats: Optional[Dict[str, Dict[str, Dict]]] = None) -> List[str]:
+    if not all_stats:
+        return ["baseline", "ood", "tta"]
+    method_keys: set = set()
+    for modes in all_stats.values():
+        if isinstance(modes, dict):
+            method_keys.update(str(k) for k in modes.keys())
+
+    four_way = ["baseline", "ood_finetune", "full_finetune", "ood_finetune_tta"]
+    if all(m in method_keys for m in four_way):
+        return four_way
     return ["baseline", "ood", "tta"]
 
 
 def _method_label(method: str) -> str:
-    return {"baseline": "Baseline", "ood": "OOD", "tta": "TTA"}.get(method, method)
+    return {
+        "baseline": "Baseline",
+        "ood": "OOD",
+        "tta": "TTA",
+        "ood_finetune": "OOD-Finetune",
+        "full_finetune": "Full-Finetune",
+        "ood_finetune_tta": "OOD-Finetune+TTA",
+    }.get(method, method)
 
 
 def _method_color(method: str) -> str:
-    return {"baseline": "#1f77b4", "ood": "#d62728", "tta": "#2ca02c"}.get(method, "#7f7f7f")
+    return {
+        "baseline": "#1f77b4",
+        "ood": "#d62728",
+        "tta": "#2ca02c",
+        "ood_finetune": "#ff7f0e",
+        "full_finetune": "#2ca02c",
+        "ood_finetune_tta": "#d62728",
+    }.get(method, "#7f7f7f")
+
+
+def merge_stage8_stats(
+    full_summary: Dict[str, Dict[str, Dict[str, Any]]],
+    ood_finetuned_summary: Optional[Dict[str, Dict[str, Dict[str, Any]]]],
+) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    if not ood_finetuned_summary:
+        return full_summary
+    return _build_variant_stats(full_summary=full_summary, ood_finetuned_summary=ood_finetuned_summary)
 
 
 def _metric(stats: Dict[str, Any], key: str) -> float:
@@ -345,15 +378,16 @@ def save_method_overview_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir
         ("mean_sensitivity", "Sensitivity"),
     ]
 
+    methods = _methods(all_stats)
     fig, axes = plt.subplots(len(metrics), len(datasets), figsize=(6 * max(1, len(datasets)), 4.2 * len(metrics)), squeeze=False)
-    x = np.arange(len(_methods()))
+    x = np.arange(len(methods))
 
     for col, dataset in enumerate(datasets):
         for row, (metric_key, metric_title) in enumerate(metrics):
             ax = axes[row, col]
-            vals = [_metric(all_stats[dataset].get(method, {}), metric_key) for method in _methods()]
-            ax.bar(x, vals, color=[_method_color(m) for m in _methods()])
-            ax.set_xticks(x, [_method_label(m) for m in _methods()])
+            vals = [_metric(all_stats[dataset].get(method, {}), metric_key) for method in methods]
+            ax.bar(x, vals, color=[_method_color(m) for m in methods])
+            ax.set_xticks(x, [_method_label(m) for m in methods])
             ax.set_ylim(0.0, 1.0)
             ax.set_title(f"{dataset} {metric_title}")
             for i, v in enumerate(vals):
@@ -362,7 +396,7 @@ def save_method_overview_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir
                 else:
                     ax.text(i, 0.02, "N/A", ha="center", fontsize=9)
 
-    fig.suptitle("Stage 8: Method Overview (Baseline vs OOD vs TTA)", fontsize=14)
+    fig.suptitle("Stage 8: Method Overview", fontsize=14)
     plt.tight_layout()
     out_path = output_dir / "stage8_method_overview.png"
     plt.savefig(out_path, dpi=300, bbox_inches="tight")
@@ -380,27 +414,25 @@ def save_delta_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir: Path) ->
         ("mean_bce", "Delta BCE", False),
     ]
 
+    methods = _methods(all_stats)
+    compare_methods = [m for m in methods if m != "baseline"]
     fig, axes = plt.subplots(len(metrics), 1, figsize=(8 + 1.5 * len(datasets), 16), squeeze=False)
     x = np.arange(len(datasets))
-    width = 0.35
+    width = 0.75 / max(1, len(compare_methods))
 
     for row, (metric_key, title, higher_is_better) in enumerate(metrics):
         ax = axes[row, 0]
-        delta_ood = []
-        delta_tta = []
-        for ds in datasets:
-            baseline = _metric(all_stats[ds].get("baseline", {}), metric_key)
-            ood = _metric(all_stats[ds].get("ood", {}), metric_key)
-            tta = _metric(all_stats[ds].get("tta", {}), metric_key)
-            if higher_is_better:
-                delta_ood.append(ood - baseline)
-                delta_tta.append(tta - baseline)
-            else:
-                delta_ood.append(baseline - ood)
-                delta_tta.append(baseline - tta)
-
-        ax.bar(x - width / 2, delta_ood, width=width, label="OOD vs Baseline", color="#d62728")
-        ax.bar(x + width / 2, delta_tta, width=width, label="TTA vs Baseline", color="#2ca02c")
+        for idx_m, method in enumerate(compare_methods):
+            deltas = []
+            for ds in datasets:
+                baseline = _metric(all_stats[ds].get("baseline", {}), metric_key)
+                cur = _metric(all_stats[ds].get(method, {}), metric_key)
+                if higher_is_better:
+                    deltas.append(cur - baseline)
+                else:
+                    deltas.append(baseline - cur)
+            offset = (idx_m - (len(compare_methods) - 1) / 2.0) * width
+            ax.bar(x + offset, deltas, width=width, label=f"{_method_label(method)} vs Baseline", color=_method_color(method))
         ax.axhline(0.0, color="black", linewidth=1)
         ax.set_xticks(x, datasets)
         ax.set_title(title)
@@ -417,7 +449,7 @@ def save_delta_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir: Path) ->
 def save_cost_breakdown_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     datasets = list(all_stats.keys())
-    methods = _methods()
+    methods = _methods(all_stats)
     components: List[Tuple[str, str, str]] = [
         ("avg_data_time_ms", "data", "#8dd3c7"),
         ("avg_inference_time_ms", "inference", "#fb8072"),
@@ -454,8 +486,9 @@ def save_quality_throughput_frontier(all_stats: Dict[str, Dict[str, Dict]], outp
     output_dir.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=(9, 7))
 
+    methods = _methods(all_stats)
     for ds in all_stats:
-        for method in _methods():
+        for method in methods:
             stats = all_stats[ds].get(method, {})
             x = _metric(stats, "throughput_samples_per_sec")
             y = _metric(stats, "dice_5pct_low")
@@ -481,15 +514,16 @@ def save_quality_throughput_frontier(all_stats: Dict[str, Dict[str, Dict]], outp
 def save_calibration_ece_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     datasets = list(all_stats.keys())
-    methods = _methods()
+    methods = _methods(all_stats)
 
     fig, ax = plt.subplots(figsize=(8 + 1.2 * len(datasets), 6))
     x = np.arange(len(datasets))
-    width = 0.24
+    width = 0.75 / max(1, len(methods))
     for idx, method in enumerate(methods):
         vals = [_metric(all_stats[ds].get(method, {}), "mean_ece") for ds in datasets]
         vals = np.nan_to_num(np.asarray(vals, dtype=np.float64), nan=0.0)
-        ax.bar(x + (idx - 1) * width, vals, width=width, color=_method_color(method), label=_method_label(method))
+        offset = (idx - (len(methods) - 1) / 2.0) * width
+        ax.bar(x + offset, vals, width=width, color=_method_color(method), label=_method_label(method))
 
     ax.set_xticks(x, datasets)
     ax.set_ylabel("ECE (lower is better)")
@@ -506,19 +540,20 @@ def save_calibration_ece_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir
 def save_ood_detection_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     datasets = list(all_stats.keys())
-    methods = ["ood", "tta"]
+    methods = [m for m in _methods(all_stats) if m != "baseline"]
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
     x = np.arange(len(datasets))
-    width = 0.32
+    width = 0.75 / max(1, len(methods))
 
     for idx, method in enumerate(methods):
         auroc_vals = [_metric(all_stats[ds].get(method, {}), "ood_auroc") for ds in datasets]
         fpr_vals = [_metric(all_stats[ds].get(method, {}), "ood_fpr95") for ds in datasets]
         auroc_vals = np.nan_to_num(np.asarray(auroc_vals, dtype=np.float64), nan=0.0)
         fpr_vals = np.nan_to_num(np.asarray(fpr_vals, dtype=np.float64), nan=0.0)
-        axes[0].bar(x + (idx - 0.5) * width, auroc_vals, width=width, label=_method_label(method), color=_method_color(method))
-        axes[1].bar(x + (idx - 0.5) * width, fpr_vals, width=width, label=_method_label(method), color=_method_color(method))
+        offset = (idx - (len(methods) - 1) / 2.0) * width
+        axes[0].bar(x + offset, auroc_vals, width=width, label=_method_label(method), color=_method_color(method))
+        axes[1].bar(x + offset, fpr_vals, width=width, label=_method_label(method), color=_method_color(method))
 
     axes[0].set_title("OOD AUROC (higher is better)")
     axes[0].set_ylim(0.0, 1.0)
@@ -540,25 +575,33 @@ def save_tta_cache_hit_chart(all_stats: Dict[str, Dict[str, Dict]], output_dir: 
     output_dir.mkdir(parents=True, exist_ok=True)
     datasets = list(all_stats.keys())
 
-    hits = []
-    misses = []
-    unc_hits = []
-    for ds in datasets:
-        eval_cfg = all_stats[ds].get("tta", {}).get("eval_config", {})
-        hits.append(float(eval_cfg.get("tta_cache_hits", 0)))
-        misses.append(float(eval_cfg.get("tta_cache_misses", 0)))
-        unc_hits.append(float(eval_cfg.get("tta_unc_cache_hits", 0)))
+    methods = _methods(all_stats)
+    fig, axes = plt.subplots(1, 3, figsize=(12 + 1.5 * len(datasets), 6), squeeze=False)
+    metric_specs = [
+        ("tta_cache_hits", "TTA cache hits"),
+        ("tta_cache_misses", "TTA cache misses"),
+        ("tta_unc_cache_hits", "TTA uncertainty cache hits"),
+    ]
 
     x = np.arange(len(datasets))
-    width = 0.25
-    fig, ax = plt.subplots(figsize=(8 + 1.2 * len(datasets), 6))
-    ax.bar(x - width, hits, width=width, label="tta_cache_hits", color="#2ca02c")
-    ax.bar(x, misses, width=width, label="tta_cache_misses", color="#d62728")
-    ax.bar(x + width, unc_hits, width=width, label="tta_unc_cache_hits", color="#1f77b4")
-    ax.set_xticks(x, datasets)
-    ax.set_ylabel("count")
-    ax.set_title("Stage 8: TTA Cache Hit/Miss")
-    ax.legend(loc="best")
+    width = 0.75 / max(1, len(methods))
+    for ax_idx, (metric_key, title) in enumerate(metric_specs):
+        ax = axes[0, ax_idx]
+        for idx_m, method in enumerate(methods):
+            vals = []
+            for ds in datasets:
+                eval_cfg = all_stats[ds].get(method, {}).get("eval_config", {})
+                vals.append(float(eval_cfg.get(metric_key, 0.0)))
+            offset = (idx_m - (len(methods) - 1) / 2.0) * width
+            ax.bar(x + offset, vals, width=width, label=_method_label(method), color=_method_color(method))
+
+        ax.set_xticks(x, datasets)
+        ax.set_title(title)
+        if ax_idx == 0:
+            ax.set_ylabel("count")
+        ax.legend(loc="best", fontsize=8)
+
+    fig.suptitle("Stage 8: TTA Cache Metrics by Variant")
 
     out_path = output_dir / "stage8_tta_cache_hits.png"
     plt.tight_layout()
@@ -586,8 +629,11 @@ def _summarize_run(all_stats: Dict[str, Dict[str, Dict]]) -> Dict[str, Any]:
     total_misses = 0.0
     total_unc_hits = 0.0
 
+    methods = _methods(all_stats)
+    tta_method = "ood_finetune_tta" if "ood_finetune_tta" in methods else ("tta" if "tta" in methods else methods[-1])
+
     for ds, modes in all_stats.items():
-        tta_stats = modes.get("tta", {})
+        tta_stats = modes.get(tta_method, {})
         n = float(_metric(tta_stats, "num_samples"))
         tput = _metric(tta_stats, "throughput_samples_per_sec")
         if np.isfinite(n) and np.isfinite(tput) and n > 0:

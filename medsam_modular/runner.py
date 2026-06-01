@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+import numpy as np
 import torch
 
 from medsam_modular.cache import PredictionCache
@@ -14,10 +15,11 @@ from medsam_modular.config import DEFAULT_IMAGE_SIZE, DEFAULT_MODEL_ID, DEFAULT_
 from medsam_modular.data import prepare_datasets_by_split
 from medsam_modular.eval import OODDetector, TTAPredictor, evaluate_dataset, evaluate_dataset_ood_only, evaluate_dataset_ood_tta
 from medsam_modular.io_async import get_global_async_writer, shutdown_global_async_writer
-from medsam_modular.model import load_medsam, load_state_dict_compat
+from medsam_modular.model import build_inputs_batch, load_medsam, load_state_dict_compat, predict_prob_masks_from_inputs
 from medsam_modular.train import maybe_finetune
 from medsam_modular.visualize import (
     build_comparison_table,
+    merge_stage8_stats,
     save_calibration_ece_chart,
     save_cache_throughput_trend_chart,
     save_cost_breakdown_chart,
@@ -241,6 +243,10 @@ def _run_stage8_plotting(
     top_chart_path = (project_root / "results") / chart_path.name
     stage8_paths: Dict[str, Path] = {}
     stage8_history_path: Optional[Path] = None
+    stage8_plot_stats = merge_stage8_stats(
+        full_summary=all_stats,
+        ood_finetuned_summary=all_stats_ood_finetuned,
+    )
 
     if not _all_have_baseline_stats(all_stats):
         print("\n[Stage 8/8] baseline stats 缺失，略過 comparison table/chart 產生。")
@@ -257,21 +263,21 @@ def _run_stage8_plotting(
             )
 
     with profiler.section_and_flush("stage.save_stage8_method_overview"):
-        stage8_paths["method_overview"] = save_method_overview_chart(all_stats, output_dir)
+        stage8_paths["method_overview"] = save_method_overview_chart(stage8_plot_stats, output_dir)
     with profiler.section_and_flush("stage.save_stage8_delta"):
-        stage8_paths["delta_vs_baseline"] = save_delta_chart(all_stats, output_dir)
+        stage8_paths["delta_vs_baseline"] = save_delta_chart(stage8_plot_stats, output_dir)
     with profiler.section_and_flush("stage.save_stage8_cost_breakdown"):
-        stage8_paths["cost_breakdown"] = save_cost_breakdown_chart(all_stats, output_dir)
+        stage8_paths["cost_breakdown"] = save_cost_breakdown_chart(stage8_plot_stats, output_dir)
     with profiler.section_and_flush("stage.save_stage8_frontier"):
-        stage8_paths["quality_throughput_frontier"] = save_quality_throughput_frontier(all_stats, output_dir)
+        stage8_paths["quality_throughput_frontier"] = save_quality_throughput_frontier(stage8_plot_stats, output_dir)
     with profiler.section_and_flush("stage.save_stage8_calibration"):
-        stage8_paths["calibration_ece"] = save_calibration_ece_chart(all_stats, output_dir)
+        stage8_paths["calibration_ece"] = save_calibration_ece_chart(stage8_plot_stats, output_dir)
     with profiler.section_and_flush("stage.save_stage8_ood_detection"):
-        stage8_paths["ood_detection_quality"] = save_ood_detection_chart(all_stats, output_dir)
+        stage8_paths["ood_detection_quality"] = save_ood_detection_chart(stage8_plot_stats, output_dir)
     with profiler.section_and_flush("stage.save_stage8_tta_cache"):
-        stage8_paths["tta_cache_hits"] = save_tta_cache_hit_chart(all_stats, output_dir)
+        stage8_paths["tta_cache_hits"] = save_tta_cache_hit_chart(stage8_plot_stats, output_dir)
     with profiler.section_and_flush("stage.save_stage8_cache_throughput_trend"):
-        trend_path, history_path = save_cache_throughput_trend_chart(all_stats, output_dir)
+        trend_path, history_path = save_cache_throughput_trend_chart(stage8_plot_stats, output_dir)
         stage8_paths["cache_throughput_trend"] = trend_path
         stage8_history_path = history_path
 
@@ -341,6 +347,65 @@ def _select_top_bottom_samples(results: List[Dict[str, Any]], top_k: int = 3, bo
     return out
 
 
+def _mask_has_positive_label(mask_like: Any) -> bool:
+    if mask_like is None:
+        return False
+    if isinstance(mask_like, torch.Tensor):
+        if int(mask_like.numel()) == 0:
+            return False
+        return bool((mask_like > 0.5).any().item())
+
+    try:
+        arr = np.asarray(mask_like)
+    except Exception:
+        return False
+    if int(arr.size) == 0:
+        return False
+    return bool(np.any(arr > 0.5))
+
+
+def _predict_prob_single(
+    *,
+    model: Any,
+    processor: Any,
+    tta_predictor: TTAPredictor,
+    image: Any,
+    bbox: Any,
+    device: str,
+    use_tta: bool,
+) -> torch.Tensor:
+    if hasattr(image, "size") and isinstance(getattr(image, "size"), tuple):
+        width, height = image.size
+    else:
+        arr = np.asarray(image)
+        height = int(arr.shape[0]) if arr.ndim >= 2 else 1024
+        width = int(arr.shape[1]) if arr.ndim >= 2 else 1024
+
+    if not isinstance(bbox, list) or len(bbox) < 4:
+        bbox = [0, 0, max(0, int(width) - 1), max(0, int(height) - 1)]
+
+    if use_tta:
+        prob_t, _ = tta_predictor.predict(
+            model=model,
+            processor=processor,
+            image=image,
+            bbox=bbox,
+            device=device,
+        )
+        return prob_t
+
+    inputs = build_inputs_batch(processor=processor, images=[image], input_boxes=[[bbox]])
+    prob_batch = predict_prob_masks_from_inputs(
+        model=model,
+        inputs=inputs,
+        device=device,
+        output_size=(int(height), int(width)),
+        use_amp=True,
+        inputs_already_on_device=False,
+    )[:, 0]
+    return prob_batch[0]
+
+
 def _generate_top_bottom_case_charts(
     *,
     output_dir: Path,
@@ -350,93 +415,143 @@ def _generate_top_bottom_case_charts(
     device: str,
     ood_detector: OODDetector,
     tta_predictor: TTAPredictor,
+    baseline_weight_path: str,
+    ood_finetuned_best_path: Path,
+    full_finetuned_best_path: Path,
+    resume_weight_path: str,
     file_tag: str,
 ) -> Dict[str, Path]:
     case_dir = output_dir / "case_comparisons"
     case_dir.mkdir(parents=True, exist_ok=True)
     out_paths: Dict[str, Path] = {}
 
-    for dataset_name, dataset in test_sets.items():
-        tta_results_path = output_dir / f"{dataset_name.lower()}_{file_tag}_tta_results.json"
-        ood_results_path = output_dir / f"{dataset_name.lower()}_{file_tag}_ood_results.json"
-        if not tta_results_path.exists():
+    variant_cfgs: List[Dict[str, Any]] = [
+        {
+            "variant_key": "baseline",
+            "result_suffix": "baseline_results.json",
+            "weight_path": (Path(baseline_weight_path) if baseline_weight_path else None),
+            "use_tta": False,
+        },
+        {
+            "variant_key": "ood_finetune",
+            "result_suffix": "ood_finetuned_ood_results.json",
+            "weight_path": ood_finetuned_best_path,
+            "use_tta": False,
+        },
+        {
+            "variant_key": "full_finetune",
+            "result_suffix": "full_finetuned_ood_results.json",
+            "weight_path": (
+                full_finetuned_best_path
+                if full_finetuned_best_path.exists()
+                else (Path(resume_weight_path) if resume_weight_path else None)
+            ),
+            "use_tta": False,
+        },
+        {
+            "variant_key": "ood_finetune_tta",
+            "result_suffix": "ood_finetuned_tta_results.json",
+            "weight_path": ood_finetuned_best_path,
+            "use_tta": True,
+        },
+    ]
+
+    for cfg in variant_cfgs:
+        variant_key = str(cfg["variant_key"])
+        weight_path = cfg.get("weight_path")
+        if weight_path is None or not Path(weight_path).exists():
             continue
 
-        try:
-            tta_results = json.loads(tta_results_path.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        if not isinstance(tta_results, list) or not tta_results:
-            continue
+        load_state_dict_compat(model, Path(weight_path), map_location=device)
 
-        ood_by_name: Dict[str, Dict[str, Any]] = {}
-        if ood_results_path.exists():
+        for dataset_name, dataset in test_sets.items():
+            result_path = output_dir / f"{dataset_name.lower()}_{cfg['result_suffix']}"
+            if not result_path.exists():
+                continue
+
             try:
-                ood_results = json.loads(ood_results_path.read_text(encoding="utf-8"))
-                if isinstance(ood_results, list):
-                    for r in ood_results:
-                        name = str(r.get("name", ""))
-                        if name:
-                            ood_by_name[name] = r
+                variant_results = json.loads(result_path.read_text(encoding="utf-8"))
             except Exception:
-                pass
-
-        picked = _select_top_bottom_samples(tta_results, top_k=3, bottom_k=3)
-        if not picked:
-            continue
-
-        name_to_idx = _dataset_name_to_index_map(dataset)
-        case_entries: List[Dict[str, Any]] = []
-        for row in picked:
-            sample_name = str(row.get("name", ""))
-            if sample_name not in name_to_idx:
+                continue
+            if not isinstance(variant_results, list) or not variant_results:
                 continue
 
-            sample = dataset[name_to_idx[sample_name]]
-            image = sample.get("image")
-            if image is None:
+            name_to_idx = _dataset_name_to_index_map(dataset)
+            valid_name_set: Set[str] = set()
+            for name, idx in name_to_idx.items():
+                try:
+                    sample = dataset[idx]
+                except Exception:
+                    continue
+                if _mask_has_positive_label(sample.get("mask")):
+                    valid_name_set.add(name)
+
+            filtered_results = [
+                r
+                for r in variant_results
+                if str(r.get("name", "")) in valid_name_set
+            ]
+            if not filtered_results:
                 continue
 
-            gt_mask = sample.get("mask")
-            if isinstance(gt_mask, torch.Tensor):
-                gt_mask_np = gt_mask.detach().cpu().numpy()
-            else:
-                gt_mask_np = gt_mask
+            picked = _select_top_bottom_samples(filtered_results, top_k=3, bottom_k=3)
+            if not picked:
+                continue
 
-            bbox = sample.get("bbox", None)
-            prob_t, _unc = tta_predictor.predict(
-                model=model,
-                processor=processor,
-                image=image,
-                bbox=bbox,
-                device=device,
+            case_entries: List[Dict[str, Any]] = []
+            for row in picked:
+                sample_name = str(row.get("name", ""))
+                if sample_name not in name_to_idx:
+                    continue
+
+                sample = dataset[name_to_idx[sample_name]]
+                image = sample.get("image")
+                if image is None:
+                    continue
+
+                gt_mask = sample.get("mask")
+                if not _mask_has_positive_label(gt_mask):
+                    continue
+                if isinstance(gt_mask, torch.Tensor):
+                    gt_mask_np = gt_mask.detach().cpu().numpy()
+                else:
+                    gt_mask_np = gt_mask
+
+                bbox = sample.get("bbox", None)
+                prob_t = _predict_prob_single(
+                    model=model,
+                    processor=processor,
+                    tta_predictor=tta_predictor,
+                    image=image,
+                    bbox=bbox,
+                    device=device,
+                    use_tta=bool(cfg.get("use_tta", False)),
+                )
+                pred_mask_np = (prob_t > 0.5).to(torch.uint8).detach().cpu().numpy()
+                ood_pred = ood_detector.detect_tensor(prob_t)
+
+                case_entries.append(
+                    {
+                        "rank_label": row.get("rank_label", ""),
+                        "name": sample_name,
+                        "dice": float(row.get("dice", float("nan"))),
+                        "ood_score": float(ood_pred.get("ood_score", 0.0)),
+                        "is_ood": bool(ood_pred.get("is_ood", False)),
+                        "image": image,
+                        "gt_mask": gt_mask_np,
+                        "bbox": bbox,
+                        "pred_mask": pred_mask_np,
+                    }
+                )
+
+            out_path = save_top_bottom_case_comparison_chart(
+                dataset_name=dataset_name,
+                case_entries=case_entries,
+                output_dir=case_dir,
+                file_tag=f"{file_tag}_{variant_key}",
             )
-            pred_mask_np = (prob_t > 0.5).to(torch.uint8).detach().cpu().numpy()
-            ood_pred = ood_detector.detect_tensor(prob_t)
-            ood_row = ood_by_name.get(sample_name, {})
-
-            case_entries.append(
-                {
-                    "rank_label": row.get("rank_label", ""),
-                    "name": sample_name,
-                    "dice": float(row.get("dice", float("nan"))),
-                    "ood_score": float(ood_pred.get("ood_score", ood_row.get("ood_score", 0.0))),
-                    "is_ood": bool(ood_pred.get("is_ood", ood_row.get("is_ood", False))),
-                    "image": image,
-                    "gt_mask": gt_mask_np,
-                    "bbox": bbox,
-                    "pred_mask": pred_mask_np,
-                }
-            )
-
-        out_path = save_top_bottom_case_comparison_chart(
-            dataset_name=dataset_name,
-            case_entries=case_entries,
-            output_dir=case_dir,
-            file_tag=file_tag,
-        )
-        if out_path is not None:
-            out_paths[dataset_name] = out_path
+            if out_path is not None:
+                out_paths[f"{dataset_name}_{variant_key}"] = out_path
 
     return out_paths
 
@@ -475,6 +590,59 @@ def _save_train_test_ood_summary(
             "test_ood_ratio": float(test_ood / max(1, test_n)),
         }
 
+    ood_finetune_stats_path = output_dir / "ood_finetune_stats.json"
+    ood_finetune_stats: Dict[str, Any] = {}
+    if ood_finetune_stats_path.exists():
+        try:
+            loaded = json.loads(ood_finetune_stats_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                ood_finetune_stats = loaded
+        except Exception:
+            ood_finetune_stats = {}
+
+    total_train_ood = int(sum(int((train_ood_summary.get(ds, {}) or {}).get("num_ood", 0) or 0) for ds in datasets))
+    total_train_samples = int(sum(int((train_ood_summary.get(ds, {}) or {}).get("num_samples", 0) or 0) for ds in datasets))
+    ood_ft_total_sec = float(ood_finetune_stats.get("total_finetune_sec", 0.0) or 0.0)
+    ood_ft_epochs_ran = int(ood_finetune_stats.get("epochs_ran", 0) or 0)
+    if ood_ft_epochs_ran <= 0:
+        hist = ood_finetune_stats.get("history", {})
+        if isinstance(hist, dict) and isinstance(hist.get("val_loss"), list):
+            ood_ft_epochs_ran = int(len(hist.get("val_loss", [])))
+
+    ood_ft_convergence_epoch = int(ood_finetune_stats.get("convergence_epoch", 0) or 0)
+    if ood_ft_convergence_epoch <= 0:
+        hist = ood_finetune_stats.get("history", {})
+        val_loss_hist = hist.get("val_loss", []) if isinstance(hist, dict) else []
+        if isinstance(val_loss_hist, list) and val_loss_hist:
+            try:
+                ood_ft_convergence_epoch = int(np.argmin(np.asarray(val_loss_hist, dtype=np.float64))) + 1
+            except Exception:
+                ood_ft_convergence_epoch = 0
+
+    if ood_ft_total_sec <= 0:
+        epoch_durations = ood_finetune_stats.get("epoch_durations_sec", [])
+        if isinstance(epoch_durations, list) and epoch_durations:
+            try:
+                ood_ft_total_sec = float(np.sum(np.asarray(epoch_durations, dtype=np.float64)))
+            except Exception:
+                ood_ft_total_sec = 0.0
+    ood_ft_avg_epoch_sec = float(
+        ood_finetune_stats.get("avg_epoch_sec", (ood_ft_total_sec / max(1, ood_ft_epochs_ran)))
+        or 0.0
+    )
+    avg_sec_per_ood_sample = float(ood_ft_total_sec / max(1, total_train_ood))
+
+    payload["__overall__"] = {
+        "ood_train_samples_total": total_train_ood,
+        "train_samples_total": total_train_samples,
+        "ood_finetune_train_samples": int(ood_finetune_stats.get("train_samples", 0) or 0),
+        "ood_finetune_epochs_ran": ood_ft_epochs_ran,
+        "ood_finetune_convergence_epoch": ood_ft_convergence_epoch,
+        "ood_finetune_avg_epoch_sec": ood_ft_avg_epoch_sec,
+        "ood_finetune_total_sec": ood_ft_total_sec,
+        "ood_finetune_avg_sec_per_ood_sample": avg_sec_per_ood_sample,
+    }
+
     json_path = output_dir / "ood_train_test_counts.json"
     _save_json(json_path, payload)
 
@@ -489,6 +657,10 @@ def _save_train_test_ood_summary(
             "test_samples",
             "test_ood",
             "test_ood_ratio",
+            "ood_finetune_epochs_ran",
+            "ood_finetune_convergence_epoch",
+            "ood_finetune_avg_epoch_sec",
+            "ood_finetune_avg_sec_per_ood_sample",
         ])
         for dataset_name in datasets:
             row = payload[dataset_name]
@@ -500,6 +672,10 @@ def _save_train_test_ood_summary(
                 row["test_samples"],
                 row["test_ood"],
                 f"{float(row['test_ood_ratio']):.6f}",
+                ood_ft_epochs_ran,
+                ood_ft_convergence_epoch,
+                f"{ood_ft_avg_epoch_sec:.6f}",
+                f"{avg_sec_per_ood_sample:.6f}",
             ])
 
     chart_path = save_ood_train_test_count_chart(chart_in, output_dir)
@@ -530,7 +706,7 @@ def _build_train_config(
         "device": device,
         "output_dir": output_dir,
         "resume_weight_path": resume_weight_path,
-        "skip_finetune": _env("MEDSAM_SKIP_FINETUNE"),
+        "skip_finetune": "0",
         "finetune_train_backbone": _env("MEDSAM_FINETUNE_TRAIN_BACKBONE"),
         "finetune_epochs": _env("MEDSAM_FINETUNE_EPOCHS"),
         "finetune_batch": _env("MEDSAM_FINETUNE_BATCH"),
@@ -630,6 +806,62 @@ def _detect_ood_train_subset(
     return subset_by_name, summary
 
 
+def _load_cached_ood_train_subset(
+    *,
+    output_dir: Path,
+    dataset_names: List[str],
+) -> Tuple[Dict[str, Set[str]], Dict[str, Any]]:
+    subset_by_name: Dict[str, Set[str]] = {name: set() for name in dataset_names}
+    summary: Dict[str, Any] = {}
+
+    summary_path = output_dir / "train_ood_subset_summary.json"
+    if summary_path.exists():
+        try:
+            payload = json.loads(summary_path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                summary = payload
+        except Exception:
+            summary = {}
+
+    for dataset_name in dataset_names:
+        res_path = output_dir / f"{dataset_name.lower()}_train_ood_detect_results.json"
+        if not res_path.exists():
+            continue
+        try:
+            results = json.loads(res_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(results, list):
+            continue
+
+        names = {
+            str(r.get("name", ""))
+            for r in results
+            if bool(r.get("is_ood", False)) and str(r.get("name", ""))
+        }
+        subset_by_name[dataset_name] = names
+
+        row = summary.get(dataset_name, {}) if isinstance(summary, dict) else {}
+        if not isinstance(row, dict):
+            row = {}
+        if "num_samples" not in row:
+            row["num_samples"] = int(len(results))
+        if "num_ood" not in row:
+            row["num_ood"] = int(len(names))
+        row["ood_ratio"] = float(int(row.get("num_ood", 0)) / max(1, int(row.get("num_samples", 0))))
+        summary[dataset_name] = row
+
+    for dataset_name in dataset_names:
+        if dataset_name not in summary:
+            summary[dataset_name] = {
+                "num_samples": 0,
+                "num_ood": int(len(subset_by_name.get(dataset_name, set()))),
+                "ood_ratio": 0.0,
+            }
+
+    return subset_by_name, summary
+
+
 def _evaluate_test_ood_tta(
     *,
     model: Any,
@@ -715,46 +947,6 @@ def main() -> None:
     baseline_weight_path = _resolve_baseline_weight_path(project_root)
     resume_weight_path = _resolve_resume_weight_path(project_root, output_dir)
     profiler = _NullProfiler()
-
-    run_only_stage8 = _env_bool("MEDSAM_RUN_ONLY_STAGE8", False)
-    if run_only_stage8:
-        print("\n[Mode] stage8-only enabled: load summary and generate plots only.")
-        summary_path = output_dir / "summary.json"
-        summary_ood_finetuned_path = output_dir / "summary_ood_finetuned.json"
-        if not summary_path.exists():
-            raise RuntimeError(f"Stage8-only requires summary file: {summary_path}")
-        all_stats = json.loads(summary_path.read_text(encoding="utf-8"))
-        if summary_ood_finetuned_path.exists():
-            all_stats_ood_finetuned = json.loads(summary_ood_finetuned_path.read_text(encoding="utf-8"))
-        else:
-            all_stats_ood_finetuned = {}
-        if not isinstance(all_stats, dict) or not all_stats:
-            raise RuntimeError(f"Invalid summary content for Stage8-only: {summary_path}")
-
-        print("\n[Stage 8/8] 產生 comparison table / chart ...")
-        comparison_path, chart_path, top_chart_path, stage8_paths, stage8_history_path = _run_stage8_plotting(
-            all_stats=all_stats,
-            all_stats_ood_finetuned=all_stats_ood_finetuned,
-            output_dir=output_dir,
-            project_root=project_root,
-            profiler=profiler,
-        )
-
-        print("\nOutputs:")
-        if comparison_path.exists():
-            print(f"- comparison_table: {comparison_path}")
-        if chart_path.exists():
-            print(f"- comparison_chart: {chart_path}")
-            print(f"- comparison_chart_top: {top_chart_path}")
-        for key in sorted(stage8_paths.keys()):
-            path = stage8_paths[key]
-            if path.exists():
-                print(f"- stage8_{key}: {path}")
-        if stage8_history_path is not None and stage8_history_path.exists():
-            print(f"- stage8_run_history: {stage8_history_path}")
-        print(f"- summary: {summary_path}")
-        shutdown_global_async_writer()
-        return
 
     print("=" * 80)
     print("MedSAM Modular Runner")
@@ -844,33 +1036,33 @@ def main() -> None:
     print(f"  Augmentations: {tta_predictor.augmentations}")
     print(f"  Number of augmentations: {len(tta_predictor.augmentations)}")
 
-    finetune_only = _env_bool("MEDSAM_FINETUNE_ONLY", False)
-    skip_finetune = _env_bool("MEDSAM_SKIP_FINETUNE", True)
-    run_only_stage7 = _env_bool("MEDSAM_RUN_ONLY_STAGE7", False)
-    if run_only_stage7:
-        skip_finetune = True
-        finetune_only = False
-        print("\n[Mode] stage7-only enabled: skip Stage 3~6 and run Stage 7 only (Stage 8 plotting skipped).")
+    run_stage3_detect_train_ood = _env_bool("MEDSAM_RUN_STAGE3_DETECT_TRAIN_OOD", True)
+    run_stage4_ood_finetune = _env_bool("MEDSAM_RUN_STAGE4_OOD_FINETUNE", True)
+    run_stage5_full_finetune = _env_bool("MEDSAM_RUN_STAGE5_FULL_FINETUNE", True)
+    run_stage6_baseline_eval = _env_bool("MEDSAM_RUN_STAGE6_BASELINE_EVAL", True)
+    run_stage7_eval_ood_finetuned = _env_bool("MEDSAM_RUN_STAGE7_EVAL_OOD_FINETUNED", True)
+    run_stage7_eval_full_finetuned = _env_bool("MEDSAM_RUN_STAGE7_EVAL_FULL_FINETUNED", True)
+    run_stage8_plotting = _env_bool("MEDSAM_RUN_STAGE8_PLOTTING", True)
+
+    print("\n=== Pipeline Stage Switches ===")
+    print(f"  Stage3 detect train OOD       : {run_stage3_detect_train_ood}")
+    print(f"  Stage4 OOD finetune           : {run_stage4_ood_finetune}")
+    print(f"  Stage5 full finetune          : {run_stage5_full_finetune}")
+    print(f"  Stage6 baseline eval          : {run_stage6_baseline_eval}")
+    print(f"  Stage7 eval OOD-finetuned     : {run_stage7_eval_ood_finetuned}")
+    print(f"  Stage7 eval full-finetuned    : {run_stage7_eval_full_finetuned}")
+    print(f"  Stage8 plotting               : {run_stage8_plotting}")
 
     split_root = _resolve_split_root(project_root)
 
     ood_subset_by_name: Dict[str, Set[str]] = {}
     ood_subset_summary: Dict[str, Any] = {}
+    total_ood = 0
+    total_all = 0
     ood_finetuned_best_path = output_dir / "medsam_OOD_finetuned_best.pth"
     full_finetuned_best_path = output_dir / "medsam_finetuned_best.pth"
 
-    if run_only_stage7:
-        existing_train_ood_summary = output_dir / "train_ood_subset_summary.json"
-        if existing_train_ood_summary.exists():
-            try:
-                ood_subset_summary = json.loads(existing_train_ood_summary.read_text(encoding="utf-8"))
-                if isinstance(ood_subset_summary, dict):
-                    for ds_name, row in ood_subset_summary.items():
-                        if isinstance(row, dict) and int(row.get("num_ood", 0)) > 0:
-                            ood_subset_by_name[str(ds_name)] = set()
-            except Exception:
-                ood_subset_summary = {}
-    else:
+    if run_stage3_detect_train_ood:
         print("\n[Stage 3/8] baseline 偵測 train split OOD ...")
         ood_subset_by_name, ood_subset_summary = _detect_ood_train_subset(
             model=model,
@@ -888,40 +1080,54 @@ def main() -> None:
         total_ood = int(sum(len(v) for v in ood_subset_by_name.values()))
         total_all = int(sum(int(v.get("num_samples", 0)) for v in ood_subset_summary.values()))
         print(f"  OOD train subset: {total_ood}/{total_all} samples")
-
-    if not skip_finetune:
-        if total_ood > 0:
-            print("\n[Stage 4/8] OOD 子集微調（使用 TTA 增強資料）...")
-            if baseline_weight_path and Path(baseline_weight_path).exists():
-                load_state_dict_compat(model, Path(baseline_weight_path), map_location=device)
-
-            t2 = time.time()
-            with profiler.section_and_flush("stage.ood_finetune"):
-                model = maybe_finetune(
-                    model=model,
-                    processor=processor,
-                    config=_build_train_config(
-                        project_root=project_root,
-                        data_paths=data_paths,
-                        image_size=image_size,
-                        device=device,
-                        output_dir=output_dir,
-                        extra={
-                            "skip_finetune": "0",
-                            "resume_weight_path": "",
-                            "finetune_subset_by_name": {k: sorted(v) for k, v in ood_subset_by_name.items()},
-                            "finetune_use_tta_augment": True,
-                            "finetune_tta_augmentations": list(tta_predictor.augmentations),
-                            "finetune_weight_prefix": "medsam_OOD_finetuned",
-                            "finetune_stats_prefix": "ood_finetune",
-                        },
-                    ),
-                    profiler=profiler,
-                )
-            print(f"  OOD 微調耗時: {time.time()-t2:.1f}s")
+    else:
+        print("\n[Stage 3/8] 依設定略過 train OOD 偵測，嘗試載入既有結果 ...")
+        ood_subset_by_name, ood_subset_summary = _load_cached_ood_train_subset(
+            output_dir=output_dir,
+            dataset_names=list(test_sets.keys()),
+        )
+        total_ood = int(sum(len(v) for v in ood_subset_by_name.values()))
+        total_all = int(sum(int((ood_subset_summary.get(k, {}) or {}).get("num_samples", 0)) for k in test_sets.keys()))
+        if total_all > 0:
+            print(f"  已載入 cached OOD subset: {total_ood}/{total_all} samples")
         else:
-            print("\n[Stage 4/8] OOD 子集為空，略過 OOD 微調。")
+            print("  ⚠️ 找不到可用 cached OOD subset。")
 
+    if run_stage4_ood_finetune and total_ood > 0:
+        print("\n[Stage 4/8] OOD 子集微調（使用 TTA 增強資料）...")
+        if baseline_weight_path and Path(baseline_weight_path).exists():
+            load_state_dict_compat(model, Path(baseline_weight_path), map_location=device)
+
+        t2 = time.time()
+        with profiler.section_and_flush("stage.ood_finetune"):
+            model = maybe_finetune(
+                model=model,
+                processor=processor,
+                config=_build_train_config(
+                    project_root=project_root,
+                    data_paths=data_paths,
+                    image_size=image_size,
+                    device=device,
+                    output_dir=output_dir,
+                    extra={
+                        "skip_finetune": "0",
+                        "resume_weight_path": "",
+                        "finetune_subset_by_name": {k: sorted(v) for k, v in ood_subset_by_name.items()},
+                        "finetune_use_tta_augment": True,
+                        "finetune_tta_augmentations": list(tta_predictor.augmentations),
+                        "finetune_weight_prefix": "medsam_OOD_finetuned",
+                        "finetune_stats_prefix": "ood_finetune",
+                    },
+                ),
+                profiler=profiler,
+            )
+        print(f"  OOD 微調耗時: {time.time()-t2:.1f}s")
+    elif run_stage4_ood_finetune:
+        print("\n[Stage 4/8] OOD 子集為空，略過 OOD 微調。")
+    else:
+        print("\n[Stage 4/8] 依設定略過 OOD 微調。")
+
+    if run_stage5_full_finetune:
         print("\n[Stage 5/8] 全資料微調（輸出 medsam_finetuned_best.pth）...")
         if ood_finetuned_best_path.exists():
             load_state_dict_compat(model, ood_finetuned_best_path, map_location=device)
@@ -954,23 +1160,11 @@ def main() -> None:
             )
         print(f"  全資料微調耗時: {time.time()-t2:.1f}s")
     else:
-        print("\n[Stage 3/8] 已設定 skip_finetune，略過 OOD 與全資料微調。")
-
-    if finetune_only:
-        print("\n[Stage 6/8] 已啟用 finetune-only，略過後續 baseline / OOD / TTA 評估。")
-        shutdown_global_async_writer()
-        return
+        print("\n[Stage 5/8] 依設定略過全資料微調。")
 
     baseline_all_results: Dict[str, Any] = {}
     baseline_all_stats: Dict[str, Dict[str, Any]] = {}
-    if run_only_stage7:
-        print("\n[Stage 6/8] stage7-only：略過 baseline 評估，嘗試載入既有 baseline stats ...")
-        baseline_all_stats = _load_existing_baseline_stats(test_sets=test_sets, output_dir=output_dir)
-        if baseline_all_stats:
-            print(f"  已載入 baseline stats: {', '.join(sorted(baseline_all_stats.keys()))}")
-        else:
-            print("  ⚠️ 找不到 baseline stats，Stage 7 仍會執行，但 comparison 可能不完整。")
-    else:
+    if run_stage6_baseline_eval:
         print("\n[Stage 6/8] 基線評估 (vit_b) ...")
         t_eval_start = time.time()
         baseline_weight = Path(baseline_weight_path) if baseline_weight_path else None
@@ -1008,9 +1202,16 @@ def main() -> None:
             print(f"  [{dataset_name}] 完成  ({time.time()-t_ds:.1f}s)  baseline_dice={_fmt_metric(baseline_dice)}")
             _save_json(output_dir / f"{dataset_name.lower()}_baseline_results.json", baseline_results)
             _save_json(output_dir / f"{dataset_name.lower()}_baseline_stats.json", baseline_stats)
+    else:
+        print("\n[Stage 6/8] 依設定略過 baseline 評估，嘗試載入既有 baseline stats ...")
+        baseline_all_stats = _load_existing_baseline_stats(test_sets=test_sets, output_dir=output_dir)
+        if baseline_all_stats:
+            print(f"  已載入 baseline stats: {', '.join(sorted(baseline_all_stats.keys()))}")
+        else:
+            print("  ⚠️ 找不到 baseline stats；若啟用 Stage 7/8，comparison 可能不完整。")
 
     all_stats_ood_finetuned: Dict[str, Dict[str, Dict[str, Any]]] = {}
-    if ood_finetuned_best_path.exists():
+    if run_stage7_eval_ood_finetuned and ood_finetuned_best_path.exists():
         print("\n[Stage 7/8] 測試 OOD finetuned 模型：先 OOD 判斷，再 TTA inference ...")
         load_state_dict_compat(model, ood_finetuned_best_path, map_location=device)
         print(f"  📌 OOD finetuned 評估權重: {ood_finetuned_best_path}")
@@ -1028,63 +1229,84 @@ def main() -> None:
             file_tag="ood_finetuned",
         )
         _save_json(output_dir / "summary_ood_finetuned.json", all_stats_ood_finetuned)
-    else:
+    elif run_stage7_eval_ood_finetuned:
         print("\n[Stage 7/8] 找不到 medsam_OOD_finetuned_best.pth，略過 OOD finetuned 模型測試。")
-
-    if skip_finetune and resume_weight_path and Path(resume_weight_path).exists():
-        load_state_dict_compat(model, Path(resume_weight_path), map_location=device)
-        print(f"  📌 評估使用權重: {resume_weight_path}")
-    elif full_finetuned_best_path.exists():
-        load_state_dict_compat(model, full_finetuned_best_path, map_location=device)
-        print(f"  📌 評估使用權重: {full_finetuned_best_path}")
     else:
-        print("  📌 評估使用權重: <finetuned model in-memory>")
+        print("\n[Stage 7/8] 依設定略過 OOD finetuned 模型測試。")
 
-    print("\n[Stage 7/8] 測試全資料 finetuned 模型：OOD 判斷 + TTA inference ...")
-    all_stats = _evaluate_test_ood_tta(
-        model=model,
-        processor=processor,
-        device=device,
-        test_sets=test_sets,
-        ood_detector=ood_detector,
-        tta_predictor=tta_predictor,
-        pred_cache=finetuned_pred_cache,
-        profiler=profiler,
-        output_dir=output_dir,
-        baseline_all_stats=baseline_all_stats,
-        file_tag="full_finetuned",
-    )
+    all_stats: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    if run_stage7_eval_full_finetuned:
+        if full_finetuned_best_path.exists():
+            load_state_dict_compat(model, full_finetuned_best_path, map_location=device)
+            print(f"  📌 評估使用權重: {full_finetuned_best_path}")
+        elif resume_weight_path and Path(resume_weight_path).exists():
+            load_state_dict_compat(model, Path(resume_weight_path), map_location=device)
+            print(f"  📌 評估使用權重: {resume_weight_path}")
+        else:
+            print("  📌 評估使用權重: <finetuned model in-memory>")
 
-    # 維持相容輸出檔名（預設指向 full_finetuned 評估結果）
-    for dataset_name in all_stats:
-        src_ood = output_dir / f"{dataset_name.lower()}_full_finetuned_ood_results.json"
-        src_ood_stats = output_dir / f"{dataset_name.lower()}_full_finetuned_ood_stats.json"
-        src_tta = output_dir / f"{dataset_name.lower()}_full_finetuned_tta_results.json"
-        src_tta_stats = output_dir / f"{dataset_name.lower()}_full_finetuned_tta_stats.json"
-        if src_ood.exists():
-            shutil.copy2(src_ood, output_dir / f"{dataset_name.lower()}_ood_results.json")
-        if src_ood_stats.exists():
-            shutil.copy2(src_ood_stats, output_dir / f"{dataset_name.lower()}_ood_stats.json")
-        if src_tta.exists():
-            shutil.copy2(src_tta, output_dir / f"{dataset_name.lower()}_tta_results.json")
-        if src_tta_stats.exists():
-            shutil.copy2(src_tta_stats, output_dir / f"{dataset_name.lower()}_tta_stats.json")
+        print("\n[Stage 7/8] 測試全資料 finetuned 模型：OOD 判斷 + TTA inference ...")
+        all_stats = _evaluate_test_ood_tta(
+            model=model,
+            processor=processor,
+            device=device,
+            test_sets=test_sets,
+            ood_detector=ood_detector,
+            tta_predictor=tta_predictor,
+            pred_cache=finetuned_pred_cache,
+            profiler=profiler,
+            output_dir=output_dir,
+            baseline_all_stats=baseline_all_stats,
+            file_tag="full_finetuned",
+        )
+
+        # 維持相容輸出檔名（預設指向 full_finetuned 評估結果）
+        for dataset_name in all_stats:
+            src_ood = output_dir / f"{dataset_name.lower()}_full_finetuned_ood_results.json"
+            src_ood_stats = output_dir / f"{dataset_name.lower()}_full_finetuned_ood_stats.json"
+            src_tta = output_dir / f"{dataset_name.lower()}_full_finetuned_tta_results.json"
+            src_tta_stats = output_dir / f"{dataset_name.lower()}_full_finetuned_tta_stats.json"
+            if src_ood.exists():
+                shutil.copy2(src_ood, output_dir / f"{dataset_name.lower()}_ood_results.json")
+            if src_ood_stats.exists():
+                shutil.copy2(src_ood_stats, output_dir / f"{dataset_name.lower()}_ood_stats.json")
+            if src_tta.exists():
+                shutil.copy2(src_tta, output_dir / f"{dataset_name.lower()}_tta_results.json")
+            if src_tta_stats.exists():
+                shutil.copy2(src_tta_stats, output_dir / f"{dataset_name.lower()}_tta_stats.json")
+
+        _save_json(output_dir / "summary.json", all_stats)
+    else:
+        print("\n[Stage 7/8] 依設定略過 full finetuned 模型測試。")
+        summary_path = output_dir / "summary.json"
+        if summary_path.exists():
+            try:
+                loaded_summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                if isinstance(loaded_summary, dict):
+                    all_stats = loaded_summary
+                    print(f"  已載入既有 summary: {summary_path}")
+            except Exception:
+                pass
 
     if not all_stats:
-        raise RuntimeError("No test datasets were loaded. Check dataset paths and split files.")
+        raise RuntimeError("No evaluation summary available. Enable Stage 7 full-finetuned eval or provide existing summary.json.")
 
-    _save_json(output_dir / "summary.json", all_stats)
-
-    case_chart_paths = _generate_top_bottom_case_charts(
-        output_dir=output_dir,
-        test_sets=test_sets,
-        model=model,
-        processor=processor,
-        device=device,
-        ood_detector=ood_detector,
-        tta_predictor=tta_predictor,
-        file_tag="full_finetuned",
-    )
+    case_chart_paths: Dict[str, Path] = {}
+    if run_stage7_eval_full_finetuned:
+        case_chart_paths = _generate_top_bottom_case_charts(
+            output_dir=output_dir,
+            test_sets=test_sets,
+            model=model,
+            processor=processor,
+            device=device,
+            ood_detector=ood_detector,
+            tta_predictor=tta_predictor,
+            baseline_weight_path=baseline_weight_path,
+            ood_finetuned_best_path=ood_finetuned_best_path,
+            full_finetuned_best_path=full_finetuned_best_path,
+            resume_weight_path=resume_weight_path,
+            file_tag="4way",
+        )
 
     ood_summary_json, ood_summary_csv, ood_summary_chart = _save_train_test_ood_summary(
         output_dir=output_dir,
@@ -1098,8 +1320,8 @@ def main() -> None:
     stage8_paths: Dict[str, Path] = {}
     stage8_history_path: Optional[Path] = None
 
-    if run_only_stage7:
-        print("\n[Stage 8/8] stage7-only：略過繪圖階段。")
+    if not run_stage8_plotting:
+        print("\n[Stage 8/8] 依設定略過繪圖階段。")
     else:
         print("\n[Stage 8/8] 產生 comparison table / chart ...")
         comparison_path, chart_path, top_chart_path, stage8_paths, stage8_history_path = _run_stage8_plotting(

@@ -54,5 +54,13 @@
     "tta_cache_misses": 0,
     "tta_unc_cache_hits": 2255,
     "tta_cache_hit_ratio": 1.0
+  },
+  {
+    "timestamp": "2026-06-01T05:43:26Z",
+    "tta_throughput_samples_per_sec": 19.96921719136214,
+    "tta_cache_hits": 2255,
+    "tta_cache_misses": 0,
+    "tta_unc_cache_hits": 2255,
+    "tta_cache_hit_ratio": 1.0
   }
 ]

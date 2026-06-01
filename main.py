@@ -32,7 +32,6 @@ CLI_SETTING_KEYS = {
     "require_compile",
     "compile_dynamic",
     "compile_warmup_batches",
-    "skip_finetune",
     "finetune_train_backbone",
     "finetune_epochs",
     "finetune_batch",
@@ -48,10 +47,14 @@ CLI_SETTING_KEYS = {
     "finetune_grad_clip",
     "finetune_workers",
     "finetune_max_samples",
-    "finetune_only",
     "finetune_use_fused_adamw",
-    "run_only_stage7",
-    "run_only_stage8",
+    "run_stage3_detect_train_ood",
+    "run_stage4_ood_finetune",
+    "run_stage5_full_finetune",
+    "run_stage6_baseline_eval",
+    "run_stage7_eval_ood_finetuned",
+    "run_stage7_eval_full_finetuned",
+    "run_stage8_plotting",
     "ood_threshold",
     "ood_enable_collapse_detection",
     "ood_collapse_max_prob_threshold",
@@ -190,18 +193,6 @@ def _parse_args(defaults: dict, config_path: Path) -> argparse.Namespace:
 
     # ── 訓練（微調） ──────────────────────────────────────────────────────────
     train_group = parser.add_argument_group("訓練（微調）")
-    train_group.add_argument(
-        "--skip-finetune",
-        action="store_true",
-        dest="skip_finetune",
-        help="跳過微調，直接使用現有權重評估（預設開啟）",
-    )
-    train_group.add_argument(
-        "--finetune",
-        dest="skip_finetune",
-        action="store_false",
-        help="執行微調（關閉 --skip-finetune）",
-    )
     train_group.add_argument("--train-backbone",  action="store_true", dest="finetune_train_backbone", help="微調時同時訓練 image encoder backbone")
     train_group.add_argument("--epochs",          type=int,   default=defaults["finetune_epochs"], dest="finetune_epochs", metavar="N",   help="微調總 epoch 數")
     train_group.add_argument("--batch-size",      type=int,   default=defaults["finetune_batch"], dest="finetune_batch", metavar="N",   help="訓練批次大小")
@@ -217,24 +208,21 @@ def _parse_args(defaults: dict, config_path: Path) -> argparse.Namespace:
     train_group.add_argument("--grad-clip",       type=float, default=defaults["finetune_grad_clip"], dest="finetune_grad_clip", metavar="V",   help="梯度裁剪最大範數")
     train_group.add_argument("--workers",         type=int,   default=defaults["finetune_workers"], dest="finetune_workers", metavar="N",   help="DataLoader worker 數量（0=自動）")
     train_group.add_argument("--max-samples",     type=int,   default=defaults["finetune_max_samples"], dest="finetune_max_samples", metavar="N",   help="每個資料集最多取樣數（0 = 不限）")
-    train_group.add_argument(
-        "--finetune-only",
-        action="store_true",
-        dest="finetune_only",
-        help="只執行微調並輸出權重，不進行後續測試評估",
-    )
-    train_group.add_argument(
-        "--stage7-only",
-        action="store_true",
-        dest="run_only_stage7",
-        help="只執行 Stage 7/8 測試（略過 Stage 3~6 與 Stage 8 繪圖）",
-    )
-    train_group.add_argument(
-        "--stage8-only",
-        action="store_true",
-        dest="run_only_stage8",
-        help="只執行 Stage 8/8 繪圖（讀取既有 summary.json，不做推論）",
-    )
+    pipeline_group = parser.add_argument_group("Pipeline 開關（可分步執行）")
+    pipeline_group.add_argument("--run-stage3-detect-train-ood", action="store_true", dest="run_stage3_detect_train_ood", help="執行 Stage 3：偵測 train split OOD")
+    pipeline_group.add_argument("--skip-stage3-detect-train-ood", action="store_false", dest="run_stage3_detect_train_ood", help="略過 Stage 3：偵測 train split OOD")
+    pipeline_group.add_argument("--run-stage4-ood-finetune", action="store_true", dest="run_stage4_ood_finetune", help="執行 Stage 4：OOD 子集微調")
+    pipeline_group.add_argument("--skip-stage4-ood-finetune", action="store_false", dest="run_stage4_ood_finetune", help="略過 Stage 4：OOD 子集微調")
+    pipeline_group.add_argument("--run-stage5-full-finetune", action="store_true", dest="run_stage5_full_finetune", help="執行 Stage 5：全資料微調")
+    pipeline_group.add_argument("--skip-stage5-full-finetune", action="store_false", dest="run_stage5_full_finetune", help="略過 Stage 5：全資料微調")
+    pipeline_group.add_argument("--run-stage6-baseline-eval", action="store_true", dest="run_stage6_baseline_eval", help="執行 Stage 6：baseline 評估")
+    pipeline_group.add_argument("--skip-stage6-baseline-eval", action="store_false", dest="run_stage6_baseline_eval", help="略過 Stage 6：baseline 評估")
+    pipeline_group.add_argument("--run-stage7-eval-ood-finetuned", action="store_true", dest="run_stage7_eval_ood_finetuned", help="執行 Stage 7：OOD finetuned 模型評估")
+    pipeline_group.add_argument("--skip-stage7-eval-ood-finetuned", action="store_false", dest="run_stage7_eval_ood_finetuned", help="略過 Stage 7：OOD finetuned 模型評估")
+    pipeline_group.add_argument("--run-stage7-eval-full-finetuned", action="store_true", dest="run_stage7_eval_full_finetuned", help="執行 Stage 7：full finetuned 模型評估")
+    pipeline_group.add_argument("--skip-stage7-eval-full-finetuned", action="store_false", dest="run_stage7_eval_full_finetuned", help="略過 Stage 7：full finetuned 模型評估")
+    pipeline_group.add_argument("--run-stage8-plotting", action="store_true", dest="run_stage8_plotting", help="執行 Stage 8：繪圖與比較表")
+    pipeline_group.add_argument("--skip-stage8-plotting", action="store_false", dest="run_stage8_plotting", help="略過 Stage 8：繪圖與比較表")
     fused_group = train_group.add_mutually_exclusive_group()
     fused_group.add_argument("--use-fused-adamw", action="store_true", dest="finetune_use_fused_adamw", help="啟用 fused AdamW")
     fused_group.add_argument("--no-fused-adamw", action="store_false", dest="finetune_use_fused_adamw", help="停用 fused AdamW（在某些環境下需要）")
@@ -423,12 +411,15 @@ def _parse_args(defaults: dict, config_path: Path) -> argparse.Namespace:
     parser.set_defaults(
         require_compile=bool(defaults["require_compile"]),
         compile_dynamic=defaults["compile_dynamic"],
-        skip_finetune=bool(defaults["skip_finetune"]),
         finetune_train_backbone=bool(defaults["finetune_train_backbone"]),
-        finetune_only=bool(defaults["finetune_only"]),
         finetune_use_fused_adamw=bool(defaults["finetune_use_fused_adamw"]),
-        run_only_stage7=bool(defaults["run_only_stage7"]),
-        run_only_stage8=bool(defaults["run_only_stage8"]),
+        run_stage3_detect_train_ood=bool(defaults["run_stage3_detect_train_ood"]),
+        run_stage4_ood_finetune=bool(defaults["run_stage4_ood_finetune"]),
+        run_stage5_full_finetune=bool(defaults["run_stage5_full_finetune"]),
+        run_stage6_baseline_eval=bool(defaults["run_stage6_baseline_eval"]),
+        run_stage7_eval_ood_finetuned=bool(defaults["run_stage7_eval_ood_finetuned"]),
+        run_stage7_eval_full_finetuned=bool(defaults["run_stage7_eval_full_finetuned"]),
+        run_stage8_plotting=bool(defaults["run_stage8_plotting"]),
         ood_enable_collapse_detection=bool(defaults["ood_enable_collapse_detection"]),
         ood_enable_entropy_detection=bool(defaults["ood_enable_entropy_detection"]),
         ood_enable_fragmentation_detection=bool(defaults["ood_enable_fragmentation_detection"]),
@@ -471,7 +462,9 @@ def main() -> None:
     print("=" * 80)
     print("  MedSAM Pipeline")
     print(f"  設定檔: {resolved_config_path}")
-    print(f"  模式: {'跳過微調（純評估）' if effective_settings['skip_finetune'] else '微調 + 評估'}")
+    print(
+        "  執行控制: 僅由 run_stage3_detect_train_ood ~ run_stage8_plotting 決定"
+    )
     print(f"  影像尺寸: {effective_settings['image_size']}")
     print(f"  輸出目錄: {output_dir}")
     print("  即時輸出提示: conda run 請使用 --no-capture-output")
