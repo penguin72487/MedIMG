@@ -1,7 +1,9 @@
 import time
 import os
 import hashlib
+import json
 from collections import deque
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -160,13 +162,135 @@ def _cpu_count() -> int:
 
 
 def _auto_eval_workers(device: str) -> int:
-    _ = device
-    return _cpu_count()
+    cpu_count = _cpu_count()
+    if device == "cuda":
+        return max(2, min(8, cpu_count // 2))
+    return cpu_count
 
 
 def _is_cuda_oom_error(exc: BaseException) -> bool:
     msg = str(exc).lower()
     return ("out of memory" in msg) or (("cuda" in msg) and ("memory" in msg))
+
+
+def _is_cuda_runtime_unready_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return (
+        ("cuda" in msg)
+        and (
+            "device not ready" in msg
+            or "device-side assert" in msg
+            or "illegal memory access" in msg
+            or "unspecified launch failure" in msg
+        )
+    )
+
+
+def _cuda_low_vram_mode(device: str) -> bool:
+    return _is_low_vram_cuda(device)
+
+
+def _cuda_cleanup_after_forward(device: str, *, force: bool = False) -> None:
+    if device != "cuda":
+        return
+    try:
+        torch.cuda.synchronize()
+    except Exception:
+        pass
+    if force or (_cuda_low_vram_mode(device) and _env_bool("MEDSAM_EVAL_EMPTY_CACHE_AFTER_FORWARD", True)):
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = _env(name, "").strip()
+    if not raw:
+        return int(default)
+    try:
+        return int(raw)
+    except ValueError:
+        return int(default)
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = _env(name, "").strip()
+    if not raw:
+        return float(default)
+    try:
+        return float(raw)
+    except ValueError:
+        return float(default)
+
+
+def _low_vram_limit_gb() -> float:
+    return max(0.0, _env_float("MEDSAM_VRAM_LIMIT_GB", 0.0))
+
+
+def _is_low_vram_cuda(device: str, cuda_mem_gb: Optional[float] = None) -> bool:
+    if device != "cuda":
+        return False
+    limit_gb = _low_vram_limit_gb()
+    if limit_gb <= 0:
+        return False
+    total_gb = _cuda_total_memory_gb() if cuda_mem_gb is None else cuda_mem_gb
+    return bool(total_gb is not None and total_gb <= limit_gb)
+
+
+class EvalInputCache:
+    def __init__(self, cache_dir: Path, dataset_name: str, image_size: int, model_hash: str) -> None:
+        self.cache_dir = Path(cache_dir)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.dataset_name = str(dataset_name)
+        self.image_size = int(image_size)
+        self.model_hash = str(model_hash)
+        self.hits = 0
+        self.misses = 0
+        self.writes = 0
+
+    def path_for(self, sample_name: str, bbox: List[int]) -> Path:
+        payload = json.dumps(
+            {
+                "version": "eval_input_v1",
+                "dataset": self.dataset_name,
+                "image_size": self.image_size,
+                "model_hash": self.model_hash,
+                "sample_name": str(sample_name),
+                "bbox": [int(v) for v in bbox],
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        digest = hashlib.md5(payload.encode("utf-8")).hexdigest()
+        return self.cache_dir / f"{digest}.pt"
+
+    def get(self, path: Path) -> Optional[Dict[str, torch.Tensor]]:
+        if not path.exists():
+            self.misses += 1
+            return None
+        try:
+            try:
+                payload = torch.load(path, map_location="cpu", weights_only=True)
+            except Exception:
+                payload = torch.load(path, map_location="cpu")
+            required = {"pixel_values", "input_boxes", "original_sizes", "reshaped_input_sizes"}
+            if not isinstance(payload, dict) or not required.issubset(payload.keys()):
+                self.misses += 1
+                return None
+            self.hits += 1
+            return payload
+        except Exception:
+            self.misses += 1
+            return None
+
+    def put(self, path: Path, payload: Dict[str, torch.Tensor]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(".tmp")
+        cpu_payload = {k: v.detach().cpu() if isinstance(v, torch.Tensor) else v for k, v in payload.items()}
+        torch.save(cpu_payload, tmp_path)
+        tmp_path.replace(path)
+        self.writes += 1
 
 
 def _make_probe_batch(samples: List[Dict[str, Any]], batch_size: int) -> List[Dict[str, Any]]:
@@ -358,9 +482,9 @@ def _auto_tune_eval_batch_size(
 
     cuda_mem_gb = _cuda_total_memory_gb()
     if mode == "ood_tta":
-        default_cap = 4 if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else 8
+        default_cap = 4 if _is_low_vram_cuda(device, cuda_mem_gb) else 8
     else:
-        default_cap = 16 if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else 64
+        default_cap = 16 if _is_low_vram_cuda(device, cuda_mem_gb) else 64
     configured_max = int(_env("MEDSAM_EVAL_AUTOBATCH_MAX", "0"))
     max_batch_cap = max(1, configured_max if configured_max > 0 else default_cap)
 
@@ -751,10 +875,13 @@ class TTAPredictor:
         env_fixed_batch = int(_env("MEDSAM_TTA_FIXED_BATCH", "0"))
         self.fixed_batch_size = max(0, env_fixed_batch)
         cuda_mem_gb = _cuda_total_memory_gb()
-        default_chunk = 4 if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else 8
+        default_chunk = 4 if _is_low_vram_cuda("cuda", cuda_mem_gb) else 8
         chunk_env_raw = _env("MEDSAM_TTA_CHUNK_SIZE", "").strip()
+        fixed_chunk = 0
         if chunk_env_raw:
-            self.infer_chunk_size = max(1, int(chunk_env_raw))
+            fixed_chunk = max(0, int(chunk_env_raw))
+        if fixed_chunk > 0:
+            self.infer_chunk_size = fixed_chunk
         else:
             self.infer_chunk_size = max(1, int(default_chunk))
 
@@ -762,7 +889,7 @@ class TTAPredictor:
         self._autotune_enabled = autotune_raw in {"1", "true", "yes", "y", "on"}
 
         # If user fixed chunk size or disabled autotune, skip first-sample tuner.
-        self._chunk_size_tuned = bool(chunk_env_raw) or (not self._autotune_enabled)
+        self._chunk_size_tuned = (fixed_chunk > 0) or (not self._autotune_enabled)
         self._norm_cache: Dict[int, Tuple[torch.Tensor, torch.Tensor]] = {}
         self._aug_to_id = {name: idx for idx, name in enumerate(self.augmentations)}
         assert fusion_mode in ["mean", "median", "entropy_weighted"], \
@@ -1124,7 +1251,7 @@ class TTAPredictor:
         cuda_mem_gb = _cuda_total_memory_gb() if device == "cuda" else None
         if device != "cuda":
             test_sizes = [1, 2, 4, 8]
-        elif cuda_mem_gb is not None and cuda_mem_gb <= 12.5:
+        elif _is_low_vram_cuda(device, cuda_mem_gb):
             test_sizes = [4, 8, 12, 16, 24, 32]
         else:
             test_sizes = [8, 12, 16, 24, 32, 48, 64]
@@ -1767,6 +1894,23 @@ def _uncertainty_from_prob_tensor(prob_t: torch.Tensor) -> float:
     return float(entropy_t.mean().item())
 
 
+def _slice_input_payload(inputs: Dict[str, torch.Tensor], idx: int) -> Dict[str, torch.Tensor]:
+    return {
+        k: (v[idx].detach().cpu() if isinstance(v, torch.Tensor) else v)
+        for k, v in inputs.items()
+    }
+
+
+def _stack_input_payloads(payloads: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
+    if not payloads:
+        return {}
+    out: Dict[str, torch.Tensor] = {}
+    for key in ["pixel_values", "input_boxes", "original_sizes", "reshaped_input_sizes"]:
+        values = [p[key] for p in payloads]
+        out[key] = torch.stack(values, dim=0)
+    return out
+
+
 def _predict_baseline_batch_tensor(
     *,
     model: Any,
@@ -1781,6 +1925,8 @@ def _predict_baseline_batch_tensor(
     profile_prefix: str,
     model_hash: str = "",
     cache_stats: Optional[Dict[str, int]] = None,
+    input_cache: Optional[EvalInputCache] = None,
+    input_cache_stats: Optional[Dict[str, int]] = None,
 ) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
     pred_masks_t: List[Optional[torch.Tensor]] = [None] * len(images)
     prob_for_ood_t: List[Optional[torch.Tensor]] = [None] * len(images)
@@ -1789,6 +1935,7 @@ def _predict_baseline_batch_tensor(
     miss_images: List[Image.Image] = []
     miss_boxes: List[List[int]] = []
     miss_keys: List[str] = []
+    miss_names: List[str] = []
 
     _cache_image_size = images[0].size[0] if images else 0
     for i, (sample_name, bbox) in enumerate(zip(sample_names, bboxes)):
@@ -1812,6 +1959,7 @@ def _predict_baseline_batch_tensor(
             miss_images.append(images[i])
             miss_boxes.append(bbox)
             miss_keys.append(cache_key)
+            miss_names.append(sample_name)
             continue
 
         if cache_stats is not None:
@@ -1833,33 +1981,111 @@ def _predict_baseline_batch_tensor(
         prob_for_ood_t[i] = prob_t
 
     if miss_indices:
-        packed_boxes = [[box] for box in miss_boxes]
         output_w, output_h = miss_images[0].size
 
         t_pred = time.perf_counter()
-        batch_inputs = build_inputs_batch(processor=processor, images=miss_images, input_boxes=packed_boxes)
-        prob_batch = predict_prob_masks_from_inputs(
-            model=model,
-            inputs=batch_inputs,
-            device=device,
-            output_size=(output_h, output_w),
-            use_amp=True,
-            inputs_already_on_device=False,
-        )[:, 0]
-        pred_batch = (prob_batch > 0.5).to(torch.uint8)
+        cached_inputs_by_local: Dict[int, Dict[str, torch.Tensor]] = {}
+        build_local_indices: List[int] = []
+        build_images: List[Image.Image] = []
+        build_boxes: List[List[int]] = []
+        input_cache_paths: Dict[int, Path] = {}
+
+        for local_idx, (name, box, image) in enumerate(zip(miss_names, miss_boxes, miss_images)):
+            cached_input = None
+            if input_cache is not None:
+                cache_path = input_cache.path_for(name, box)
+                input_cache_paths[local_idx] = cache_path
+                cached_input = input_cache.get(cache_path)
+            if cached_input is not None:
+                if input_cache_stats is not None:
+                    input_cache_stats["hits"] = int(input_cache_stats.get("hits", 0)) + 1
+                cached_inputs_by_local[local_idx] = cached_input
+                continue
+            if input_cache_stats is not None:
+                input_cache_stats["misses"] = int(input_cache_stats.get("misses", 0)) + 1
+            build_local_indices.append(local_idx)
+            build_images.append(image)
+            build_boxes.append(box)
+
+        input_chunks: List[Tuple[List[int], Dict[str, torch.Tensor]]] = []
+        if cached_inputs_by_local:
+            cached_order = sorted(cached_inputs_by_local.keys())
+            input_chunks.append((cached_order, _stack_input_payloads([cached_inputs_by_local[i] for i in cached_order])))
+
+        if build_local_indices:
+            packed_boxes = [[box] for box in build_boxes]
+            built_inputs = build_inputs_batch(processor=processor, images=build_images, input_boxes=packed_boxes)
+            for offset, local_idx in enumerate(build_local_indices):
+                single_payload = _slice_input_payload(built_inputs, offset)
+                cache_path = input_cache_paths.get(local_idx)
+                if input_cache is not None and cache_path is not None:
+                    input_cache.put(cache_path, single_payload)
+                    if input_cache_stats is not None:
+                        input_cache_stats["writes"] = int(input_cache_stats.get("writes", 0)) + 1
+            input_chunks.append((build_local_indices, built_inputs))
+
+        configured_forward_chunk = max(0, int(_env("MEDSAM_EVAL_FORWARD_CHUNK", "0") or 0))
+        for local_indices, batch_inputs in input_chunks:
+            if device == "cuda" and "pixel_values" in batch_inputs:
+                batch_inputs["pixel_values"] = batch_inputs["pixel_values"].contiguous(memory_format=torch.channels_last)
+            max_forward_batch = configured_forward_chunk or max(1, len(local_indices))
+
+            chunk_start = 0
+            while chunk_start < len(local_indices):
+                chunk_end = min(len(local_indices), chunk_start + max_forward_batch)
+                chunk_indices = local_indices[chunk_start:chunk_end]
+                chunk_inputs = {
+                    k: (v[chunk_start:chunk_end] if isinstance(v, torch.Tensor) else v)
+                    for k, v in batch_inputs.items()
+                }
+                try:
+                    prob_batch = predict_prob_masks_from_inputs(
+                        model=model,
+                        inputs=chunk_inputs,
+                        device=device,
+                        output_size=(output_h, output_w),
+                        use_amp=True,
+                        inputs_already_on_device=False,
+                    )[:, 0]
+                except RuntimeError as exc:
+                    if _is_cuda_oom_error(exc) and len(chunk_indices) > 1:
+                        _cuda_cleanup_after_forward(device, force=True)
+                        next_chunk = max(1, len(chunk_indices) // 2)
+                        print(
+                            f"  [eval-stream-oom] {dataset_name}: forward_chunk {len(chunk_indices)} -> {next_chunk}",
+                            flush=True,
+                        )
+                        max_forward_batch = next_chunk
+                        del chunk_inputs
+                        continue
+                    if _is_cuda_runtime_unready_error(exc):
+                        _cuda_cleanup_after_forward(device, force=True)
+                        raise RuntimeError(
+                            "CUDA runtime reported an unstable device state during SAM inference "
+                            f"({type(exc).__name__}: {exc}). On WSL/12GB GPUs this is usually triggered by "
+                            "driver reset, display power throttling, or prior VRAM pressure. The code has already "
+                            "fallen back to low-VRAM chunking; restart this Python process if the driver state "
+                            "does not recover."
+                        ) from exc
+                    raise
+
+                for out_i, local_idx in enumerate(chunk_indices):
+                    prob_t = prob_batch[out_i].detach().clone()
+                    global_idx = miss_indices[int(local_idx)]
+                    pred_t = (prob_t > 0.5).to(torch.uint8)
+                    pred_masks_t[global_idx] = pred_t
+                    prob_for_ood_t[global_idx] = prob_t
+                    if pred_cache is not None:
+                        t_put = time.perf_counter()
+                        pred_cache.put(miss_keys[int(local_idx)], prob_t.detach().to(torch.float16).cpu().numpy())
+                        if profiler is not None and profiler.enabled:
+                            profiler.record_duration(f"{profile_prefix or f'eval.{dataset_name}'}.cache_store", time.perf_counter() - t_put)
+                    del prob_t, pred_t
+                del prob_batch, chunk_inputs
+                _cuda_cleanup_after_forward(device)
+                chunk_start = chunk_end
         if profiler is not None and profiler.enabled:
             profiler.record_duration(f"{profile_prefix or f'eval.{dataset_name}'}.predict_binary_mask", time.perf_counter() - t_pred)
-
-        for local_idx, global_idx in enumerate(miss_indices):
-            prob_t = prob_batch[local_idx]
-            pred_t = pred_batch[local_idx]
-            pred_masks_t[global_idx] = pred_t
-            prob_for_ood_t[global_idx] = prob_t
-            if pred_cache is not None:
-                t_put = time.perf_counter()
-                pred_cache.put(miss_keys[local_idx], prob_t.detach().to(torch.float16).cpu().numpy())
-                if profiler is not None and profiler.enabled:
-                    profiler.record_duration(f"{profile_prefix or f'eval.{dataset_name}'}.cache_store", time.perf_counter() - t_put)
 
     return [p for p in pred_masks_t if p is not None], [p for p in prob_for_ood_t if p is not None]
 
@@ -1894,6 +2120,7 @@ def evaluate_dataset(
     det_gt_by_image: Dict[str, List[List[int]]] = {}
     det_preds: List[Dict[str, Any]] = []
     baseline_cache_stats: Dict[str, int] = {"hits": 0, "misses": 0}
+    baseline_input_cache_stats: Dict[str, int] = {"hits": 0, "misses": 0, "writes": 0}
 
     start = time.perf_counter()
 
@@ -1904,7 +2131,7 @@ def evaluate_dataset(
         if not use_tta:
             default_eval_batch = 8
         else:
-            default_eval_batch = 2 if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else 4
+            default_eval_batch = 2 if _is_low_vram_cuda(device, cuda_mem_gb) else 4
     else:
         default_eval_batch = 1
     raw_eval_workers = int(_env("MEDSAM_EVAL_WORKERS", "0"))
@@ -1946,6 +2173,14 @@ def evaluate_dataset(
     )
 
     baseline_model_hash = _compute_model_hash_tag(model)
+    eval_input_cache: Optional[EvalInputCache] = None
+    if pred_cache is not None and _env_bool("MEDSAM_EVAL_INPUT_CACHE", True):
+        eval_input_cache = EvalInputCache(
+            cache_dir=pred_cache.cache_dir.parent / f"{pred_cache.cache_dir.name}_inputs",
+            dataset_name=dataset_name,
+            image_size=int(getattr(dataset, "image_size", 0) or 0),
+            model_hash=baseline_model_hash,
+        )
     _maybe_warm_dataset_cache(dataset=dataset, dataset_name=dataset_name, profiler=profiler, profile_prefix=profile_prefix)
 
     if eval_workers > 0:
@@ -2023,6 +2258,8 @@ def evaluate_dataset(
                 profile_prefix=profile_prefix,
                 model_hash=baseline_model_hash,
                 cache_stats=baseline_cache_stats,
+                input_cache=eval_input_cache,
+                input_cache_stats=baseline_input_cache_stats,
             )
 
         per_sample_infer_time = (time.perf_counter() - t0) / max(1, len(batch_samples))
@@ -2135,8 +2372,18 @@ def evaluate_dataset(
             "baseline_cache_model_hash": baseline_model_hash,
             "baseline_cache_hits": int(baseline_cache_stats.get("hits", 0)),
             "baseline_cache_misses": int(baseline_cache_stats.get("misses", 0)),
+            "baseline_input_cache_hits": int(baseline_input_cache_stats.get("hits", 0)),
+            "baseline_input_cache_misses": int(baseline_input_cache_stats.get("misses", 0)),
+            "baseline_input_cache_writes": int(baseline_input_cache_stats.get("writes", 0)),
         },
     )
+    if eval_input_cache is not None:
+        print(
+            f"  [eval-input-cache:{dataset_name}] hits={baseline_input_cache_stats.get('hits', 0)} "
+            f"misses={baseline_input_cache_stats.get('misses', 0)} "
+            f"writes={baseline_input_cache_stats.get('writes', 0)} dir={eval_input_cache.cache_dir}",
+            flush=True,
+        )
     if det_gt_by_image:
         stats.update(_compute_detection_map_stats(preds=det_preds, gt_by_image=det_gt_by_image))
 
@@ -2417,7 +2664,7 @@ def evaluate_dataset_ood_tta(
     default_eval_workers = _auto_eval_workers(device)
     if device == "cuda":
         cuda_mem_gb = _cuda_total_memory_gb()
-        default_eval_batch = 2 if (cuda_mem_gb is not None and cuda_mem_gb <= 12.5) else 4
+        default_eval_batch = 2 if _is_low_vram_cuda(device, cuda_mem_gb) else 4
     else:
         default_eval_batch = 1
     raw_eval_workers = int(_env("MEDSAM_EVAL_WORKERS", "0"))

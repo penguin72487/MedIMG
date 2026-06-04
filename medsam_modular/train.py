@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import threading
 import time
@@ -14,6 +15,7 @@ from tqdm import tqdm
 
 from medsam_modular.config import ENV_DEFAULTS
 from medsam_modular.data import compute_bbox_from_mask_np, prepare_datasets_by_split
+from medsam_modular.eval.evaluate import _compute_model_hash_tag
 from medsam_modular.model import load_state_dict_compat, normalize_pred_masks_to_4d
 
 
@@ -49,6 +51,26 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw in {"1", "true", "yes", "y", "on"}
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return float(default)
+    try:
+        return float(raw)
+    except ValueError:
+        return float(default)
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return int(default)
+    try:
+        return int(raw)
+    except ValueError:
+        return int(default)
+
+
 def _cuda_total_memory_gb() -> Optional[float]:
     if not torch.cuda.is_available():
         return None
@@ -60,13 +82,25 @@ def _cuda_total_memory_gb() -> Optional[float]:
         return None
 
 
+def _is_low_vram_cuda(device: str, cuda_mem_gb: Optional[float] = None) -> bool:
+    if device != "cuda":
+        return False
+    limit_gb = max(0.0, _env_float("MEDSAM_VRAM_LIMIT_GB", 0.0))
+    if limit_gb <= 0:
+        return False
+    total_gb = _cuda_total_memory_gb() if cuda_mem_gb is None else cuda_mem_gb
+    return bool(total_gb is not None and total_gb <= limit_gb)
+
+
 def _cpu_count() -> int:
     return max(1, int(os.cpu_count() or 1))
 
 
 def _auto_train_workers(device: str) -> int:
-    _ = device
-    return _cpu_count()
+    cpu_count = _cpu_count()
+    if device == "cuda":
+        return max(2, min(8, cpu_count // 2))
+    return cpu_count
 
 
 def _setup_cuda_backends() -> None:
@@ -76,11 +110,226 @@ def _setup_cuda_backends() -> None:
     torch.backends.cudnn.benchmark = True
 
 
+class EmbeddingDiskCache:
+    def __init__(self, cache_dir: Path, model_hash: str, image_size: int) -> None:
+        self.cache_dir = Path(cache_dir)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.model_hash = str(model_hash)
+        self.image_size = int(image_size)
+        self.manifest_path = self.cache_dir / "manifest.jsonl"
+        self.hits = 0
+        self.misses = 0
+        self.writes = 0
+
+    def _digest(self, name: str, bbox: torch.Tensor, idx: int, scope: str) -> str:
+        bbox_vals = [int(round(float(v))) for v in bbox.reshape(-1).detach().cpu().tolist()]
+        payload = json.dumps(
+            {
+                "version": "emb_v2",
+                "model_hash": self.model_hash,
+                "image_size": self.image_size,
+                "scope": str(scope),
+                "idx": int(idx),
+                "name": str(name),
+                "bbox": bbox_vals,
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        return hashlib.md5(payload.encode("utf-8")).hexdigest()
+
+    def path_for(self, name: str, bbox: torch.Tensor, idx: int, scope: str) -> Path:
+        return self.cache_dir / f"{self._digest(name=name, bbox=bbox, idx=idx, scope=scope)}.pt"
+
+    def path_for_identity(self, identity: Dict[str, Any], idx: int, scope: str) -> Path:
+        payload = json.dumps(
+            {
+                "version": "emb_v3",
+                "model_hash": self.model_hash,
+                "image_size": self.image_size,
+                "scope": str(scope),
+                "idx": int(idx),
+                "identity": identity,
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+            default=str,
+        )
+        digest = hashlib.md5(payload.encode("utf-8")).hexdigest()
+        return self.cache_dir / f"{digest}.pt"
+
+    def get(self, path: Path) -> Optional[Dict[str, torch.Tensor]]:
+        if not path.exists():
+            self.misses += 1
+            return None
+        try:
+            try:
+                payload = torch.load(path, map_location="cpu", weights_only=True)
+            except Exception:
+                payload = torch.load(path, map_location="cpu")
+            required = {
+                "image_embedding",
+                "input_boxes",
+                "original_sizes",
+                "reshaped_input_sizes",
+                "gt_mask",
+                "name",
+            }
+            if not isinstance(payload, dict) or not required.issubset(payload.keys()):
+                self.misses += 1
+                return None
+            self.hits += 1
+            return payload
+        except Exception:
+            self.misses += 1
+            return None
+
+    def put(self, path: Path, payload: Dict[str, torch.Tensor], name: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(".tmp")
+        torch.save(payload, tmp_path)
+        tmp_path.replace(path)
+        self.writes += 1
+        row = {
+            "version": "emb_v2",
+            "model_hash": self.model_hash,
+            "image_size": self.image_size,
+            "name": str(name),
+            "file": path.name,
+        }
+        with self.manifest_path.open("a", encoding="utf-8") as fp:
+            fp.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+class ProcessorDiskCache:
+    def __init__(self, cache_dir: Path, image_size: int, processor_tag: str = "sam_processor") -> None:
+        self.cache_dir = Path(cache_dir)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.image_size = int(image_size)
+        self.processor_tag = str(processor_tag)
+        self.manifest_path = self.cache_dir / "manifest.jsonl"
+        self.hits = 0
+        self.misses = 0
+        self.writes = 0
+
+    def path_for(self, identity: Dict[str, Any], scope: str) -> Path:
+        payload = json.dumps(
+            {
+                "version": "processor_v1",
+                "processor": self.processor_tag,
+                "image_size": self.image_size,
+                "scope": str(scope),
+                "identity": identity,
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+            default=str,
+        )
+        digest = hashlib.md5(payload.encode("utf-8")).hexdigest()
+        return self.cache_dir / f"{digest}.pt"
+
+    def get(self, path: Path) -> Optional[Dict[str, Any]]:
+        if not path.exists():
+            self.misses += 1
+            return None
+        try:
+            try:
+                payload = torch.load(path, map_location="cpu", weights_only=True)
+            except Exception:
+                payload = torch.load(path, map_location="cpu")
+            required = {
+                "pixel_values",
+                "input_boxes",
+                "original_sizes",
+                "reshaped_input_sizes",
+                "gt_mask",
+                "name",
+            }
+            if not isinstance(payload, dict) or not required.issubset(payload.keys()):
+                self.misses += 1
+                return None
+            self.hits += 1
+            return payload
+        except Exception:
+            self.misses += 1
+            return None
+
+    def put(self, path: Path, payload: Dict[str, Any], name: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(".tmp")
+        torch.save(payload, tmp_path)
+        tmp_path.replace(path)
+        self.writes += 1
+        row = {
+            "version": "processor_v1",
+            "processor": self.processor_tag,
+            "image_size": self.image_size,
+            "name": str(name),
+            "file": path.name,
+        }
+        with self.manifest_path.open("a", encoding="utf-8") as fp:
+            fp.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
 def _choose_amp_dtype() -> torch.dtype:
     """BF16 on Ampere+ (no GradScaler needed), FP16 elsewhere."""
     if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
         return torch.bfloat16
     return torch.float16
+
+
+def _is_cuda_oom(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return "out of memory" in msg or "cuda error: out of memory" in msg
+
+
+def _encode_vision_embeddings_cpu(
+    *,
+    vision_encoder: Any,
+    pixel_values: torch.Tensor,
+    device: str,
+    amp_dtype: torch.dtype,
+    initial_chunk: int,
+) -> torch.Tensor:
+    """Encode pixel_values with adaptive CUDA chunks and return FP16 CPU embeddings."""
+    total = int(pixel_values.shape[0])
+    if total <= 0:
+        return torch.empty((0,), dtype=torch.float16)
+
+    chunk = max(1, min(int(initial_chunk), total))
+    outputs: List[torch.Tensor] = []
+    start = 0
+    non_blocking = device == "cuda"
+
+    while start < total:
+        cur = min(chunk, total - start)
+        try:
+            pv_chunk = pixel_values[start : start + cur].to(device, non_blocking=non_blocking)
+            with torch.amp.autocast("cuda", dtype=amp_dtype, enabled=(device == "cuda")):
+                emb = vision_encoder(pv_chunk)[0]
+            outputs.append(emb.detach().to(dtype=torch.float16).cpu())
+            del emb, pv_chunk
+            start += cur
+        except RuntimeError as exc:
+            if device == "cuda" and _is_cuda_oom(exc):
+                try:
+                    del pv_chunk
+                except UnboundLocalError:
+                    pass
+                torch.cuda.empty_cache()
+                if cur > 1:
+                    chunk = max(1, cur // 2)
+                    print(f"  [precompute-oom] reduce GPU chunk to {chunk}", flush=True)
+                    continue
+                raise RuntimeError(
+                    "CUDA OOM during embedding precompute even with GPU chunk=1. "
+                    "Try MEDSAM_PRECOMPUTE_BATCH=1 and MEDSAM_FINETUNE_BATCH=1."
+                ) from exc
+            raise
+
+    if device == "cuda":
+        torch.cuda.empty_cache()
+    return torch.cat(outputs, dim=0)
 
 
 def _precompute_image_embeddings(
@@ -90,10 +339,13 @@ def _precompute_image_embeddings(
     batch_size: int = 4,
     amp_dtype: torch.dtype = torch.float16,
     num_workers: int = 0,
-) -> Dict[int, Dict[str, torch.Tensor]]:
-    """Run the frozen ViT once for every sample and cache FP16 embeddings in CPU RAM.
+    disk_cache: Optional[EmbeddingDiskCache] = None,
+    cache_label: str = "dataset",
+) -> Dict[int, Any]:
+    """Run the frozen ViT once for every sample and cache FP16 embeddings.
 
-    Returns dict {dataset_index -> cached tensors}.
+    Returns dict {dataset_index -> payload_or_path}. By default this keeps only
+    disk paths in memory to avoid multi-GB RAM growth on large/TTA-expanded sets.
     Calling this before the training loop removes ~95% of per-epoch GPU compute
     (the frozen vision encoder accounts for ~95% of SAM-ViT-B's FLOPs).
     """
@@ -104,69 +356,104 @@ def _precompute_image_embeddings(
     was_training = model.training
     model.eval()
 
-    def _pv_collate(batch: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
-        return {
-            "pixel_values": torch.stack([item["pixel_values"] for item in batch], dim=0),
-            "input_boxes": torch.stack([item["input_boxes"] for item in batch], dim=0),
-            "original_sizes": torch.stack([item["original_sizes"] for item in batch], dim=0),
-            "reshaped_input_sizes": torch.stack([item["reshaped_input_sizes"] for item in batch], dim=0),
-        }
-
     loader = DataLoader(
-        dataset,
+        _EmbeddingPrecomputeDataset(dataset, disk_cache=disk_cache, cache_label=cache_label),
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
         pin_memory=(device == "cuda"),
-        collate_fn=_pv_collate,
+        collate_fn=_embedding_precompute_collate,
         drop_last=False,
         persistent_workers=(num_workers > 0),
-        prefetch_factor=2 if num_workers > 0 else None,
+        prefetch_factor=max(1, _env_int("MEDSAM_PRECOMPUTE_PREFETCH", 2)) if num_workers > 0 else None,
     )
 
-    embeddings: Dict[int, Dict[str, torch.Tensor]] = {}
-    global_idx = 0
+    keep_ram_embeddings = _env_bool("MEDSAM_EMB_CACHE_KEEP_RAM", False)
+    embeddings: Dict[int, Any] = {}
+    emb_fast_hits = 0
+    emb_misses = 0
+    gpu_chunk = _env_int("MEDSAM_PRECOMPUTE_GPU_CHUNK", 0)
+    if gpu_chunk <= 0:
+        gpu_chunk = min(max(1, int(batch_size)), 4)
+    empty_cache_every = max(1, _env_int("MEDSAM_PRECOMPUTE_EMPTY_CACHE_EVERY", 25))
+    batch_counter = 0
     with torch.inference_mode():
-        for batch in tqdm(loader, desc="  Pre-computing ViT embeddings", leave=False, unit="batch"):
-            pv_batch = batch["pixel_values"].to(device, non_blocking=(device == "cuda"))
-            try:
-                with torch.amp.autocast("cuda", dtype=amp_dtype, enabled=(device == "cuda")):
-                    emb = vision_encoder(pv_batch)[0]  # [B, 256, 64, 64]
-            except RuntimeError as exc:
-                if "out of memory" in str(exc).lower() and device == "cuda":
+        desc = f"  Pre-computing ViT embeddings ({cache_label})"
+        progress_enabled = _env_bool("MEDSAM_PROGRESS", True)
+        progress_interval = max(1.0, _env_float("MEDSAM_PROGRESS_INTERVAL", 1.0))
+        for batch in tqdm(
+            loader,
+            desc=desc,
+            leave=False,
+            unit="batch",
+            dynamic_ncols=False,
+            mininterval=progress_interval,
+            disable=not progress_enabled,
+        ):
+            batch_counter += 1
+            for sample_idx, cached_payload, cached_path in batch["cached"]:
+                embeddings[int(sample_idx)] = cached_payload if keep_ram_embeddings else Path(cached_path)
+            emb_fast_hits += len(batch["cached"])
+
+            if batch["pixel_values"] is None:
+                if device == "cuda" and batch_counter % empty_cache_every == 0:
                     torch.cuda.empty_cache()
-                    raise RuntimeError(
-                        "CUDA OOM during embedding precompute. "
-                        "Try smaller MEDSAM_PRECOMPUTE_BATCH (e.g. 2 or 1) "
-                        "and/or MEDSAM_FINETUNE_BATCH (e.g. 2)."
-                    ) from exc
-                raise
-            emb_cpu = emb.detach().to(dtype=torch.float16).cpu()
+                continue
+
+            emb_misses += int(batch["pixel_values"].shape[0])
+            emb_cpu = _encode_vision_embeddings_cpu(
+                vision_encoder=vision_encoder,
+                pixel_values=batch["pixel_values"],
+                device=device,
+                amp_dtype=amp_dtype,
+                initial_chunk=gpu_chunk,
+            )
             boxes_cpu = batch["input_boxes"].to(dtype=torch.float32).cpu()
             orig_cpu = batch["original_sizes"].cpu()
             reshaped_cpu = batch["reshaped_input_sizes"].cpu()
+            gt_cpu = batch["gt_mask"].to(dtype=torch.float32).cpu()
+            names = batch["name"]
+            sample_indices = batch["idx"]
+            cache_paths = batch["cache_path"]
 
-            bsz = emb_cpu.shape[0]
-            for i in range(bsz):
-                embeddings[global_idx + i] = {
-                    "image_embedding": emb_cpu[i],
-                    "input_boxes": boxes_cpu[i],
-                    "original_sizes": orig_cpu[i],
-                    "reshaped_input_sizes": reshaped_cpu[i],
+            for out_i, sample_idx in enumerate(sample_indices):
+                sample_idx = int(sample_idx)
+                sample_name = str(names[out_i] or f"sample_{sample_idx}")
+                payload = {
+                    "image_embedding": emb_cpu[out_i],
+                    "input_boxes": boxes_cpu[out_i],
+                    "original_sizes": orig_cpu[out_i],
+                    "reshaped_input_sizes": reshaped_cpu[out_i],
+                    "gt_mask": gt_cpu[out_i],
+                    "name": sample_name,
                 }
-            global_idx += bsz
+                embeddings[sample_idx] = payload
+                if disk_cache is not None and cache_paths[out_i] is not None:
+                    path = Path(cache_paths[out_i])
+                    disk_cache.put(path, payload, sample_name)
+                    if not keep_ram_embeddings:
+                        embeddings[sample_idx] = path
+            del emb_cpu, boxes_cpu, orig_cpu, reshaped_cpu, gt_cpu
+            if device == "cuda" and batch_counter % empty_cache_every == 0:
+                torch.cuda.empty_cache()
 
     if was_training:
         model.train()
     if device == "cuda":
         torch.cuda.empty_cache()
+    if disk_cache is not None:
+        print(
+            f"  [emb-cache:{cache_label}] fast_hits={emb_fast_hits} "
+            f"misses={emb_misses} writes={disk_cache.writes} dir={disk_cache.cache_dir}",
+            flush=True,
+        )
     return embeddings
 
 
 class FinetuneEmbeddingDataset(Dataset):
     """Wraps FinetuneProcessorDataset; substitutes pixel_values with pre-computed embedding."""
 
-    def __init__(self, base: Dataset, embeddings: Dict[int, Dict[str, torch.Tensor]]) -> None:
+    def __init__(self, base: Dataset, embeddings: Dict[int, Any]) -> None:
         self.base = base
         self.embeddings = embeddings
 
@@ -178,35 +465,55 @@ class FinetuneEmbeddingDataset(Dataset):
         if cached is None:
             # Fallback path (should be rare): use original processor-based sample.
             return dict(self.base[idx])
-
-        if hasattr(self.base, "base_dataset"):
-            raw = self.base.base_dataset[idx]
-            name = str(raw.get("name", f"sample_{idx}"))
-            gt_mask = raw["mask"].float()
-        else:
-            item = dict(self.base[idx])
-            item.pop("pixel_values", None)
-            return item
+        if isinstance(cached, (str, Path)):
+            try:
+                cached = torch.load(Path(cached), map_location="cpu", weights_only=True)
+            except Exception:
+                cached = torch.load(Path(cached), map_location="cpu")
 
         return {
             "image_embedding": cached["image_embedding"],
             "input_boxes": cached["input_boxes"],
             "original_sizes": cached["original_sizes"],
             "reshaped_input_sizes": cached["reshaped_input_sizes"],
-            "gt_mask": gt_mask,
-            "name": name,
+            "gt_mask": cached["gt_mask"],
+            "name": str(cached.get("name", f"sample_{idx}")),
         }
 
 
 class FinetuneProcessorDataset(Dataset):
-    def __init__(self, base_dataset: Dataset, processor: Any):
+    def __init__(
+        self,
+        base_dataset: Dataset,
+        processor: Any,
+        processor_cache: Optional[ProcessorDiskCache] = None,
+        cache_scope: str = "dataset",
+    ):
         self.base_dataset = base_dataset
         self.processor = processor
+        self.processor_cache = processor_cache
+        self.cache_scope = str(cache_scope)
 
     def __len__(self) -> int:
         return len(self.base_dataset)
 
+    def cache_identity(self, idx: int) -> Dict[str, Any]:
+        return {
+            "wrapper": "FinetuneProcessorDataset",
+            "processor": self.processor.__class__.__name__,
+            "scope": self.cache_scope,
+            "base": _dataset_cache_identity(self.base_dataset, idx),
+        }
+
     def __getitem__(self, idx: int) -> Dict[str, Any]:
+        cache_path: Optional[Path] = None
+        if self.processor_cache is not None:
+            identity = _dataset_cache_identity(self.base_dataset, idx)
+            cache_path = self.processor_cache.path_for(identity, self.cache_scope)
+            cached = self.processor_cache.get(cache_path)
+            if cached is not None:
+                return cached
+
         sample = self.base_dataset[idx]
         image = sample["image"]
         bbox = sample["bbox"]
@@ -216,6 +523,8 @@ class FinetuneProcessorDataset(Dataset):
         packed = {k: v.squeeze(0) for k, v in inputs.items()}
         packed["gt_mask"] = mask.float()
         packed["name"] = str(sample.get("name", f"sample_{idx}"))
+        if self.processor_cache is not None and cache_path is not None:
+            self.processor_cache.put(cache_path, packed, packed["name"])
         return packed
 
 
@@ -247,6 +556,14 @@ class NameFilteredDataset(Dataset):
     def __len__(self) -> int:
         return len(self.indices)
 
+    def cache_identity(self, idx: int) -> Dict[str, Any]:
+        base_idx = int(self.indices[idx])
+        return {
+            "wrapper": "NameFilteredDataset",
+            "base_idx": base_idx,
+            "base": _dataset_cache_identity(self.base, base_idx),
+        }
+
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         return self.base[self.indices[idx]]
 
@@ -276,6 +593,17 @@ class TTAAugmentedRawDataset(Dataset):
 
     def __len__(self) -> int:
         return self.base_len * len(self.augmentations)
+
+    def cache_identity(self, idx: int) -> Dict[str, Any]:
+        base_idx = int(idx % self.base_len)
+        aug_idx = int(idx // self.base_len)
+        aug = str(self.augmentations[aug_idx])
+        return {
+            "wrapper": "TTAAugmentedRawDataset",
+            "base_idx": base_idx,
+            "aug": aug,
+            "base": _dataset_cache_identity(self.base, base_idx),
+        }
 
     def _apply_aug(self, sample: Dict[str, Any], aug: str) -> Dict[str, Any]:
         image = sample["image"]
@@ -321,6 +649,200 @@ class TTAAugmentedRawDataset(Dataset):
         return self._apply_aug(sample, aug)
 
 
+def _path_signature(path_like: Any) -> Dict[str, Any]:
+    path = Path(path_like)
+    try:
+        stat = path.stat()
+        return {
+            "path": str(path),
+            "mtime_ns": int(stat.st_mtime_ns),
+            "size": int(stat.st_size),
+        }
+    except Exception:
+        return {"path": str(path)}
+
+
+def _sample_entry_signature(entry: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for key in [
+        "name",
+        "image_id",
+        "component_index",
+        "bbox",
+        "boxes",
+        "source_size",
+        "width",
+        "height",
+        "xml_width",
+        "xml_height",
+    ]:
+        if key in entry:
+            out[key] = entry[key]
+    for key in ["image_path", "mask_path", "xml_path", "annotation_path"]:
+        if key in entry:
+            out[key] = _path_signature(entry[key])
+    if "svg" in entry:
+        svg = str(entry.get("svg", ""))
+        out["svg_md5"] = hashlib.md5(svg.encode("utf-8", errors="ignore")).hexdigest()
+    return out
+
+
+def _concat_child_for_index(dataset: ConcatDataset, idx: int) -> Tuple[Dataset, int, int]:
+    child_idx = 0
+    prev_size = 0
+    for child_idx, cumulative_size in enumerate(dataset.cumulative_sizes):
+        if idx < cumulative_size:
+            return dataset.datasets[child_idx], int(idx - prev_size), child_idx
+        prev_size = cumulative_size
+    raise IndexError(idx)
+
+
+def _dataset_cache_identity(dataset: Dataset, idx: int) -> Dict[str, Any]:
+    if hasattr(dataset, "cache_identity"):
+        return getattr(dataset, "cache_identity")(idx)
+
+    if isinstance(dataset, ConcatDataset):
+        child, child_idx, child_pos = _concat_child_for_index(dataset, int(idx))
+        return {
+            "wrapper": "ConcatDataset",
+            "child": child_pos,
+            "child_idx": child_idx,
+            "base": _dataset_cache_identity(child, child_idx),
+        }
+
+    if hasattr(dataset, "dataset") and hasattr(dataset, "indices"):
+        indices = getattr(dataset, "indices")
+        base = getattr(dataset, "dataset")
+        base_idx = int(indices[idx])
+        return {
+            "wrapper": dataset.__class__.__name__,
+            "base_idx": base_idx,
+            "base": _dataset_cache_identity(base, base_idx),
+        }
+
+    samples = getattr(dataset, "samples", None)
+    if isinstance(samples, list) and 0 <= int(idx) < len(samples) and isinstance(samples[int(idx)], dict):
+        return {
+            "dataset": dataset.__class__.__name__,
+            "idx": int(idx),
+            "sample": _sample_entry_signature(samples[int(idx)]),
+        }
+
+    return {
+        "dataset": dataset.__class__.__name__,
+        "idx": int(idx),
+        "length": int(len(dataset)),
+    }
+
+
+class _EmbeddingPrecomputeDataset(Dataset):
+    def __init__(
+        self,
+        base: Dataset,
+        disk_cache: Optional[EmbeddingDiskCache],
+        cache_label: str,
+    ) -> None:
+        self.base = base
+        self.disk_cache = disk_cache
+        self.cache_label = str(cache_label)
+
+    def __len__(self) -> int:
+        return len(self.base)
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        cache_path: Optional[Path] = None
+        if self.disk_cache is not None:
+            identity = _dataset_cache_identity(self.base, idx)
+            cache_path = self.disk_cache.path_for_identity(identity, idx=idx, scope=self.cache_label)
+            cached = self.disk_cache.get(cache_path)
+            if cached is not None:
+                return {
+                    "__emb_cached__": True,
+                    "__idx__": int(idx),
+                    "__emb_cache_path__": str(cache_path),
+                    "payload": cached,
+                }
+
+        item = dict(self.base[idx])
+        item["__emb_cached__"] = False
+        item["__idx__"] = int(idx)
+        item["__emb_cache_path__"] = str(cache_path) if cache_path is not None else ""
+        return item
+
+
+def _embedding_precompute_collate(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+    cached: List[Tuple[int, Dict[str, torch.Tensor], str]] = []
+    missing: List[Dict[str, Any]] = []
+
+    for item in batch:
+        if bool(item.get("__emb_cached__", False)):
+            cached.append((int(item["__idx__"]), item["payload"], str(item.get("__emb_cache_path__", ""))))
+        else:
+            missing.append(item)
+
+    out: Dict[str, Any] = {"cached": cached}
+    if not missing:
+        out.update(
+            {
+                "pixel_values": None,
+                "input_boxes": None,
+                "original_sizes": None,
+                "reshaped_input_sizes": None,
+                "gt_mask": None,
+                "name": [],
+                "idx": [],
+                "cache_path": [],
+            }
+        )
+        return out
+
+    out.update(
+        {
+            "pixel_values": torch.stack([item["pixel_values"] for item in missing], dim=0),
+            "input_boxes": torch.stack([item["input_boxes"] for item in missing], dim=0),
+            "original_sizes": torch.stack([item["original_sizes"] for item in missing], dim=0),
+            "reshaped_input_sizes": torch.stack([item["reshaped_input_sizes"] for item in missing], dim=0),
+            "gt_mask": torch.stack([item["gt_mask"] for item in missing], dim=0),
+            "name": [str(item.get("name", "")) for item in missing],
+            "idx": [int(item["__idx__"]) for item in missing],
+            "cache_path": [str(item.get("__emb_cache_path__", "")) for item in missing],
+        }
+    )
+    return out
+
+
+def _iter_processor_caches(dataset: Dataset) -> List[ProcessorDiskCache]:
+    found: List[ProcessorDiskCache] = []
+    cache = getattr(dataset, "processor_cache", None)
+    if isinstance(cache, ProcessorDiskCache):
+        found.append(cache)
+
+    if isinstance(dataset, ConcatDataset):
+        for child in dataset.datasets:
+            found.extend(_iter_processor_caches(child))
+    elif hasattr(dataset, "dataset"):
+        found.extend(_iter_processor_caches(getattr(dataset, "dataset")))
+    elif hasattr(dataset, "base"):
+        found.extend(_iter_processor_caches(getattr(dataset, "base")))
+    elif hasattr(dataset, "base_dataset"):
+        found.extend(_iter_processor_caches(getattr(dataset, "base_dataset")))
+    return found
+
+
+def _print_processor_cache_summary(label: str, dataset: Dataset) -> None:
+    seen: Set[int] = set()
+    for cache in _iter_processor_caches(dataset):
+        ident = id(cache)
+        if ident in seen:
+            continue
+        seen.add(ident)
+        print(
+            f"  [processor-cache:{label}] hits={cache.hits} "
+            f"misses={cache.misses} writes={cache.writes} dir={cache.cache_dir}",
+            flush=True,
+        )
+
+
 def _finetune_collate(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
     collated: Dict[str, Any] = {}
     # Pre-computed embedding path: no pixel_values, use image_embedding instead
@@ -339,6 +861,7 @@ def _build_finetune_datasets(config: Dict[str, Any], processor: Any) -> Tuple[Da
     split_root = config["split_root"]
     image_size = int(config["image_size"])
     data_paths = config["data_paths"]
+    output_dir = Path(config["output_dir"])
 
     train_sets = prepare_datasets_by_split(
         data_paths=data_paths,
@@ -410,7 +933,38 @@ def _build_finetune_datasets(config: Dict[str, Any], processor: Any) -> Tuple[Da
     if use_tta_aug:
         train_raw = TTAAugmentedRawDataset(train_concat, tta_augs)
 
-    return FinetuneProcessorDataset(train_raw, processor), FinetuneProcessorDataset(val_concat, processor)
+    processor_cache_enabled = _env_bool("MEDSAM_PROCESSOR_CACHE", True)
+    train_processor_cache: Optional[ProcessorDiskCache] = None
+    val_processor_cache: Optional[ProcessorDiskCache] = None
+    if processor_cache_enabled:
+        processor_tag = processor.__class__.__name__
+        processor_cache_root = output_dir / "processor_cache" / f"image_size_{image_size}" / processor_tag
+        train_processor_cache = ProcessorDiskCache(
+            cache_dir=processor_cache_root / "train",
+            image_size=image_size,
+            processor_tag=processor_tag,
+        )
+        val_processor_cache = ProcessorDiskCache(
+            cache_dir=processor_cache_root / "val",
+            image_size=image_size,
+            processor_tag=processor_tag,
+        )
+        print(f"  [processor-cache] disk cache: {processor_cache_root}", flush=True)
+
+    return (
+        FinetuneProcessorDataset(
+            train_raw,
+            processor,
+            processor_cache=train_processor_cache,
+            cache_scope="train",
+        ),
+        FinetuneProcessorDataset(
+            val_concat,
+            processor,
+            processor_cache=val_processor_cache,
+            cache_scope="val",
+        ),
+    )
 
 
 def _configure_trainable_params(model: Any, train_backbone: bool) -> None:
@@ -437,7 +991,10 @@ def _move_batch_to_device(batch: Dict[str, Any], device: str) -> Dict[str, Any]:
         if isinstance(v, torch.Tensor):
             if k == "input_boxes" and v.dtype == torch.float64:
                 v = v.to(torch.float32)
-            moved[k] = v.to(device, non_blocking=non_blocking)
+            if k == "pixel_values" and v.dim() == 4:
+                moved[k] = v.to(device, non_blocking=non_blocking, memory_format=torch.channels_last)
+            else:
+                moved[k] = v.to(device, non_blocking=non_blocking)
         else:
             moved[k] = v
     return moved
@@ -452,29 +1009,44 @@ def _dice_loss(probs: torch.Tensor, target: torch.Tensor, smooth: float = 1.0) -
     return (1.0 - numerator / denominator).mean()
 
 
-def _compute_seg_loss(outputs: Any, gt_mask: torch.Tensor) -> torch.Tensor:
-    """L = L_BCE + L_Dice  (paper Section 3.3)."""
+def _prepare_logits_target(outputs: Any, gt_mask: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     logits = normalize_pred_masks_to_4d(outputs.pred_masks)
     target = gt_mask.unsqueeze(1)
-    target = F.interpolate(target, size=logits.shape[-2:], mode="nearest")
+    if target.shape[-2:] != logits.shape[-2:]:
+        target = F.interpolate(target, size=logits.shape[-2:], mode="nearest")
+    target = target.to(dtype=logits.dtype)
+    return logits, target
+
+
+def _compute_seg_loss_from_logits_target(logits: torch.Tensor, target: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Return loss and sigmoid probabilities from already-normalized CUDA tensors."""
+    probs = torch.sigmoid(logits)
     l_bce = F.binary_cross_entropy_with_logits(logits, target)
-    l_dice = _dice_loss(torch.sigmoid(logits), target)
-    return l_bce + l_dice
+    l_dice = _dice_loss(probs, target)
+    return l_bce + l_dice, probs
+
+
+def _compute_batch_dice_from_probs(probs: torch.Tensor, target: torch.Tensor, eps: float = 1e-6) -> float:
+    pred = (probs.detach() >= 0.5).to(dtype=torch.float32)
+    target_f = (target.detach() >= 0.5).to(dtype=torch.float32)
+    inter = (pred * target_f).sum(dim=(1, 2, 3))
+    denom = pred.sum(dim=(1, 2, 3)) + target_f.sum(dim=(1, 2, 3))
+    dice = (2.0 * inter + eps) / (denom + eps)
+    return float(dice.mean().item())
+
+
+def _compute_seg_loss(outputs: Any, gt_mask: torch.Tensor) -> torch.Tensor:
+    """L = L_BCE + L_Dice  (paper Section 3.3)."""
+    logits, target = _prepare_logits_target(outputs, gt_mask)
+    loss, _ = _compute_seg_loss_from_logits_target(logits, target)
+    return loss
 
 
 def _compute_batch_dice(outputs: Any, gt_mask: torch.Tensor, eps: float = 1e-6) -> float:
     """Hard Dice at threshold 0.5 for logging/monitoring."""
-    logits = normalize_pred_masks_to_4d(outputs.pred_masks)
+    logits, target = _prepare_logits_target(outputs, gt_mask)
     probs = torch.sigmoid(logits)
-    pred = (probs >= 0.5).to(dtype=torch.float32)
-    target = gt_mask.unsqueeze(1)
-    target = F.interpolate(target, size=logits.shape[-2:], mode="nearest")
-    target = (target >= 0.5).to(dtype=torch.float32)
-
-    inter = (pred * target).sum(dim=(1, 2, 3))
-    denom = pred.sum(dim=(1, 2, 3)) + target.sum(dim=(1, 2, 3))
-    dice = (2.0 * inter + eps) / (denom + eps)
-    return float(dice.mean().item())
+    return _compute_batch_dice_from_probs(probs, target, eps=eps)
 
 
 def _build_adamw_param_groups(model: torch.nn.Module, weight_decay: float) -> List[Dict[str, Any]]:
@@ -556,6 +1128,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
     min_epochs = int(config.get("finetune_min_epochs", 30))
     raw_workers = int(config.get("finetune_workers", 0))
     num_workers = _auto_train_workers(device) if raw_workers <= 0 else raw_workers
+    train_prefetch = max(1, _env_int("MEDSAM_FINETUNE_PREFETCH", 2))
     max_samples = int(config.get("finetune_max_samples", 0))
     use_fused_adamw = _get_bool("finetune_use_fused_adamw", True)
     use_plateau_scheduler = _get_bool("finetune_use_plateau_scheduler", True)
@@ -569,40 +1142,50 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
     precompute_batch = int(os.getenv("MEDSAM_PRECOMPUTE_BATCH", ENV_DEFAULTS["MEDSAM_PRECOMPUTE_BATCH"]))
     precompute_workers = int(os.getenv("MEDSAM_PRECOMPUTE_WORKERS", ENV_DEFAULTS["MEDSAM_PRECOMPUTE_WORKERS"]))
     cuda_mem_gb = _cuda_total_memory_gb() if device == "cuda" else None
-    low_vram_mode = bool(cuda_mem_gb is not None and cuda_mem_gb <= 12.5)
+    low_vram_mode = _is_low_vram_cuda(device, cuda_mem_gb)
+    low_vram_empty_cache_every = max(
+        0,
+        _env_int("MEDSAM_LOW_VRAM_EMPTY_CACHE_EVERY", 1 if low_vram_mode else 0),
+    )
     use_emb_cache = device == "cuda" and not train_backbone and _env_bool("MEDSAM_PRECOMPUTE_EMBEDDINGS", True)
 
     if use_emb_cache and precompute_batch <= 0:
         if cuda_mem_gb is None:
             precompute_batch = 4
-        elif cuda_mem_gb <= 12.5:
+        elif low_vram_mode:
             precompute_batch = 2
         elif cuda_mem_gb <= 24.5:
-            precompute_batch = 16
+            precompute_batch = 8
         else:
-            precompute_batch = 24
+            precompute_batch = 12
 
     if precompute_workers <= 0:
         precompute_workers = num_workers
     if low_vram_mode and use_emb_cache:
         # Embedding cache removes ViT from the forward pass → decoder-only VRAM → larger batch
-        safe_batch_emb = int(config.get("finetune_safe_batch_emb", 2))
+        safe_batch_emb = _env_int("MEDSAM_FINETUNE_SAFE_BATCH_EMB", int(config.get("finetune_safe_batch_emb", 2)))
         safe_batch_emb = max(1, safe_batch_emb)
         if batch_size > safe_batch_emb:
             print(f"⚠️ Low-VRAM mode ({cuda_mem_gb:.1f}GB): batch size {batch_size} -> {safe_batch_emb}")
             batch_size = safe_batch_emb
-        elif batch_size <= 1 and safe_batch_emb >= 2:
-            batch_size = 2
-            print("  Embedding cache: batch size raised to 2 (safe low-VRAM setting)")
     elif low_vram_mode:
-        safe_batch_12gb = int(config.get("finetune_safe_batch_12gb", 2))
+        safe_batch_12gb = _env_int("MEDSAM_FINETUNE_SAFE_BATCH_12GB", int(config.get("finetune_safe_batch_12gb", 1)))
         safe_batch_12gb = max(1, safe_batch_12gb)
         if batch_size > safe_batch_12gb:
             print(f"⚠️ Low-VRAM mode ({cuda_mem_gb:.1f}GB): batch size {batch_size} -> {safe_batch_12gb}")
             batch_size = safe_batch_12gb
 
-    if low_vram_mode and precompute_batch > 2:
-        precompute_batch = 2
+    precompute_gpu_chunk = _env_int("MEDSAM_PRECOMPUTE_GPU_CHUNK", 0)
+    if precompute_gpu_chunk <= 0:
+        if cuda_mem_gb is None:
+            precompute_gpu_chunk = min(precompute_batch, 4)
+        elif low_vram_mode:
+            precompute_gpu_chunk = min(precompute_batch, 4)
+        elif cuda_mem_gb <= 24.5:
+            precompute_gpu_chunk = min(precompute_batch, 2)
+        else:
+            precompute_gpu_chunk = min(precompute_batch, 4)
+        os.environ["MEDSAM_PRECOMPUTE_GPU_CHUNK"] = str(precompute_gpu_chunk)
 
     ft_total_start = time.perf_counter()
     train_data_move_total = 0.0
@@ -633,12 +1216,15 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
     print(f"  lr            : {lr}")
     print(f"  adamw         : wd={weight_decay}, betas=({adamw_beta1},{adamw_beta2}), eps={adamw_eps}")
     print(f"  grad_accum    : {grad_accum}")
+    print(f"  workers       : train={num_workers}, prefetch={train_prefetch}")
     print(f"  train backbone: {train_backbone}")
     print(f"  amp dtype     : {amp_dtype}")
     print(f"  emb cache     : {use_emb_cache}")
+    if device == "cuda" and low_vram_empty_cache_every > 0:
+        print(f"  low-vram clear: every {low_vram_empty_cache_every} batch(es)")
     print(f"  scheduler     : {'ReduceLROnPlateau' if use_plateau_scheduler else 'off'}")
     if use_emb_cache:
-        print(f"  precompute    : batch={precompute_batch}, workers={precompute_workers}")
+        print(f"  precompute    : batch={precompute_batch}, gpu_chunk={precompute_gpu_chunk}, workers={precompute_workers}")
     print(f"  資料準備耗時  : {time.time() - t0:.1f}s")
 
     val_batch_size = batch_size if low_vram_mode else min(batch_size * 4, max(1, len(val_dataset) // 4))
@@ -652,7 +1238,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
         drop_last=False,
         collate_fn=_finetune_collate,
         persistent_workers=(num_workers > 0),
-        prefetch_factor=2 if num_workers > 0 else None,
+        prefetch_factor=train_prefetch if num_workers > 0 else None,
     )
     val_loader = DataLoader(
         val_dataset,
@@ -663,7 +1249,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
         drop_last=False,
         collate_fn=_finetune_collate,
         persistent_workers=(num_workers > 0),
-        prefetch_factor=2 if num_workers > 0 else None,
+        prefetch_factor=train_prefetch if num_workers > 0 else None,
     )
 
     compiled_wrapped = hasattr(model, "_orig_mod") and getattr(model, "_orig_mod") is not None
@@ -682,6 +1268,19 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
     if use_emb_cache:
         print("  🚀 Pre-computing image embeddings for train + val sets ...")
         t_emb = time.time()
+        emb_model_hash = _compute_model_hash_tag(base_model)
+        emb_cache_root = output_dir / "emb_cache" / f"image_size_{int(config['image_size'])}" / emb_model_hash
+        print(f"  [emb-cache] disk cache: {emb_cache_root}", flush=True)
+        train_disk_cache = EmbeddingDiskCache(
+            cache_dir=emb_cache_root / "train",
+            model_hash=emb_model_hash,
+            image_size=int(config["image_size"]),
+        )
+        val_disk_cache = EmbeddingDiskCache(
+            cache_dir=emb_cache_root / "val",
+            model_hash=emb_model_hash,
+            image_size=int(config["image_size"]),
+        )
         train_embs = _precompute_image_embeddings(
             base_model,
             train_dataset,
@@ -689,6 +1288,8 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
             batch_size=precompute_batch,
             amp_dtype=amp_dtype,
             num_workers=precompute_workers,
+            disk_cache=train_disk_cache,
+            cache_label="train",
         )
         val_embs = _precompute_image_embeddings(
             base_model,
@@ -697,21 +1298,29 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
             batch_size=precompute_batch,
             amp_dtype=amp_dtype,
             num_workers=precompute_workers,
+            disk_cache=val_disk_cache,
+            cache_label="val",
         )
+        _print_processor_cache_summary("train", train_dataset)
+        _print_processor_cache_summary("val", val_dataset)
         train_dataset = FinetuneEmbeddingDataset(train_dataset, train_embs)
         val_dataset   = FinetuneEmbeddingDataset(val_dataset,   val_embs)
         del train_embs, val_embs
         if device == "cuda":
             torch.cuda.empty_cache()
-        emb_mem_gb = len(train_dataset) * 256 * 64 * 64 * 2 / 1024**3
-        print(f"  Pre-compute done ({time.time()-t_emb:.1f}s) | ~{emb_mem_gb:.1f}GB CPU RAM used")
+        if _env_bool("MEDSAM_EMB_CACHE_KEEP_RAM", False):
+            emb_mem_gb = len(train_dataset) * 256 * 64 * 64 * 2 / 1024**3
+            mem_note = f"~{emb_mem_gb:.1f}GB CPU RAM used"
+        else:
+            mem_note = "disk-backed embeddings; RAM only keeps paths"
+        print(f"  Pre-compute done ({time.time()-t_emb:.1f}s) | {mem_note}")
         # Rebuild DataLoaders with updated (wrapped) datasets
         train_loader = DataLoader(
             train_dataset, batch_size=batch_size, shuffle=True,
             num_workers=num_workers, pin_memory=(device == "cuda"),
             drop_last=False, collate_fn=_finetune_collate,
             persistent_workers=(num_workers > 0),
-            prefetch_factor=2 if num_workers > 0 else None,
+            prefetch_factor=train_prefetch if num_workers > 0 else None,
         )
         val_loader = DataLoader(
             val_dataset,
@@ -719,7 +1328,7 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
             shuffle=False, num_workers=num_workers, pin_memory=(device == "cuda"),
             drop_last=False, collate_fn=_finetune_collate,
             persistent_workers=(num_workers > 0),
-            prefetch_factor=2 if num_workers > 0 else None,
+            prefetch_factor=train_prefetch if num_workers > 0 else None,
         )
     # ──────────────────────────────────────────────────────────────────────
 
@@ -805,7 +1414,16 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
     print(f"  優化器/排程器設定耗時: {time.perf_counter() - setup_t0:.1f}s")
 
     print(f"\n[3/4] 開始訓練 (共 {epochs} epochs) ...")
-    epoch_bar = tqdm(range(start_epoch, epochs + 1), desc="Epoch", unit="ep", dynamic_ncols=True)
+    progress_enabled = _env_bool("MEDSAM_PROGRESS", True)
+    progress_interval = max(1.0, _env_float("MEDSAM_PROGRESS_INTERVAL", 1.0))
+    epoch_bar = tqdm(
+        range(start_epoch, epochs + 1),
+        desc="Epoch",
+        unit="ep",
+        dynamic_ncols=False,
+        mininterval=progress_interval,
+        disable=not progress_enabled,
+    )
 
     for epoch in epoch_bar:
         base_model.train()
@@ -819,8 +1437,10 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
             total=len(train_loader),
             desc=f"  Train",
             leave=False,
-            dynamic_ncols=True,
+            dynamic_ncols=False,
             unit="batch",
+            mininterval=progress_interval,
+            disable=not progress_enabled,
         )
         for step, batch in train_bar:
             t_data = time.perf_counter()
@@ -845,11 +1465,15 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
             if device == "cuda":
                 with torch.amp.autocast("cuda", dtype=amp_dtype):
                     outputs = base_model(**model_inputs)
-                    loss = _compute_seg_loss(outputs, batch["gt_mask"]) / grad_accum
+                    logits, target = _prepare_logits_target(outputs, batch["gt_mask"])
+                    raw_loss, probs = _compute_seg_loss_from_logits_target(logits, target)
+                    loss = raw_loss / grad_accum
             else:
                 outputs = base_model(**model_inputs)
-                loss = _compute_seg_loss(outputs, batch["gt_mask"]) / grad_accum
-            batch_dice = _compute_batch_dice(outputs, batch["gt_mask"])
+                logits, target = _prepare_logits_target(outputs, batch["gt_mask"])
+                raw_loss, probs = _compute_seg_loss_from_logits_target(logits, target)
+                loss = raw_loss / grad_accum
+            batch_dice = _compute_batch_dice_from_probs(probs, target)
             train_forward_total += (time.perf_counter() - t_forward)
 
             t_backward = time.perf_counter()
@@ -858,7 +1482,8 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
             cur_loss = float(loss.item() * grad_accum)
             train_losses.append(cur_loss)
             train_dices.append(batch_dice)
-            train_bar.set_postfix(loss=f"{cur_loss:.4f}", dice=f"{batch_dice:.4f}")
+            if progress_enabled:
+                train_bar.set_postfix(loss=f"{cur_loss:.4f}", dice=f"{batch_dice:.4f}")
 
             if step % grad_accum == 0 or step == len(train_loader):
                 t_opt = time.perf_counter()
@@ -870,6 +1495,10 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
                 optimizer.zero_grad(set_to_none=True)
                 train_optimizer_total += (time.perf_counter() - t_opt)
 
+            del loss, raw_loss, outputs, logits, target, probs, model_inputs
+            if device == "cuda" and low_vram_empty_cache_every > 0 and step % low_vram_empty_cache_every == 0:
+                torch.cuda.empty_cache()
+
         base_model.eval()
         val_losses: List[float] = []
         val_dices: List[float] = []
@@ -878,10 +1507,12 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
                 val_loader,
                 desc=f"  Val  ",
                 leave=False,
-                dynamic_ncols=True,
+                dynamic_ncols=False,
                 unit="batch",
+                mininterval=progress_interval,
+                disable=not progress_enabled,
             )
-            for batch in val_bar:
+            for val_step, batch in enumerate(val_bar, start=1):
                 batch = _move_batch_to_device(batch, device)
                 if "image_embedding" in batch:
                     model_inputs = {
@@ -902,16 +1533,23 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
                 if device == "cuda":
                     with torch.amp.autocast("cuda", dtype=amp_dtype):
                         outputs = base_model(**model_inputs)
-                        val_loss = _compute_seg_loss(outputs, batch["gt_mask"])
+                        logits, target = _prepare_logits_target(outputs, batch["gt_mask"])
+                        val_loss, probs = _compute_seg_loss_from_logits_target(logits, target)
                 else:
                     outputs = base_model(**model_inputs)
-                    val_loss = _compute_seg_loss(outputs, batch["gt_mask"])
-                val_dice = _compute_batch_dice(outputs, batch["gt_mask"])
+                    logits, target = _prepare_logits_target(outputs, batch["gt_mask"])
+                    val_loss, probs = _compute_seg_loss_from_logits_target(logits, target)
+                val_dice = _compute_batch_dice_from_probs(probs, target)
                 val_forward_total += (time.perf_counter() - t_val_forward)
+                val_loss_float = float(val_loss.item())
 
-                val_bar.set_postfix(loss=f"{float(val_loss.item()):.4f}", dice=f"{val_dice:.4f}")
-                val_losses.append(float(val_loss.item()))
+                if progress_enabled:
+                    val_bar.set_postfix(loss=f"{val_loss_float:.4f}", dice=f"{val_dice:.4f}")
+                val_losses.append(val_loss_float)
                 val_dices.append(val_dice)
+                del val_loss, outputs, logits, target, probs, model_inputs
+                if device == "cuda" and low_vram_empty_cache_every > 0 and val_step % low_vram_empty_cache_every == 0:
+                    torch.cuda.empty_cache()
 
         train_loss = float(np.mean(train_losses)) if train_losses else 0.0
         val_loss = float(np.mean(val_losses)) if val_losses else float("inf")
@@ -934,22 +1572,32 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
         elapsed = time.time() - epoch_t0
         epoch_durations_sec.append(float(elapsed))
         improved_mark = "★" if val_loss < (best_val_loss - min_delta) else " "
-        epoch_bar.set_postfix(
-            train=f"{train_loss:.4f}",
-            val=f"{val_loss:.4f}",
-            tDice=f"{train_dice:.4f}",
-            vDice=f"{val_dice:.4f}",
-            best=f"{best_val_loss:.4f}",
-            wait=wait,
-            lr=f"{current_lr:.2e}",
-        )
-        tqdm.write(
-            f"Epoch {epoch:03d}/{epochs} {improved_mark} | "
-            f"train={train_loss:.6f}  val={val_loss:.6f}  "
-            f"train_dice={train_dice:.4f}  val_dice={val_dice:.4f}  "
-            f"best={best_val_loss:.6f}  lr={current_lr:.2e}  "
-            f"wait={wait}/{patience}  ({elapsed:.1f}s)"
-        )
+        if progress_enabled:
+            epoch_bar.set_postfix(
+                train=f"{train_loss:.4f}",
+                val=f"{val_loss:.4f}",
+                tDice=f"{train_dice:.4f}",
+                vDice=f"{val_dice:.4f}",
+                best=f"{best_val_loss:.4f}",
+                wait=wait,
+                lr=f"{current_lr:.2e}",
+            )
+            tqdm.write(
+                f"Epoch {epoch:03d}/{epochs} {improved_mark} | "
+                f"train={train_loss:.6f}  val={val_loss:.6f}  "
+                f"train_dice={train_dice:.4f}  val_dice={val_dice:.4f}  "
+                f"best={best_val_loss:.6f}  lr={current_lr:.2e}  "
+                f"wait={wait}/{patience}  ({elapsed:.1f}s)"
+            )
+        else:
+            print(
+                f"Epoch {epoch:03d}/{epochs} {improved_mark} | "
+                f"train={train_loss:.6f}  val={val_loss:.6f}  "
+                f"train_dice={train_dice:.4f}  val_dice={val_dice:.4f}  "
+                f"best={best_val_loss:.6f}  lr={current_lr:.2e}  "
+                f"wait={wait}/{patience}  ({elapsed:.1f}s)",
+                flush=True,
+            )
 
         improved = val_loss < (best_val_loss - min_delta)
         if improved:

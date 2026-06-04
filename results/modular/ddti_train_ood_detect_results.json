@@ -2,3665 +2,3665 @@
   {
     "index": 0,
     "name": "1_1",
-    "ood_score": 0.21417680382728577,
+    "ood_score": 0.21412870287895203,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7858232259750366
+    "confidence": 0.7858712673187256
   },
   {
     "index": 1,
     "name": "1_2",
-    "ood_score": 0.2191978096961975,
+    "ood_score": 0.21907547116279602,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7808021903038025
+    "confidence": 0.7809245586395264
   },
   {
     "index": 2,
     "name": "10_1",
-    "ood_score": 0.09539780020713806,
+    "ood_score": 0.0953245609998703,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9046021699905396
+    "confidence": 0.9046754240989685
   },
   {
     "index": 3,
     "name": "100_1#cc1",
-    "ood_score": 0.16477763652801514,
+    "ood_score": 0.16500911116600037,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8352223634719849
+    "confidence": 0.8349908590316772
   },
   {
     "index": 4,
     "name": "100_1#cc2",
-    "ood_score": 0.1991744041442871,
+    "ood_score": 0.19922369718551636,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8008255958557129
+    "confidence": 0.8007763028144836
   },
   {
     "index": 5,
     "name": "101_1#cc1",
-    "ood_score": 0.13586638867855072,
+    "ood_score": 0.13595399260520935,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8641335964202881
+    "confidence": 0.8640459775924683
   },
   {
     "index": 6,
     "name": "101_1#cc2",
-    "ood_score": 0.13327348232269287,
+    "ood_score": 0.13320475816726685,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8667265176773071
+    "confidence": 0.8667952418327332
   },
   {
     "index": 7,
     "name": "102_1#cc1",
-    "ood_score": 0.13060234487056732,
+    "ood_score": 0.13061445951461792,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8693976402282715
+    "confidence": 0.8693855404853821
   },
   {
     "index": 8,
     "name": "102_1#cc2",
-    "ood_score": 0.13992401957511902,
+    "ood_score": 0.14028581976890564,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8600759506225586
+    "confidence": 0.859714150428772
   },
   {
     "index": 9,
     "name": "103_1#cc1",
-    "ood_score": 0.13464264571666718,
+    "ood_score": 0.13480627536773682,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8653573393821716
+    "confidence": 0.8651937246322632
   },
   {
     "index": 10,
     "name": "103_1#cc2",
-    "ood_score": 0.12885665893554688,
+    "ood_score": 0.1289396733045578,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8711433410644531
+    "confidence": 0.871060311794281
   },
   {
     "index": 11,
     "name": "104_1#cc1",
-    "ood_score": 0.15278494358062744,
+    "ood_score": 0.1536436229944229,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8472150564193726
+    "confidence": 0.8463563919067383
   },
   {
     "index": 12,
     "name": "104_1#cc2",
-    "ood_score": 0.1242862194776535,
+    "ood_score": 0.12440957129001617,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8757137656211853
+    "confidence": 0.875590443611145
   },
   {
     "index": 13,
     "name": "105_1#cc1",
-    "ood_score": 0.12567001581192017,
+    "ood_score": 0.12576165795326233,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8743299841880798
+    "confidence": 0.8742383718490601
   },
   {
     "index": 14,
     "name": "105_1#cc2",
-    "ood_score": 0.1570243090391159,
+    "ood_score": 0.15697796642780304,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8429756760597229
+    "confidence": 0.8430220484733582
   },
   {
     "index": 15,
     "name": "106_3",
-    "ood_score": 0.10959956049919128,
+    "ood_score": 0.10954706370830536,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8904004096984863
+    "confidence": 0.8904529213905334
   },
   {
     "index": 16,
     "name": "106_4",
-    "ood_score": 0.12007086724042892,
+    "ood_score": 0.12017390131950378,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8799291253089905
+    "confidence": 0.8798260688781738
   },
   {
     "index": 17,
     "name": "106_1#cc1",
-    "ood_score": 0.12912549078464508,
+    "ood_score": 0.1288512945175171,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8708745241165161
+    "confidence": 0.8711487054824829
   },
   {
     "index": 18,
     "name": "106_1#cc2",
-    "ood_score": 0.16639375686645508,
+    "ood_score": 0.16616693139076233,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8336062431335449
+    "confidence": 0.8338330984115601
   },
   {
     "index": 19,
     "name": "106_2",
-    "ood_score": 0.13058605790138245,
+    "ood_score": 0.1307164430618286,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8694139719009399
+    "confidence": 0.8692835569381714
   },
   {
     "index": 20,
     "name": "107_1#cc1",
-    "ood_score": 0.10606291145086288,
+    "ood_score": 0.10622572898864746,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8939371109008789
+    "confidence": 0.8937742710113525
   },
   {
     "index": 21,
     "name": "107_1#cc2",
-    "ood_score": 0.10842733085155487,
+    "ood_score": 0.10841648280620575,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8915726542472839
+    "confidence": 0.8915835022926331
   },
   {
     "index": 22,
     "name": "108_1",
-    "ood_score": 0.1355152428150177,
+    "ood_score": 0.13557462394237518,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8644847869873047
+    "confidence": 0.8644253611564636
   },
   {
     "index": 23,
     "name": "109_1",
-    "ood_score": 0.13687020540237427,
+    "ood_score": 0.1367443948984146,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8631297945976257
+    "confidence": 0.8632556200027466
   },
   {
     "index": 24,
     "name": "11_1",
-    "ood_score": 0.14238271117210388,
+    "ood_score": 0.1424395740032196,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8576172590255737
+    "confidence": 0.857560396194458
   },
   {
     "index": 25,
     "name": "110_1#cc1",
-    "ood_score": 0.17435526847839355,
+    "ood_score": 0.17428866028785706,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8256447315216064
+    "confidence": 0.8257113695144653
   },
   {
     "index": 26,
     "name": "110_1#cc2",
-    "ood_score": 0.10320834815502167,
+    "ood_score": 0.10322016477584839,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8967916369438171
+    "confidence": 0.8967798352241516
   },
   {
     "index": 27,
     "name": "111_1",
-    "ood_score": 0.10761959105730057,
+    "ood_score": 0.10762045532464981,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.89238041639328
+    "confidence": 0.8923795223236084
   },
   {
     "index": 28,
     "name": "112_1",
-    "ood_score": 0.13360553979873657,
+    "ood_score": 0.1337333470582962,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8663944602012634
+    "confidence": 0.866266667842865
   },
   {
     "index": 29,
     "name": "113_1",
-    "ood_score": 0.08636752516031265,
+    "ood_score": 0.08641452342271805,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9136324524879456
+    "confidence": 0.9135854840278625
   },
   {
     "index": 30,
     "name": "114_2",
-    "ood_score": 0.13811257481575012,
+    "ood_score": 0.13814117014408112,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8618874549865723
+    "confidence": 0.8618588447570801
   },
   {
     "index": 31,
     "name": "115_1#cc1",
-    "ood_score": 0.15149787068367004,
+    "ood_score": 0.1514071375131607,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8485021591186523
+    "confidence": 0.8485928773880005
   },
   {
     "index": 32,
     "name": "115_1#cc2",
-    "ood_score": 0.1026315838098526,
+    "ood_score": 0.10279931128025055,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8973684310913086
+    "confidence": 0.8972007036209106
   },
   {
     "index": 33,
     "name": "116_1#cc1",
-    "ood_score": 0.11541092395782471,
+    "ood_score": 0.11565671861171722,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8845890760421753
+    "confidence": 0.8843432664871216
   },
   {
     "index": 34,
     "name": "116_1#cc2",
-    "ood_score": 0.1462077498435974,
+    "ood_score": 0.14595633745193481,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8537922501564026
+    "confidence": 0.8540436625480652
   },
   {
     "index": 35,
     "name": "117_1#cc1",
-    "ood_score": 0.1399020105600357,
+    "ood_score": 0.13985922932624817,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8600980043411255
+    "confidence": 0.8601408004760742
   },
   {
     "index": 36,
     "name": "117_1#cc2",
-    "ood_score": 0.1349150538444519,
+    "ood_score": 0.13498497009277344,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8650849461555481
+    "confidence": 0.8650150299072266
   },
   {
     "index": 37,
     "name": "118_1#cc1",
-    "ood_score": 0.18047292530536652,
+    "ood_score": 0.18039606511592865,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8195270895957947
+    "confidence": 0.8196039199829102
   },
   {
     "index": 38,
     "name": "118_1#cc2",
-    "ood_score": 0.16780708730220795,
+    "ood_score": 0.1678764671087265,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8321928977966309
+    "confidence": 0.8321235179901123
   },
   {
     "index": 39,
     "name": "119_1",
-    "ood_score": 0.17793318629264832,
+    "ood_score": 0.17792564630508423,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8220667839050293
+    "confidence": 0.8220743536949158
   },
   {
     "index": 40,
     "name": "12_1",
-    "ood_score": 0.1237354576587677,
+    "ood_score": 0.12385185062885284,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8762645721435547
+    "confidence": 0.8761481642723083
   },
   {
     "index": 41,
     "name": "121_1#cc1",
-    "ood_score": 0.1437428742647171,
+    "ood_score": 0.14372661709785461,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8562571406364441
+    "confidence": 0.8562734127044678
   },
   {
     "index": 42,
     "name": "121_1#cc2",
-    "ood_score": 0.20806623995304108,
+    "ood_score": 0.20789998769760132,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7919337749481201
+    "confidence": 0.7921000123023987
   },
   {
     "index": 43,
     "name": "122_2#cc1",
-    "ood_score": 0.18478530645370483,
+    "ood_score": 0.18481893837451935,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8152146935462952
+    "confidence": 0.8151810765266418
   },
   {
     "index": 44,
     "name": "122_2#cc2",
-    "ood_score": 0.19313639402389526,
+    "ood_score": 0.19325672090053558,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8068636059761047
+    "confidence": 0.8067432641983032
   },
   {
     "index": 45,
     "name": "122_1#cc1",
-    "ood_score": 0.16285908222198486,
+    "ood_score": 0.16277821362018585,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8371409177780151
+    "confidence": 0.8372218012809753
   },
   {
     "index": 46,
     "name": "122_1#cc2",
-    "ood_score": 0.2061360776424408,
+    "ood_score": 0.20633555948734283,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7938638925552368
+    "confidence": 0.7936644554138184
   },
   {
     "index": 47,
     "name": "123_1#cc1",
-    "ood_score": 0.15502016246318817,
+    "ood_score": 0.15492072701454163,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8449798226356506
+    "confidence": 0.8450793027877808
   },
   {
     "index": 48,
     "name": "123_1#cc2",
-    "ood_score": 0.1630268394947052,
+    "ood_score": 0.16322660446166992,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8369731903076172
+    "confidence": 0.8367733955383301
   },
   {
     "index": 49,
     "name": "124_1#cc1",
-    "ood_score": 0.2067841738462448,
+    "ood_score": 0.2073117345571518,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.793215811252594
+    "confidence": 0.792688250541687
   },
   {
     "index": 50,
     "name": "124_1#cc2",
-    "ood_score": 0.12985345721244812,
+    "ood_score": 0.130001962184906,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8701465129852295
+    "confidence": 0.869998037815094
   },
   {
     "index": 51,
     "name": "125_1#cc1",
-    "ood_score": 0.13583868741989136,
+    "ood_score": 0.13587698340415955,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8641613125801086
+    "confidence": 0.8641229867935181
   },
   {
     "index": 52,
     "name": "125_1#cc2",
-    "ood_score": 0.13373491168022156,
+    "ood_score": 0.1336258351802826,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.866265058517456
+    "confidence": 0.866374135017395
   },
   {
     "index": 53,
     "name": "126_1#cc1",
-    "ood_score": 0.15332409739494324,
+    "ood_score": 0.15315084159374237,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8466758728027344
+    "confidence": 0.8468491435050964
   },
   {
     "index": 54,
     "name": "126_1#cc2",
-    "ood_score": 0.09953311085700989,
+    "ood_score": 0.0996040403842926,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9004669189453125
+    "confidence": 0.9003959894180298
   },
   {
     "index": 55,
     "name": "128_1#cc1",
-    "ood_score": 0.2235674113035202,
+    "ood_score": 0.22369173169136047,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7764325737953186
+    "confidence": 0.7763082981109619
   },
   {
     "index": 56,
     "name": "128_1#cc2",
-    "ood_score": 0.17370471358299255,
+    "ood_score": 0.17360298335552216,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8262952566146851
+    "confidence": 0.8263970017433167
   },
   {
     "index": 57,
     "name": "129_2#cc1",
-    "ood_score": 0.09745074808597565,
+    "ood_score": 0.09755932539701462,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9025492668151855
+    "confidence": 0.9024406671524048
   },
   {
     "index": 58,
     "name": "129_2#cc2",
-    "ood_score": 0.12241985648870468,
+    "ood_score": 0.12244589626789093,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8775801658630371
+    "confidence": 0.8775541186332703
   },
   {
     "index": 59,
     "name": "129_1#cc1",
-    "ood_score": 0.1996093988418579,
+    "ood_score": 0.1997309923171997,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8003906011581421
+    "confidence": 0.8002690076828003
   },
   {
     "index": 60,
     "name": "129_1#cc2",
-    "ood_score": 0.13728615641593933,
+    "ood_score": 0.1376127302646637,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8627138137817383
+    "confidence": 0.8623872995376587
   },
   {
     "index": 61,
     "name": "13_1",
-    "ood_score": 0.15843376517295837,
+    "ood_score": 0.1582416445016861,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8415662050247192
+    "confidence": 0.8417583703994751
   },
   {
     "index": 62,
     "name": "130_2",
-    "ood_score": 0.17923587560653687,
+    "ood_score": 0.17939043045043945,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8207641243934631
+    "confidence": 0.8206095695495605
   },
   {
     "index": 63,
     "name": "130_1",
-    "ood_score": 0.21948044002056122,
+    "ood_score": 0.21930500864982605,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7805195450782776
+    "confidence": 0.7806949615478516
   },
   {
     "index": 64,
     "name": "131_1#cc1",
-    "ood_score": 0.26700931787490845,
+    "ood_score": 0.2669643759727478,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7329906821250916
+    "confidence": 0.7330356240272522
   },
   {
     "index": 65,
     "name": "131_1#cc2",
-    "ood_score": 0.1990136206150055,
+    "ood_score": 0.19862142205238342,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8009864091873169
+    "confidence": 0.801378607749939
   },
   {
     "index": 66,
     "name": "132_1#cc1",
-    "ood_score": 0.13963589072227478,
+    "ood_score": 0.1394403576850891,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8603640794754028
+    "confidence": 0.8605596423149109
   },
   {
     "index": 67,
     "name": "132_1#cc2",
-    "ood_score": 0.11673927307128906,
+    "ood_score": 0.1168154776096344,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8832607269287109
+    "confidence": 0.883184552192688
   },
   {
     "index": 68,
     "name": "132_2",
-    "ood_score": 0.12705674767494202,
+    "ood_score": 0.12709937989711761,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8729432821273804
+    "confidence": 0.8729006052017212
   },
   {
     "index": 69,
     "name": "133_1#cc1",
-    "ood_score": 0.12252719700336456,
+    "ood_score": 0.12229380011558533,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8774728178977966
+    "confidence": 0.8777061700820923
   },
   {
     "index": 70,
     "name": "133_1#cc2",
-    "ood_score": 0.13151969015598297,
+    "ood_score": 0.13166318833827972,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8684803247451782
+    "confidence": 0.8683367967605591
   },
   {
     "index": 71,
     "name": "134_1#cc1",
-    "ood_score": 0.1759139746427536,
+    "ood_score": 0.17591121792793274,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8240860104560852
+    "confidence": 0.8240888118743896
   },
   {
     "index": 72,
     "name": "134_1#cc2",
-    "ood_score": 0.2063363641500473,
+    "ood_score": 0.20633983612060547,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7936636209487915
+    "confidence": 0.7936601638793945
   },
   {
     "index": 73,
     "name": "135_1#cc1",
-    "ood_score": 0.1534031480550766,
+    "ood_score": 0.15362969040870667,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8465968370437622
+    "confidence": 0.8463703393936157
   },
   {
     "index": 74,
     "name": "135_1#cc2",
-    "ood_score": 0.12281802296638489,
+    "ood_score": 0.12298497557640076,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8771820068359375
+    "confidence": 0.8770149946212769
   },
   {
     "index": 75,
     "name": "136_1#cc1",
-    "ood_score": 0.1401793658733368,
+    "ood_score": 0.14004983007907867,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8598206043243408
+    "confidence": 0.8599501848220825
   },
   {
     "index": 76,
     "name": "136_1#cc2",
-    "ood_score": 0.1674521118402481,
+    "ood_score": 0.1668224036693573,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8325479030609131
+    "confidence": 0.8331775665283203
   },
   {
     "index": 77,
     "name": "137_1",
-    "ood_score": 0.21790803968906403,
+    "ood_score": 0.2178558111190796,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7820919752120972
+    "confidence": 0.7821441888809204
   },
   {
     "index": 78,
     "name": "138_1#cc1",
-    "ood_score": 0.16967129707336426,
+    "ood_score": 0.1695634424686432,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8303287029266357
+    "confidence": 0.8304365873336792
   },
   {
     "index": 79,
     "name": "138_1#cc2",
-    "ood_score": 0.21504051983356476,
+    "ood_score": 0.2153271734714508,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7849594950675964
+    "confidence": 0.7846728563308716
   },
   {
     "index": 80,
     "name": "138_2",
-    "ood_score": 0.15270744264125824,
+    "ood_score": 0.15257608890533447,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8472925424575806
+    "confidence": 0.8474239110946655
   },
   {
     "index": 81,
     "name": "139_1#cc1",
-    "ood_score": 0.1336071938276291,
+    "ood_score": 0.1333838403224945,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8663927912712097
+    "confidence": 0.8666161298751831
   },
   {
     "index": 82,
     "name": "139_1#cc2",
-    "ood_score": 0.1473890095949173,
+    "ood_score": 0.14741742610931396,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8526110053062439
+    "confidence": 0.852582573890686
   },
   {
     "index": 83,
     "name": "139_3",
-    "ood_score": 0.12236493825912476,
+    "ood_score": 0.12226872891187668,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8776350617408752
+    "confidence": 0.8777312636375427
   },
   {
     "index": 84,
     "name": "139_2",
-    "ood_score": 0.13707861304283142,
+    "ood_score": 0.13724279403686523,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8629213571548462
+    "confidence": 0.8627572059631348
   },
   {
     "index": 85,
     "name": "14_1#cc1",
-    "ood_score": 0.13308104872703552,
+    "ood_score": 0.13324995338916779,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8669189214706421
+    "confidence": 0.8667500615119934
   },
   {
     "index": 86,
     "name": "14_1#cc2",
-    "ood_score": 0.11228276789188385,
+    "ood_score": 0.11221936345100403,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8877172470092773
+    "confidence": 0.8877806663513184
   },
   {
     "index": 87,
     "name": "140_1",
-    "ood_score": 0.15314185619354248,
+    "ood_score": 0.15348750352859497,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8468581438064575
+    "confidence": 0.846512496471405
   },
   {
     "index": 88,
     "name": "141_1",
-    "ood_score": 0.1374659538269043,
+    "ood_score": 0.13772748410701752,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8625340461730957
+    "confidence": 0.8622725009918213
   },
   {
     "index": 89,
     "name": "142_1#cc1",
-    "ood_score": 0.1703406572341919,
+    "ood_score": 0.17036080360412598,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8296593427658081
+    "confidence": 0.829639196395874
   },
   {
     "index": 90,
     "name": "142_1#cc2",
-    "ood_score": 0.18508893251419067,
+    "ood_score": 0.1848716139793396,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8149110674858093
+    "confidence": 0.8151283860206604
   },
   {
     "index": 91,
     "name": "143_1",
-    "ood_score": 0.11142925173044205,
+    "ood_score": 0.11149332672357559,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8885707259178162
+    "confidence": 0.8885066509246826
   },
   {
     "index": 92,
     "name": "144_1#cc1",
-    "ood_score": 0.12427613884210587,
+    "ood_score": 0.12423159182071686,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8757238388061523
+    "confidence": 0.8757684230804443
   },
   {
     "index": 93,
     "name": "144_1#cc2",
-    "ood_score": 0.0946136936545372,
+    "ood_score": 0.09459344297647476,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9053863286972046
+    "confidence": 0.9054065346717834
   },
   {
     "index": 94,
     "name": "145_1#cc1",
-    "ood_score": 0.14940139651298523,
+    "ood_score": 0.14925959706306458,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8505985736846924
+    "confidence": 0.8507404327392578
   },
   {
     "index": 95,
     "name": "145_1#cc2",
-    "ood_score": 0.12475167214870453,
+    "ood_score": 0.12472987174987793,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8752483129501343
+    "confidence": 0.8752701282501221
   },
   {
     "index": 96,
     "name": "146_1#cc1",
-    "ood_score": 0.17605623602867126,
+    "ood_score": 0.1761334240436554,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8239437341690063
+    "confidence": 0.823866605758667
   },
   {
     "index": 97,
     "name": "146_1#cc2",
-    "ood_score": 0.21213214099407196,
+    "ood_score": 0.21211107075214386,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7878678441047668
+    "confidence": 0.7878889441490173
   },
   {
     "index": 98,
     "name": "146_2",
-    "ood_score": 0.1707162708044052,
+    "ood_score": 0.17075800895690918,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8292837142944336
+    "confidence": 0.8292419910430908
   },
   {
     "index": 99,
     "name": "147_1#cc1",
-    "ood_score": 0.16333383321762085,
+    "ood_score": 0.16324207186698914,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8366661667823792
+    "confidence": 0.8367578983306885
   },
   {
     "index": 100,
     "name": "147_1#cc2",
-    "ood_score": 0.3248063921928406,
+    "ood_score": 0.3253768980503082,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6751936078071594
+    "confidence": 0.6746231317520142
   },
   {
     "index": 101,
     "name": "148_1",
-    "ood_score": 0.1269494742155075,
+    "ood_score": 0.12700270116329193,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8730505108833313
+    "confidence": 0.8729972839355469
   },
   {
     "index": 102,
     "name": "149_1#cc1",
-    "ood_score": 0.18356575071811676,
+    "ood_score": 0.18335720896720886,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8164342641830444
+    "confidence": 0.8166427612304688
   },
   {
     "index": 103,
     "name": "149_1#cc2",
-    "ood_score": 0.22735993564128876,
+    "ood_score": 0.22775322198867798,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.77264004945755
+    "confidence": 0.772246778011322
   },
   {
     "index": 104,
     "name": "15_1",
-    "ood_score": 0.17952406406402588,
+    "ood_score": 0.17969852685928345,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8204759359359741
+    "confidence": 0.8203014731407166
   },
   {
     "index": 105,
     "name": "150_1",
-    "ood_score": 0.2708601951599121,
+    "ood_score": 0.2708365023136139,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7291398048400879
+    "confidence": 0.7291635274887085
   },
   {
     "index": 106,
     "name": "151_1",
-    "ood_score": 0.22567106783390045,
+    "ood_score": 0.2257768213748932,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7743289470672607
+    "confidence": 0.7742232084274292
   },
   {
     "index": 107,
     "name": "152_1#cc1",
-    "ood_score": 0.08772925287485123,
+    "ood_score": 0.08763410896062851,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.912270724773407
+    "confidence": 0.9123659133911133
   },
   {
     "index": 108,
     "name": "152_1#cc2",
-    "ood_score": 0.09548941254615784,
+    "ood_score": 0.09544341266155243,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9045106172561646
+    "confidence": 0.9045565724372864
   },
   {
     "index": 109,
     "name": "153_1",
-    "ood_score": 0.10664698481559753,
+    "ood_score": 0.10674291104078293,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8933529853820801
+    "confidence": 0.8932570815086365
   },
   {
     "index": 110,
     "name": "154_1#cc1",
-    "ood_score": 0.11069386452436447,
+    "ood_score": 0.11072885990142822,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8893061280250549
+    "confidence": 0.8892711400985718
   },
   {
     "index": 111,
     "name": "154_1#cc2",
-    "ood_score": 0.2421121895313263,
+    "ood_score": 0.24209074676036835,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7578878402709961
+    "confidence": 0.7579092383384705
   },
   {
     "index": 112,
     "name": "155_1#cc1",
-    "ood_score": 0.10753447562456131,
+    "ood_score": 0.10766458511352539,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8924655318260193
+    "confidence": 0.8923354148864746
   },
   {
     "index": 113,
     "name": "155_1#cc2",
-    "ood_score": 0.10491908341646194,
+    "ood_score": 0.10481370985507965,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8950809240341187
+    "confidence": 0.8951863050460815
   },
   {
     "index": 114,
     "name": "156_2",
-    "ood_score": 0.25495484471321106,
+    "ood_score": 0.25485897064208984,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7450451850891113
+    "confidence": 0.7451410293579102
   },
   {
     "index": 115,
     "name": "156_1#cc1",
-    "ood_score": 0.16412800550460815,
+    "ood_score": 0.16430461406707764,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8358719944953918
+    "confidence": 0.8356953859329224
   },
   {
     "index": 116,
     "name": "156_1#cc2",
-    "ood_score": 0.1908622682094574,
+    "ood_score": 0.1910112500190735,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8091377019882202
+    "confidence": 0.8089887499809265
   },
   {
     "index": 117,
     "name": "157_2",
-    "ood_score": 0.2040964663028717,
+    "ood_score": 0.20401635766029358,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7959035634994507
+    "confidence": 0.7959836721420288
   },
   {
     "index": 118,
     "name": "157_1#cc1",
-    "ood_score": 0.19822293519973755,
+    "ood_score": 0.19835755228996277,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8017770648002625
+    "confidence": 0.8016424179077148
   },
   {
     "index": 119,
     "name": "157_1#cc2",
-    "ood_score": 0.14183875918388367,
+    "ood_score": 0.1417214274406433,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.858161211013794
+    "confidence": 0.8582785725593567
   },
   {
     "index": 120,
     "name": "158_2",
-    "ood_score": 0.1290574073791504,
+    "ood_score": 0.12901341915130615,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8709425926208496
+    "confidence": 0.8709865808486938
   },
   {
     "index": 121,
     "name": "158_1",
-    "ood_score": 0.1640264242887497,
+    "ood_score": 0.16389253735542297,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8359735608100891
+    "confidence": 0.8361074924468994
   },
   {
     "index": 122,
     "name": "158_3",
-    "ood_score": 0.12540285289287567,
+    "ood_score": 0.12554463744163513,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8745971322059631
+    "confidence": 0.8744553327560425
   },
   {
     "index": 123,
     "name": "159_1#cc1",
-    "ood_score": 0.15117785334587097,
+    "ood_score": 0.15123793482780457,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8488221168518066
+    "confidence": 0.848762035369873
   },
   {
     "index": 124,
     "name": "159_1#cc2",
-    "ood_score": 0.22530105710029602,
+    "ood_score": 0.22636836767196655,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7746989727020264
+    "confidence": 0.7736316323280334
   },
   {
     "index": 125,
     "name": "16_1",
-    "ood_score": 0.2263912856578827,
+    "ood_score": 0.22657781839370728,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7736086845397949
+    "confidence": 0.7734221816062927
   },
   {
     "index": 126,
     "name": "160_1",
-    "ood_score": 0.2100200057029724,
+    "ood_score": 0.21009323000907898,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7899799942970276
+    "confidence": 0.7899067401885986
   },
   {
     "index": 127,
     "name": "161_1#cc1",
-    "ood_score": 0.20467925071716309,
+    "ood_score": 0.20455211400985718,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7953207492828369
+    "confidence": 0.7954478859901428
   },
   {
     "index": 128,
     "name": "161_1#cc2",
-    "ood_score": 0.38350915908813477,
+    "ood_score": 0.38355502486228943,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6164908409118652
+    "confidence": 0.6164449453353882
   },
   {
     "index": 129,
     "name": "162_1#cc1",
-    "ood_score": 0.15168888866901398,
+    "ood_score": 0.1520509123802185,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8483111262321472
+    "confidence": 0.8479490876197815
   },
   {
     "index": 130,
     "name": "162_1#cc2",
-    "ood_score": 0.1035015881061554,
+    "ood_score": 0.10362079739570618,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.896498441696167
+    "confidence": 0.8963792324066162
   },
   {
     "index": 131,
     "name": "163_1#cc1",
-    "ood_score": 0.14152103662490845,
+    "ood_score": 0.1417625993490219,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8584789633750916
+    "confidence": 0.8582373857498169
   },
   {
     "index": 132,
     "name": "163_1#cc2",
-    "ood_score": 0.13999134302139282,
+    "ood_score": 0.14014242589473724,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8600086569786072
+    "confidence": 0.8598575592041016
   },
   {
     "index": 133,
     "name": "163_2",
-    "ood_score": 0.14373013377189636,
+    "ood_score": 0.1438058465719223,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8562698364257812
+    "confidence": 0.8561941385269165
   },
   {
     "index": 134,
     "name": "164_1#cc1",
-    "ood_score": 0.1317199468612671,
+    "ood_score": 0.1316591203212738,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8682800531387329
+    "confidence": 0.8683408498764038
   },
   {
     "index": 135,
     "name": "164_1#cc2",
-    "ood_score": 0.23621825873851776,
+    "ood_score": 0.23694992065429688,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.763781726360321
+    "confidence": 0.7630500793457031
   },
   {
     "index": 136,
     "name": "167_1#cc1",
-    "ood_score": 0.1646888107061386,
+    "ood_score": 0.16474276781082153,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8353111743927002
+    "confidence": 0.8352572321891785
   },
   {
     "index": 137,
     "name": "167_1#cc2",
-    "ood_score": 0.09976733475923538,
+    "ood_score": 0.09972262382507324,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9002326726913452
+    "confidence": 0.9002773761749268
   },
   {
     "index": 138,
     "name": "168_1#cc1",
-    "ood_score": 0.21392986178398132,
+    "ood_score": 0.21412643790245056,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7860701084136963
+    "confidence": 0.785873532295227
   },
   {
     "index": 139,
     "name": "168_1#cc2",
-    "ood_score": 0.11311165243387222,
+    "ood_score": 0.1131494790315628,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.886888325214386
+    "confidence": 0.8868505358695984
   },
   {
     "index": 140,
     "name": "169_1",
-    "ood_score": 0.13619717955589294,
+    "ood_score": 0.13625353574752808,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8638027906417847
+    "confidence": 0.8637464642524719
   },
   {
     "index": 141,
     "name": "17_1",
-    "ood_score": 0.19593152403831482,
+    "ood_score": 0.19618281722068787,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8040684461593628
+    "confidence": 0.8038171529769897
   },
   {
     "index": 142,
     "name": "170_1#cc1",
-    "ood_score": 0.09098377823829651,
+    "ood_score": 0.09095640480518341,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9090162515640259
+    "confidence": 0.9090436100959778
   },
   {
     "index": 143,
     "name": "170_1#cc2",
-    "ood_score": 0.1284499168395996,
+    "ood_score": 0.12842190265655518,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8715500831604004
+    "confidence": 0.8715780973434448
   },
   {
     "index": 144,
     "name": "171_1#cc1",
-    "ood_score": 0.14497163891792297,
+    "ood_score": 0.14493298530578613,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8550283908843994
+    "confidence": 0.8550670146942139
   },
   {
     "index": 145,
     "name": "171_1#cc2",
-    "ood_score": 0.12619352340698242,
+    "ood_score": 0.12617039680480957,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8738064765930176
+    "confidence": 0.8738296031951904
   },
   {
     "index": 146,
     "name": "172_1",
-    "ood_score": 0.1116916760802269,
+    "ood_score": 0.11198960989713669,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8883083462715149
+    "confidence": 0.8880103826522827
   },
   {
     "index": 147,
     "name": "173_2",
-    "ood_score": 0.17738476395606995,
+    "ood_score": 0.1773471236228943,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8226152658462524
+    "confidence": 0.8226528763771057
   },
   {
     "index": 148,
     "name": "173_1#cc1",
-    "ood_score": 0.21270379424095154,
+    "ood_score": 0.21259739995002747,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7872961759567261
+    "confidence": 0.7874026298522949
   },
   {
     "index": 149,
     "name": "173_1#cc2",
-    "ood_score": 0.2779965102672577,
+    "ood_score": 0.27846235036849976,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7220034599304199
+    "confidence": 0.7215376496315002
   },
   {
     "index": 150,
     "name": "174_1",
-    "ood_score": 0.14019715785980225,
+    "ood_score": 0.14033013582229614,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8598028421401978
+    "confidence": 0.8596698641777039
   },
   {
     "index": 151,
     "name": "175_2#cc1",
-    "ood_score": 0.18413510918617249,
+    "ood_score": 0.185041606426239,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8158649206161499
+    "confidence": 0.814958393573761
   },
   {
     "index": 152,
     "name": "175_2#cc2",
-    "ood_score": 0.1449946016073227,
+    "ood_score": 0.14514322578907013,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8550053834915161
+    "confidence": 0.8548567891120911
   },
   {
     "index": 153,
     "name": "175_1#cc1",
-    "ood_score": 0.13059672713279724,
+    "ood_score": 0.13074937462806702,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8694032430648804
+    "confidence": 0.8692506551742554
   },
   {
     "index": 154,
     "name": "175_1#cc2",
-    "ood_score": 0.13796408474445343,
+    "ood_score": 0.1381230652332306,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8620359301567078
+    "confidence": 0.8618769645690918
   },
   {
     "index": 155,
     "name": "177_2",
-    "ood_score": 0.14569765329360962,
+    "ood_score": 0.14559920132160187,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8543023467063904
+    "confidence": 0.8544008135795593
   },
   {
     "index": 156,
     "name": "177_1",
-    "ood_score": 0.12161058932542801,
+    "ood_score": 0.12157770991325378,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8783894181251526
+    "confidence": 0.8784222602844238
   },
   {
     "index": 157,
     "name": "178_1",
-    "ood_score": 0.15645718574523926,
+    "ood_score": 0.15612128376960754,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8435428142547607
+    "confidence": 0.8438787460327148
   },
   {
     "index": 158,
     "name": "179_1#cc1",
-    "ood_score": 0.2028435468673706,
+    "ood_score": 0.2027251422405243,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7971564531326294
+    "confidence": 0.7972748279571533
   },
   {
     "index": 159,
     "name": "179_1#cc2",
-    "ood_score": 0.2422492504119873,
+    "ood_score": 0.24204029142856598,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7577507495880127
+    "confidence": 0.7579597234725952
   },
   {
     "index": 160,
     "name": "18_1",
-    "ood_score": 0.1267242431640625,
+    "ood_score": 0.12667208909988403,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8732757568359375
+    "confidence": 0.873327910900116
   },
   {
     "index": 161,
     "name": "180_1#cc1",
-    "ood_score": 0.09449488669633865,
+    "ood_score": 0.09450751543045044,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9055051207542419
+    "confidence": 0.9054924845695496
   },
   {
     "index": 162,
     "name": "180_1#cc2",
-    "ood_score": 0.15281501412391663,
+    "ood_score": 0.15273034572601318,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8471850156784058
+    "confidence": 0.8472696542739868
   },
   {
     "index": 163,
     "name": "181_1#cc1",
-    "ood_score": 0.12735362350940704,
+    "ood_score": 0.12748602032661438,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8726463913917542
+    "confidence": 0.872514009475708
   },
   {
     "index": 164,
     "name": "181_1#cc2",
-    "ood_score": 0.09435220062732697,
+    "ood_score": 0.09460437297821045,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9056478142738342
+    "confidence": 0.9053956270217896
   },
   {
     "index": 165,
     "name": "182_1#cc1",
-    "ood_score": 0.24155181646347046,
+    "ood_score": 0.24133409559726715,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7584481835365295
+    "confidence": 0.758665919303894
   },
   {
     "index": 166,
     "name": "182_1#cc2",
-    "ood_score": 0.1811658889055252,
+    "ood_score": 0.1812075674533844,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.818834125995636
+    "confidence": 0.818792462348938
   },
   {
     "index": 167,
     "name": "183_1",
-    "ood_score": 0.20533448457717896,
+    "ood_score": 0.20534130930900574,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.794665515422821
+    "confidence": 0.7946586608886719
   },
   {
     "index": 168,
     "name": "183_2",
-    "ood_score": 0.23990944027900696,
+    "ood_score": 0.2399369180202484,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7600905895233154
+    "confidence": 0.7600630521774292
   },
   {
     "index": 169,
     "name": "184_1#cc1",
-    "ood_score": 0.19860628247261047,
+    "ood_score": 0.19858160614967346,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8013937473297119
+    "confidence": 0.8014184236526489
   },
   {
     "index": 170,
     "name": "184_1#cc2",
-    "ood_score": 0.12313661724328995,
+    "ood_score": 0.12297305464744568,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8768633604049683
+    "confidence": 0.8770269155502319
   },
   {
     "index": 171,
     "name": "185_1#cc1",
-    "ood_score": 0.13859790563583374,
+    "ood_score": 0.13857051730155945,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8614020943641663
+    "confidence": 0.8614294528961182
   },
   {
     "index": 172,
     "name": "185_1#cc2",
-    "ood_score": 0.1466156393289566,
+    "ood_score": 0.14651444554328918,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8533843755722046
+    "confidence": 0.8534855842590332
   },
   {
     "index": 173,
     "name": "186_1#cc1",
-    "ood_score": 0.10497633367776871,
+    "ood_score": 0.10482479631900787,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8950236439704895
+    "confidence": 0.8951752185821533
   },
   {
     "index": 174,
     "name": "186_1#cc2",
-    "ood_score": 0.13323557376861572,
+    "ood_score": 0.13328945636749268,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8667644262313843
+    "confidence": 0.8667105436325073
   },
   {
     "index": 175,
     "name": "187_1#cc1",
-    "ood_score": 0.10508281737565994,
+    "ood_score": 0.10431258380413055,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8949171900749207
+    "confidence": 0.8956874012947083
   },
   {
     "index": 176,
     "name": "187_1#cc2",
-    "ood_score": 0.09815151244401932,
+    "ood_score": 0.09814010560512543,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9018484950065613
+    "confidence": 0.9018598794937134
   },
   {
     "index": 177,
     "name": "188_1#cc1",
-    "ood_score": 0.1494068056344986,
+    "ood_score": 0.1495654284954071,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8505932092666626
+    "confidence": 0.8504345417022705
   },
   {
     "index": 178,
     "name": "188_1#cc2",
-    "ood_score": 0.13138523697853088,
+    "ood_score": 0.13144023716449738,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8686147928237915
+    "confidence": 0.8685597777366638
   },
   {
     "index": 179,
     "name": "189_2",
-    "ood_score": 0.17207850515842438,
+    "ood_score": 0.17209559679031372,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8279215097427368
+    "confidence": 0.8279044032096863
   },
   {
     "index": 180,
     "name": "189_1#cc1",
-    "ood_score": 0.24621473252773285,
+    "ood_score": 0.24629850685596466,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.753785252571106
+    "confidence": 0.7537015080451965
   },
   {
     "index": 181,
     "name": "189_1#cc2",
-    "ood_score": 0.2169523537158966,
+    "ood_score": 0.21698535978794098,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7830476760864258
+    "confidence": 0.7830146551132202
   },
   {
     "index": 182,
     "name": "19_1",
-    "ood_score": 0.14288677275180817,
+    "ood_score": 0.14274773001670837,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.857113242149353
+    "confidence": 0.8572522401809692
   },
   {
     "index": 183,
     "name": "190_1",
-    "ood_score": 0.15511074662208557,
+    "ood_score": 0.1553438901901245,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8448892831802368
+    "confidence": 0.8446561098098755
   },
   {
     "index": 184,
     "name": "192_1#cc1",
-    "ood_score": 0.10344129800796509,
+    "ood_score": 0.10350856184959412,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8965587019920349
+    "confidence": 0.8964914083480835
   },
   {
     "index": 185,
     "name": "192_1#cc2",
-    "ood_score": 0.16781163215637207,
+    "ood_score": 0.16774365305900574,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8321883678436279
+    "confidence": 0.8322563171386719
   },
   {
     "index": 186,
     "name": "193_1",
-    "ood_score": 0.2114916443824768,
+    "ood_score": 0.21164700388908386,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7885083556175232
+    "confidence": 0.7883529663085938
   },
   {
     "index": 187,
     "name": "194_1",
-    "ood_score": 0.11309857666492462,
+    "ood_score": 0.1131669282913208,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8869014382362366
+    "confidence": 0.8868330717086792
   },
   {
     "index": 188,
     "name": "195_1#cc1",
-    "ood_score": 0.19887574017047882,
+    "ood_score": 0.19899675250053406,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8011242747306824
+    "confidence": 0.8010032176971436
   },
   {
     "index": 189,
     "name": "195_1#cc2",
-    "ood_score": 0.2302674651145935,
+    "ood_score": 0.23053790628910065,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7697325348854065
+    "confidence": 0.7694621086120605
   },
   {
     "index": 190,
     "name": "196_1#cc1",
-    "ood_score": 0.11428219079971313,
+    "ood_score": 0.1142643392086029,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8857178092002869
+    "confidence": 0.8857356309890747
   },
   {
     "index": 191,
     "name": "196_1#cc2",
-    "ood_score": 0.12878304719924927,
+    "ood_score": 0.12859618663787842,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8712169528007507
+    "confidence": 0.8714038133621216
   },
   {
     "index": 192,
     "name": "198_1#cc1",
-    "ood_score": 0.15836301445960999,
+    "ood_score": 0.1582970917224884,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8416370153427124
+    "confidence": 0.841702938079834
   },
   {
     "index": 193,
     "name": "198_1#cc2",
-    "ood_score": 0.10754132270812988,
+    "ood_score": 0.10714352130889893,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8924586772918701
+    "confidence": 0.8928564786911011
   },
   {
     "index": 194,
     "name": "198_2",
-    "ood_score": 0.13237948715686798,
+    "ood_score": 0.1325167566537857,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8676205277442932
+    "confidence": 0.8674832582473755
   },
   {
     "index": 195,
     "name": "199_1#cc1",
-    "ood_score": 0.09036692976951599,
+    "ood_score": 0.09037351608276367,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9096330404281616
+    "confidence": 0.9096264839172363
   },
   {
     "index": 196,
     "name": "199_1#cc2",
-    "ood_score": 0.08984433114528656,
+    "ood_score": 0.0897669643163681,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9101556539535522
+    "confidence": 0.9102330207824707
   },
   {
     "index": 197,
     "name": "2_1",
-    "ood_score": 0.16677042841911316,
+    "ood_score": 0.16679814457893372,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8332295417785645
+    "confidence": 0.8332018852233887
   },
   {
     "index": 198,
     "name": "20_1",
-    "ood_score": 0.11807145178318024,
+    "ood_score": 0.11810663342475891,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.881928563117981
+    "confidence": 0.8818933963775635
   },
   {
     "index": 199,
     "name": "200_1#cc1",
-    "ood_score": 0.17079967260360718,
+    "ood_score": 0.17055822908878326,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8292003273963928
+    "confidence": 0.8294417858123779
   },
   {
     "index": 200,
     "name": "200_1#cc2",
-    "ood_score": 0.16814106702804565,
+    "ood_score": 0.16825568675994873,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8318589329719543
+    "confidence": 0.8317443132400513
   },
   {
     "index": 201,
     "name": "201_1#cc1",
-    "ood_score": 0.09315328299999237,
+    "ood_score": 0.09322096407413483,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9068467020988464
+    "confidence": 0.9067790508270264
   },
   {
     "index": 202,
     "name": "201_1#cc2",
-    "ood_score": 0.2703910768032074,
+    "ood_score": 0.2701420187950134,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7296088933944702
+    "confidence": 0.7298579812049866
   },
   {
     "index": 203,
     "name": "202_1#cc1",
-    "ood_score": 0.10967971384525299,
+    "ood_score": 0.10962439328432083,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8903203010559082
+    "confidence": 0.8903756141662598
   },
   {
     "index": 204,
     "name": "202_1#cc2",
-    "ood_score": 0.14081354439258575,
+    "ood_score": 0.14078736305236816,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8591864705085754
+    "confidence": 0.8592126369476318
   },
   {
     "index": 205,
     "name": "204_1",
-    "ood_score": 0.13946610689163208,
+    "ood_score": 0.13958925008773804,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8605338931083679
+    "confidence": 0.860410749912262
   },
   {
     "index": 206,
     "name": "206_1#cc1",
-    "ood_score": 0.11840701103210449,
+    "ood_score": 0.1185775101184845,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8815929889678955
+    "confidence": 0.8814225196838379
   },
   {
     "index": 207,
     "name": "206_1#cc2",
-    "ood_score": 0.1283007711172104,
+    "ood_score": 0.12859371304512024,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8716992139816284
+    "confidence": 0.8714063167572021
   },
   {
     "index": 208,
     "name": "207_1",
-    "ood_score": 0.20418459177017212,
+    "ood_score": 0.20410063862800598,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7958154082298279
+    "confidence": 0.7958993911743164
   },
   {
     "index": 209,
     "name": "208_1#cc1",
-    "ood_score": 0.08909477293491364,
+    "ood_score": 0.08910118788480759,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9109052419662476
+    "confidence": 0.9108988046646118
   },
   {
     "index": 210,
     "name": "208_1#cc2",
-    "ood_score": 0.11236007511615753,
+    "ood_score": 0.11247957497835159,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8876399397850037
+    "confidence": 0.887520432472229
   },
   {
     "index": 211,
     "name": "209_1#cc1",
-    "ood_score": 0.14153428375720978,
+    "ood_score": 0.14137345552444458,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8584657311439514
+    "confidence": 0.8586265444755554
   },
   {
     "index": 212,
     "name": "209_1#cc2",
-    "ood_score": 0.19103902578353882,
+    "ood_score": 0.1908358633518219,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8089609742164612
+    "confidence": 0.8091641664505005
   },
   {
     "index": 213,
     "name": "209_2",
-    "ood_score": 0.14371278882026672,
+    "ood_score": 0.14379653334617615,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8562872409820557
+    "confidence": 0.8562034368515015
   },
   {
     "index": 214,
     "name": "21_1",
-    "ood_score": 0.19469806551933289,
+    "ood_score": 0.19470694661140442,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8053019046783447
+    "confidence": 0.805293083190918
   },
   {
     "index": 215,
     "name": "210_3#cc1",
-    "ood_score": 0.10225947946310043,
+    "ood_score": 0.10240833461284637,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8977405428886414
+    "confidence": 0.8975916504859924
   },
   {
     "index": 216,
     "name": "210_3#cc2",
-    "ood_score": 0.09454908967018127,
+    "ood_score": 0.0945918932557106,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9054509401321411
+    "confidence": 0.9054080843925476
   },
   {
     "index": 217,
     "name": "210_1",
-    "ood_score": 0.11983361095190048,
+    "ood_score": 0.11990893632173538,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8801664113998413
+    "confidence": 0.8800910711288452
   },
   {
     "index": 218,
     "name": "210_2",
-    "ood_score": 0.14410485327243805,
+    "ood_score": 0.1439528912305832,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8558951616287231
+    "confidence": 0.8560470938682556
   },
   {
     "index": 219,
     "name": "211_1#cc1",
-    "ood_score": 0.1481303572654724,
+    "ood_score": 0.1480330228805542,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8518696427345276
+    "confidence": 0.8519669771194458
   },
   {
     "index": 220,
     "name": "211_1#cc2",
-    "ood_score": 0.17401140928268433,
+    "ood_score": 0.17340362071990967,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8259885907173157
+    "confidence": 0.8265963792800903
   },
   {
     "index": 221,
     "name": "212_1#cc1",
-    "ood_score": 0.23123615980148315,
+    "ood_score": 0.2312459945678711,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7687638401985168
+    "confidence": 0.7687540054321289
   },
   {
     "index": 222,
     "name": "212_1#cc2",
-    "ood_score": 0.28054797649383545,
+    "ood_score": 0.2806777358055115,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7194520235061646
+    "confidence": 0.7193222641944885
   },
   {
     "index": 223,
     "name": "213_3",
-    "ood_score": 0.1890798807144165,
+    "ood_score": 0.18901506066322327,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8109201192855835
+    "confidence": 0.8109849691390991
   },
   {
     "index": 224,
     "name": "213_1#cc1",
-    "ood_score": 0.12971451878547668,
+    "ood_score": 0.1296810656785965,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8702855110168457
+    "confidence": 0.8703189492225647
   },
   {
     "index": 225,
     "name": "213_1#cc2",
-    "ood_score": 0.20135092735290527,
+    "ood_score": 0.20107688009738922,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7986490726470947
+    "confidence": 0.798923134803772
   },
   {
     "index": 226,
     "name": "214_1#cc1",
-    "ood_score": 0.12504751980304718,
+    "ood_score": 0.12497276067733765,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.874952495098114
+    "confidence": 0.8750272393226624
   },
   {
     "index": 227,
     "name": "214_1#cc2",
-    "ood_score": 0.2581467032432556,
+    "ood_score": 0.2582188844680786,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7418532967567444
+    "confidence": 0.7417811155319214
   },
   {
     "index": 228,
     "name": "215_1#cc1",
-    "ood_score": 0.14188560843467712,
+    "ood_score": 0.14179028570652008,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8581143617630005
+    "confidence": 0.8582097291946411
   },
   {
     "index": 229,
     "name": "215_1#cc2",
-    "ood_score": 0.18855717778205872,
+    "ood_score": 0.1884606033563614,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8114428520202637
+    "confidence": 0.8115394115447998
   },
   {
     "index": 230,
     "name": "216_1",
-    "ood_score": 0.1322619765996933,
+    "ood_score": 0.13234204053878784,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8677380084991455
+    "confidence": 0.8676579594612122
   },
   {
     "index": 231,
     "name": "217_1#cc1",
-    "ood_score": 0.19365400075912476,
+    "ood_score": 0.19389796257019043,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8063459992408752
+    "confidence": 0.8061020374298096
   },
   {
     "index": 232,
     "name": "217_1#cc2",
-    "ood_score": 0.20291800796985626,
+    "ood_score": 0.20286530256271362,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7970820069313049
+    "confidence": 0.7971346974372864
   },
   {
     "index": 233,
     "name": "219_1",
-    "ood_score": 0.1558428704738617,
+    "ood_score": 0.15586408972740173,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8441570997238159
+    "confidence": 0.8441358804702759
   },
   {
     "index": 234,
     "name": "22_1",
-    "ood_score": 0.11802561581134796,
+    "ood_score": 0.11783197522163391,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8819743990898132
+    "confidence": 0.8821680545806885
   },
   {
     "index": 235,
     "name": "220_1",
-    "ood_score": 0.18088695406913757,
+    "ood_score": 0.18041479587554932,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.81911301612854
+    "confidence": 0.8195852041244507
   },
   {
     "index": 236,
     "name": "221_1#cc1",
-    "ood_score": 0.16826632618904114,
+    "ood_score": 0.16874085366725922,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8317337036132812
+    "confidence": 0.8312591314315796
   },
   {
     "index": 237,
     "name": "221_1#cc2",
-    "ood_score": 0.21181941032409668,
+    "ood_score": 0.21191829442977905,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7881805896759033
+    "confidence": 0.788081705570221
   },
   {
     "index": 238,
     "name": "222_1#cc1",
-    "ood_score": 0.09963680058717728,
+    "ood_score": 0.0998142659664154,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9003632068634033
+    "confidence": 0.9001857042312622
   },
   {
     "index": 239,
     "name": "222_1#cc2",
-    "ood_score": 0.1603710949420929,
+    "ood_score": 0.16015273332595825,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8396289348602295
+    "confidence": 0.8398472666740417
   },
   {
     "index": 240,
     "name": "223_1#cc1",
-    "ood_score": 0.1593584418296814,
+    "ood_score": 0.15912024676799774,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8406415581703186
+    "confidence": 0.8408797383308411
   },
   {
     "index": 241,
     "name": "223_1#cc2",
-    "ood_score": 0.12133210897445679,
+    "ood_score": 0.12128594517707825,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8786678910255432
+    "confidence": 0.8787140846252441
   },
   {
     "index": 242,
     "name": "224_1#cc1",
-    "ood_score": 0.29703256487846375,
+    "ood_score": 0.2978594899177551,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7029674053192139
+    "confidence": 0.7021405100822449
   },
   {
     "index": 243,
     "name": "224_1#cc2",
-    "ood_score": 0.20236152410507202,
+    "ood_score": 0.20207959413528442,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.797638475894928
+    "confidence": 0.7979204058647156
   },
   {
     "index": 244,
     "name": "225_2#cc1",
-    "ood_score": 0.23123407363891602,
+    "ood_score": 0.23112589120864868,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.768765926361084
+    "confidence": 0.7688741087913513
   },
   {
     "index": 245,
     "name": "225_2#cc2",
-    "ood_score": 0.13199636340141296,
+    "ood_score": 0.1320815235376358,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8680036067962646
+    "confidence": 0.8679184913635254
   },
   {
     "index": 246,
     "name": "225_1#cc1",
-    "ood_score": 0.1239253580570221,
+    "ood_score": 0.1238449215888977,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8760746717453003
+    "confidence": 0.8761550784111023
   },
   {
     "index": 247,
     "name": "225_1#cc2",
-    "ood_score": 0.10641279071569443,
+    "ood_score": 0.10633131116628647,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8935872316360474
+    "confidence": 0.8936687111854553
   },
   {
     "index": 248,
     "name": "226_1#cc1",
-    "ood_score": 0.14995774626731873,
+    "ood_score": 0.15001550316810608,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8500422239303589
+    "confidence": 0.8499845266342163
   },
   {
     "index": 249,
     "name": "226_1#cc2",
-    "ood_score": 0.17788159847259521,
+    "ood_score": 0.1790599673986435,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8221184015274048
+    "confidence": 0.8209400177001953
   },
   {
     "index": 250,
     "name": "227_1#cc1",
-    "ood_score": 0.11076568812131882,
+    "ood_score": 0.11087513715028763,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8892343044281006
+    "confidence": 0.889124870300293
   },
   {
     "index": 251,
     "name": "227_1#cc2",
-    "ood_score": 0.19069191813468933,
+    "ood_score": 0.19072410464286804,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8093080520629883
+    "confidence": 0.8092758655548096
   },
   {
     "index": 252,
     "name": "227_2",
-    "ood_score": 0.29750627279281616,
+    "ood_score": 0.29793399572372437,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7024937272071838
+    "confidence": 0.7020660042762756
   },
   {
     "index": 253,
     "name": "228_1",
-    "ood_score": 0.20826469361782074,
+    "ood_score": 0.2081564962863922,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7917352914810181
+    "confidence": 0.7918435335159302
   },
   {
     "index": 254,
     "name": "229_1#cc1",
-    "ood_score": 0.1501235067844391,
+    "ood_score": 0.15033075213432312,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8498765230178833
+    "confidence": 0.8496692180633545
   },
   {
     "index": 255,
     "name": "229_1#cc2",
-    "ood_score": 0.17132079601287842,
+    "ood_score": 0.17119385302066803,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8286792039871216
+    "confidence": 0.8288061618804932
   },
   {
     "index": 256,
     "name": "23_1",
-    "ood_score": 0.15086379647254944,
+    "ood_score": 0.1508394330739975,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.849136233329773
+    "confidence": 0.8491605520248413
   },
   {
     "index": 257,
     "name": "230_1#cc1",
-    "ood_score": 0.12895402312278748,
+    "ood_score": 0.12898889183998108,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8710459470748901
+    "confidence": 0.8710111379623413
   },
   {
     "index": 258,
     "name": "230_1#cc2",
-    "ood_score": 0.15513628721237183,
+    "ood_score": 0.15537239611148834,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8448637127876282
+    "confidence": 0.8446276187896729
   },
   {
     "index": 259,
     "name": "231_1#cc1",
-    "ood_score": 0.2114318609237671,
+    "ood_score": 0.21141138672828674,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7885681390762329
+    "confidence": 0.7885886430740356
   },
   {
     "index": 260,
     "name": "231_1#cc2",
-    "ood_score": 0.16650868952274323,
+    "ood_score": 0.1663607656955719,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.833491325378418
+    "confidence": 0.8336392641067505
   },
   {
     "index": 261,
     "name": "232_1#cc1",
-    "ood_score": 0.31805047392845154,
+    "ood_score": 0.3176840841770172,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.6819494962692261
+    "confidence": 0.6823159456253052
   },
   {
     "index": 262,
     "name": "232_1#cc2",
-    "ood_score": 0.14122194051742554,
+    "ood_score": 0.14131075143814087,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8587780594825745
+    "confidence": 0.8586892485618591
   },
   {
     "index": 263,
     "name": "233_1",
-    "ood_score": 0.1589292287826538,
+    "ood_score": 0.1589120328426361,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8410707712173462
+    "confidence": 0.8410879373550415
   },
   {
     "index": 264,
     "name": "233_2",
-    "ood_score": 0.238478422164917,
+    "ood_score": 0.23862645030021667,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.761521577835083
+    "confidence": 0.7613735198974609
   },
   {
     "index": 265,
     "name": "234_1#cc1",
-    "ood_score": 0.1612832248210907,
+    "ood_score": 0.1610700637102127,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8387167453765869
+    "confidence": 0.8389299511909485
   },
   {
     "index": 266,
     "name": "234_1#cc2",
-    "ood_score": 0.15268631279468536,
+    "ood_score": 0.15312239527702332,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8473137021064758
+    "confidence": 0.8468775749206543
   },
   {
     "index": 267,
     "name": "234_2",
-    "ood_score": 0.16418151557445526,
+    "ood_score": 0.16431941092014313,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8358184695243835
+    "confidence": 0.8356806039810181
   },
   {
     "index": 268,
     "name": "234_3",
-    "ood_score": 0.17041900753974915,
+    "ood_score": 0.1704881340265274,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8295810222625732
+    "confidence": 0.8295118808746338
   },
   {
     "index": 269,
     "name": "235_1#cc1",
-    "ood_score": 0.1346934735774994,
+    "ood_score": 0.1346580684185028,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8653064966201782
+    "confidence": 0.8653419017791748
   },
   {
     "index": 270,
     "name": "235_1#cc2",
-    "ood_score": 0.1160915270447731,
+    "ood_score": 0.11604484170675278,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8839084506034851
+    "confidence": 0.883955180644989
   },
   {
     "index": 271,
     "name": "236_1#cc1",
-    "ood_score": 0.162186861038208,
+    "ood_score": 0.16217106580734253,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.837813138961792
+    "confidence": 0.8378289341926575
   },
   {
     "index": 272,
     "name": "236_1#cc2",
-    "ood_score": 0.16916607320308685,
+    "ood_score": 0.16948100924491882,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.830833911895752
+    "confidence": 0.8305189609527588
   },
   {
     "index": 273,
     "name": "237_1#cc1",
-    "ood_score": 0.13367149233818054,
+    "ood_score": 0.1337028443813324,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8663284778594971
+    "confidence": 0.8662971258163452
   },
   {
     "index": 274,
     "name": "237_1#cc2",
-    "ood_score": 0.1323278844356537,
+    "ood_score": 0.1322057694196701,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8676720857620239
+    "confidence": 0.8677942156791687
   },
   {
     "index": 275,
     "name": "238_1#cc1",
-    "ood_score": 0.1264604926109314,
+    "ood_score": 0.1264299750328064,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8735395073890686
+    "confidence": 0.8735700249671936
   },
   {
     "index": 276,
     "name": "238_1#cc2",
-    "ood_score": 0.13317462801933289,
+    "ood_score": 0.13320744037628174,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8668253421783447
+    "confidence": 0.8667925596237183
   },
   {
     "index": 277,
     "name": "239_1#cc1",
-    "ood_score": 0.08925604820251465,
+    "ood_score": 0.08938729763031006,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9107439517974854
+    "confidence": 0.9106127023696899
   },
   {
     "index": 278,
     "name": "239_1#cc2",
-    "ood_score": 0.13277916610240936,
+    "ood_score": 0.1329844444990158,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8672208189964294
+    "confidence": 0.867015540599823
   },
   {
     "index": 279,
     "name": "24_1",
-    "ood_score": 0.1286628246307373,
+    "ood_score": 0.12852326035499573,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8713371753692627
+    "confidence": 0.8714767694473267
   },
   {
     "index": 280,
     "name": "240_1#cc1",
-    "ood_score": 0.15278834104537964,
+    "ood_score": 0.15254488587379456,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8472116589546204
+    "confidence": 0.8474551439285278
   },
   {
     "index": 281,
     "name": "240_1#cc2",
-    "ood_score": 0.12044147402048111,
+    "ood_score": 0.12049539387226105,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8795585036277771
+    "confidence": 0.8795046210289001
   },
   {
     "index": 282,
     "name": "241_1#cc1",
-    "ood_score": 0.2529609203338623,
+    "ood_score": 0.25290244817733765,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7470390796661377
+    "confidence": 0.7470975518226624
   },
   {
     "index": 283,
     "name": "241_1#cc2",
-    "ood_score": 0.21547940373420715,
+    "ood_score": 0.21540260314941406,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7845206260681152
+    "confidence": 0.7845973968505859
   },
   {
     "index": 284,
     "name": "242_1",
-    "ood_score": 0.12375333905220032,
+    "ood_score": 0.123649001121521,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8762466907501221
+    "confidence": 0.876350998878479
   },
   {
     "index": 285,
     "name": "243_1#cc1",
-    "ood_score": 0.17158885300159454,
+    "ood_score": 0.17130157351493835,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8284111618995667
+    "confidence": 0.8286983966827393
   },
   {
     "index": 286,
     "name": "243_1#cc2",
-    "ood_score": 0.16833332180976868,
+    "ood_score": 0.16802000999450684,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8316667079925537
+    "confidence": 0.8319799900054932
   },
   {
     "index": 287,
     "name": "244_1#cc1",
-    "ood_score": 0.14377863705158234,
+    "ood_score": 0.1436748206615448,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8562213778495789
+    "confidence": 0.8563251495361328
   },
   {
     "index": 288,
     "name": "244_1#cc2",
-    "ood_score": 0.2707875967025757,
+    "ood_score": 0.27068933844566345,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7292124032974243
+    "confidence": 0.7293106317520142
   },
   {
     "index": 289,
     "name": "245_1#cc1",
-    "ood_score": 0.09586329758167267,
+    "ood_score": 0.09553524851799011,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9041367173194885
+    "confidence": 0.9044647216796875
   },
   {
     "index": 290,
     "name": "245_1#cc2",
-    "ood_score": 0.14477187395095825,
+    "ood_score": 0.14475616812705994,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8552281260490417
+    "confidence": 0.8552438020706177
   },
   {
     "index": 291,
     "name": "246_1#cc1",
-    "ood_score": 0.14241613447666168,
+    "ood_score": 0.14250445365905762,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8575838804244995
+    "confidence": 0.8574955463409424
   },
   {
     "index": 292,
     "name": "246_1#cc2",
-    "ood_score": 0.1286468207836151,
+    "ood_score": 0.12883293628692627,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8713531494140625
+    "confidence": 0.8711670637130737
   },
   {
     "index": 293,
     "name": "247_1#cc1",
-    "ood_score": 0.1418410837650299,
+    "ood_score": 0.14203767478466034,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8581589460372925
+    "confidence": 0.8579623103141785
   },
   {
     "index": 294,
     "name": "247_1#cc2",
-    "ood_score": 0.13396631181240082,
+    "ood_score": 0.13402312994003296,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.866033673286438
+    "confidence": 0.865976870059967
   },
   {
     "index": 295,
     "name": "248_1#cc1",
-    "ood_score": 0.1260460615158081,
+    "ood_score": 0.12592434883117676,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8739539384841919
+    "confidence": 0.8740756511688232
   },
   {
     "index": 296,
     "name": "248_1#cc2",
-    "ood_score": 0.12042295932769775,
+    "ood_score": 0.12063024193048477,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8795770406723022
+    "confidence": 0.8793697357177734
   },
   {
     "index": 297,
     "name": "249_1#cc1",
-    "ood_score": 0.1990513950586319,
+    "ood_score": 0.19904285669326782,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8009486198425293
+    "confidence": 0.8009571433067322
   },
   {
     "index": 298,
     "name": "249_1#cc2",
-    "ood_score": 0.20119857788085938,
+    "ood_score": 0.2014300525188446,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7988014221191406
+    "confidence": 0.798569917678833
   },
   {
     "index": 299,
     "name": "25_1",
-    "ood_score": 0.2190442979335785,
+    "ood_score": 0.21901652216911316,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7809556722640991
+    "confidence": 0.7809834480285645
   },
   {
     "index": 300,
     "name": "250_1#cc1",
-    "ood_score": 0.09048105776309967,
+    "ood_score": 0.09052867442369461,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9095189571380615
+    "confidence": 0.909471333026886
   },
   {
     "index": 301,
     "name": "250_1#cc2",
-    "ood_score": 0.12872231006622314,
+    "ood_score": 0.12870123982429504,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8712776899337769
+    "confidence": 0.8712987899780273
   },
   {
     "index": 302,
     "name": "251_1#cc1",
-    "ood_score": 0.18699194490909576,
+    "ood_score": 0.1869848072528839,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8130080699920654
+    "confidence": 0.8130152225494385
   },
   {
     "index": 303,
     "name": "251_1#cc2",
-    "ood_score": 0.1944127082824707,
+    "ood_score": 0.19430702924728394,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8055872917175293
+    "confidence": 0.8056929707527161
   },
   {
     "index": 304,
     "name": "252_1",
-    "ood_score": 0.11691281944513321,
+    "ood_score": 0.11694944649934769,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.883087158203125
+    "confidence": 0.8830505609512329
   },
   {
     "index": 305,
     "name": "253_1#cc1",
-    "ood_score": 0.21737337112426758,
+    "ood_score": 0.2177916020154953,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7826266288757324
+    "confidence": 0.7822083830833435
   },
   {
     "index": 306,
     "name": "253_1#cc2",
-    "ood_score": 0.16005858778953552,
+    "ood_score": 0.15991896390914917,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8399413824081421
+    "confidence": 0.8400810360908508
   },
   {
     "index": 307,
     "name": "254_1#cc1",
-    "ood_score": 0.17933344841003418,
+    "ood_score": 0.17922599613666534,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8206665515899658
+    "confidence": 0.8207740187644958
   },
   {
     "index": 308,
     "name": "254_1#cc2",
-    "ood_score": 0.300015926361084,
+    "ood_score": 0.2999352812767029,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.699984073638916
+    "confidence": 0.7000647187232971
   },
   {
     "index": 309,
     "name": "255_1#cc1",
-    "ood_score": 0.2019563615322113,
+    "ood_score": 0.2018136829137802,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7980436086654663
+    "confidence": 0.7981863021850586
   },
   {
     "index": 310,
     "name": "255_1#cc2",
-    "ood_score": 0.13496071100234985,
+    "ood_score": 0.13459062576293945,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8650392889976501
+    "confidence": 0.8654093742370605
   },
   {
     "index": 311,
     "name": "256_1#cc1",
-    "ood_score": 0.15987983345985413,
+    "ood_score": 0.15987589955329895,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8401201963424683
+    "confidence": 0.8401241302490234
   },
   {
     "index": 312,
     "name": "256_1#cc2",
-    "ood_score": 0.2112293243408203,
+    "ood_score": 0.21173328161239624,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7887706756591797
+    "confidence": 0.7882667183876038
   },
   {
     "index": 313,
     "name": "257_1#cc1",
-    "ood_score": 0.14945508539676666,
+    "ood_score": 0.1496114730834961,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8505449295043945
+    "confidence": 0.8503885269165039
   },
   {
     "index": 314,
     "name": "257_1#cc2",
-    "ood_score": 0.15355294942855835,
+    "ood_score": 0.15325197577476501,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8464470505714417
+    "confidence": 0.8467479944229126
   },
   {
     "index": 315,
     "name": "258_1#cc1",
-    "ood_score": 0.11449339240789413,
+    "ood_score": 0.1144900918006897,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8855066299438477
+    "confidence": 0.8855099081993103
   },
   {
     "index": 316,
     "name": "258_1#cc2",
-    "ood_score": 0.10585478693246841,
+    "ood_score": 0.10576827824115753,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8941451907157898
+    "confidence": 0.8942317366600037
   },
   {
     "index": 317,
     "name": "259_1#cc1",
-    "ood_score": 0.12203343212604523,
+    "ood_score": 0.12303013354539871,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.877966582775116
+    "confidence": 0.8769698739051819
   },
   {
     "index": 318,
     "name": "259_1#cc2",
-    "ood_score": 0.0735112726688385,
+    "ood_score": 0.07279014587402344,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9264887571334839
+    "confidence": 0.9272098541259766
   },
   {
     "index": 319,
     "name": "26_1",
-    "ood_score": 0.12221924960613251,
+    "ood_score": 0.12236064672470093,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8777807354927063
+    "confidence": 0.8776393532752991
   },
   {
     "index": 320,
     "name": "260_1#cc1",
-    "ood_score": 0.14351274073123932,
+    "ood_score": 0.1436375081539154,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8564872741699219
+    "confidence": 0.8563624620437622
   },
   {
     "index": 321,
     "name": "260_1#cc2",
-    "ood_score": 0.22345562279224396,
+    "ood_score": 0.22360196709632874,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7765443921089172
+    "confidence": 0.7763980627059937
   },
   {
     "index": 322,
     "name": "261_1",
-    "ood_score": 0.16433513164520264,
+    "ood_score": 0.16420921683311462,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8356648683547974
+    "confidence": 0.835790753364563
   },
   {
     "index": 323,
     "name": "262_1#cc1",
-    "ood_score": 0.12205717712640762,
+    "ood_score": 0.12202264368534088,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8779428005218506
+    "confidence": 0.8779773712158203
   },
   {
     "index": 324,
     "name": "262_1#cc2",
-    "ood_score": 0.10792022943496704,
+    "ood_score": 0.10787831991910934,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.892079770565033
+    "confidence": 0.8921216726303101
   },
   {
     "index": 325,
     "name": "263_1#cc1",
-    "ood_score": 0.13509012758731842,
+    "ood_score": 0.13581334054470062,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8649098873138428
+    "confidence": 0.8641866445541382
   },
   {
     "index": 326,
     "name": "263_1#cc2",
-    "ood_score": 0.12011074274778366,
+    "ood_score": 0.12033382058143616,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8798892498016357
+    "confidence": 0.8796662092208862
   },
   {
     "index": 327,
     "name": "264_1",
-    "ood_score": 0.1703367531299591,
+    "ood_score": 0.1703415960073471,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8296632766723633
+    "confidence": 0.8296583890914917
   },
   {
     "index": 328,
     "name": "265_1#cc1",
-    "ood_score": 0.08525647222995758,
+    "ood_score": 0.08533588796854019,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9147435426712036
+    "confidence": 0.914664089679718
   },
   {
     "index": 329,
     "name": "265_1#cc2",
-    "ood_score": 0.13602125644683838,
+    "ood_score": 0.1360732913017273,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8639787435531616
+    "confidence": 0.8639267086982727
   },
   {
     "index": 330,
     "name": "266_1#cc1",
-    "ood_score": 0.15439583361148834,
+    "ood_score": 0.15396654605865479,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8456041812896729
+    "confidence": 0.8460334539413452
   },
   {
     "index": 331,
     "name": "266_1#cc2",
-    "ood_score": 0.09631985425949097,
+    "ood_score": 0.09632398933172226,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.903680145740509
+    "confidence": 0.9036760330200195
   },
   {
     "index": 332,
     "name": "266_2",
-    "ood_score": 0.12926031649112701,
+    "ood_score": 0.12908616662025452,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8707396984100342
+    "confidence": 0.8709138631820679
   },
   {
     "index": 333,
     "name": "267_1",
-    "ood_score": 0.15744519233703613,
+    "ood_score": 0.15738970041275024,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8425548076629639
+    "confidence": 0.8426102995872498
   },
   {
     "index": 334,
     "name": "268_1#cc1",
-    "ood_score": 0.1919725239276886,
+    "ood_score": 0.19288787245750427,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8080275058746338
+    "confidence": 0.8071120977401733
   },
   {
     "index": 335,
     "name": "268_1#cc2",
-    "ood_score": 0.10294115543365479,
+    "ood_score": 0.1029999703168869,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8970588445663452
+    "confidence": 0.8970000147819519
   },
   {
     "index": 336,
     "name": "269_1",
-    "ood_score": 0.11226412653923035,
+    "ood_score": 0.11222819238901138,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8877358436584473
+    "confidence": 0.8877717852592468
   },
   {
     "index": 337,
     "name": "27_1",
-    "ood_score": 0.22952359914779663,
+    "ood_score": 0.22933632135391235,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7704764008522034
+    "confidence": 0.7706636786460876
   },
   {
     "index": 338,
     "name": "270_1#cc1",
-    "ood_score": 0.16834735870361328,
+    "ood_score": 0.1682346761226654,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8316526412963867
+    "confidence": 0.8317652940750122
   },
   {
     "index": 339,
     "name": "270_1#cc2",
-    "ood_score": 0.2011197954416275,
+    "ood_score": 0.20137564837932587,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7988802194595337
+    "confidence": 0.7986243367195129
   },
   {
     "index": 340,
     "name": "271_1",
-    "ood_score": 0.12323902547359467,
+    "ood_score": 0.12342242896556854,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8767609596252441
+    "confidence": 0.8765775561332703
   },
   {
     "index": 341,
     "name": "272_1",
-    "ood_score": 0.18656960129737854,
+    "ood_score": 0.18684813380241394,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8134304285049438
+    "confidence": 0.8131518363952637
   },
   {
     "index": 342,
     "name": "273_1#cc1",
-    "ood_score": 0.14584055542945862,
+    "ood_score": 0.14573271572589874,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8541594743728638
+    "confidence": 0.8542672991752625
   },
   {
     "index": 343,
     "name": "273_1#cc2",
-    "ood_score": 0.1351219117641449,
+    "ood_score": 0.1352049857378006,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8648780584335327
+    "confidence": 0.8647950291633606
   },
   {
     "index": 344,
     "name": "274_1#cc1",
-    "ood_score": 0.12224933505058289,
+    "ood_score": 0.12250174582004547,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8777506351470947
+    "confidence": 0.8774982690811157
   },
   {
     "index": 345,
     "name": "274_1#cc2",
-    "ood_score": 0.1290147751569748,
+    "ood_score": 0.12895312905311584,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.870985209941864
+    "confidence": 0.8710469007492065
   },
   {
     "index": 346,
     "name": "275_1",
-    "ood_score": 0.1340029239654541,
+    "ood_score": 0.13402989506721497,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8659970760345459
+    "confidence": 0.8659701347351074
   },
   {
     "index": 347,
     "name": "276_1#cc1",
-    "ood_score": 0.09830430895090103,
+    "ood_score": 0.09831637144088745,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9016956686973572
+    "confidence": 0.9016836285591125
   },
   {
     "index": 348,
     "name": "276_1#cc2",
-    "ood_score": 0.09118352830410004,
+    "ood_score": 0.09112928062677383,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9088164567947388
+    "confidence": 0.9088706970214844
   },
   {
     "index": 349,
     "name": "277_1",
-    "ood_score": 0.1253868192434311,
+    "ood_score": 0.12533682584762573,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8746131658554077
+    "confidence": 0.8746631741523743
   },
   {
     "index": 350,
     "name": "278_1#cc1",
-    "ood_score": 0.11316990852355957,
+    "ood_score": 0.11332248896360397,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8868300914764404
+    "confidence": 0.8866775035858154
   },
   {
     "index": 351,
     "name": "278_1#cc2",
-    "ood_score": 0.10822737216949463,
+    "ood_score": 0.10817915201187134,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8917726278305054
+    "confidence": 0.8918208479881287
   },
   {
     "index": 352,
     "name": "279_1#cc1",
-    "ood_score": 0.17952337861061096,
+    "ood_score": 0.17962801456451416,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8204766511917114
+    "confidence": 0.8203719854354858
   },
   {
     "index": 353,
     "name": "279_1#cc2",
-    "ood_score": 0.2692945897579193,
+    "ood_score": 0.2694442868232727,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7307053804397583
+    "confidence": 0.7305557131767273
   },
   {
     "index": 354,
     "name": "28_1",
-    "ood_score": 0.14593300223350525,
+    "ood_score": 0.14577819406986237,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8540669679641724
+    "confidence": 0.8542218208312988
   },
   {
     "index": 355,
     "name": "280_1#cc1",
-    "ood_score": 0.15007740259170532,
+    "ood_score": 0.15009117126464844,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8499225974082947
+    "confidence": 0.8499088287353516
   },
   {
     "index": 356,
     "name": "280_1#cc2",
-    "ood_score": 0.2937711477279663,
+    "ood_score": 0.2939911484718323,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7062288522720337
+    "confidence": 0.7060088515281677
   },
   {
     "index": 357,
     "name": "281_1#cc1",
-    "ood_score": 0.24030999839305878,
+    "ood_score": 0.24008533358573914,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.75968998670578
+    "confidence": 0.7599146366119385
   },
   {
     "index": 358,
     "name": "281_1#cc2",
-    "ood_score": 0.14634528756141663,
+    "ood_score": 0.1463574916124344,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8536547422409058
+    "confidence": 0.8536425232887268
   },
   {
     "index": 359,
     "name": "282_1",
-    "ood_score": 0.11728976666927338,
+    "ood_score": 0.11697308719158173,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8827102184295654
+    "confidence": 0.8830268979072571
   },
   {
     "index": 360,
     "name": "283_1#cc1",
-    "ood_score": 0.12386776506900787,
+    "ood_score": 0.12408706545829773,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8761322498321533
+    "confidence": 0.8759129047393799
   },
   {
     "index": 361,
     "name": "283_1#cc2",
-    "ood_score": 0.14715515077114105,
+    "ood_score": 0.14737501740455627,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8528448343276978
+    "confidence": 0.8526250123977661
   },
   {
     "index": 362,
     "name": "284_1#cc1",
-    "ood_score": 0.14267292618751526,
+    "ood_score": 0.14281423389911652,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8573271036148071
+    "confidence": 0.8571857810020447
   },
   {
     "index": 363,
     "name": "284_1#cc2",
-    "ood_score": 0.19203713536262512,
+    "ood_score": 0.19167408347129822,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8079628944396973
+    "confidence": 0.8083258867263794
   },
   {
     "index": 364,
     "name": "285_1",
-    "ood_score": 0.1438988745212555,
+    "ood_score": 0.14377379417419434,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8561011552810669
+    "confidence": 0.8562262058258057
   },
   {
     "index": 365,
     "name": "286_1#cc1",
-    "ood_score": 0.12112928926944733,
+    "ood_score": 0.1211305558681488,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8788707256317139
+    "confidence": 0.8788694143295288
   },
   {
     "index": 366,
     "name": "286_1#cc2",
-    "ood_score": 0.12235172092914581,
+    "ood_score": 0.12251129746437073,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8776482939720154
+    "confidence": 0.8774887323379517
   },
   {
     "index": 367,
     "name": "287_1#cc1",
-    "ood_score": 0.19970455765724182,
+    "ood_score": 0.20001600682735443,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8002954721450806
+    "confidence": 0.7999839782714844
   },
   {
     "index": 368,
     "name": "287_1#cc2",
-    "ood_score": 0.14591126143932343,
+    "ood_score": 0.14604881405830383,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8540887236595154
+    "confidence": 0.8539512157440186
   },
   {
     "index": 369,
     "name": "288_1",
-    "ood_score": 0.14681023359298706,
+    "ood_score": 0.14684884250164032,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8531897664070129
+    "confidence": 0.8531511425971985
   },
   {
     "index": 370,
     "name": "289_1",
-    "ood_score": 0.15367093682289124,
+    "ood_score": 0.15369097888469696,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8463290929794312
+    "confidence": 0.8463090062141418
   },
   {
     "index": 371,
     "name": "29_1",
-    "ood_score": 0.16364577412605286,
+    "ood_score": 0.16359123587608337,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8363542556762695
+    "confidence": 0.8364087343215942
   },
   {
     "index": 372,
     "name": "290_1",
-    "ood_score": 0.19614677131175995,
+    "ood_score": 0.19593489170074463,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8038532137870789
+    "confidence": 0.8040651082992554
   },
   {
     "index": 373,
     "name": "291_1",
-    "ood_score": 0.15089893341064453,
+    "ood_score": 0.15071994066238403,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8491010665893555
+    "confidence": 0.849280059337616
   },
   {
     "index": 374,
     "name": "292_1",
-    "ood_score": 0.15150879323482513,
+    "ood_score": 0.1517382264137268,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8484911918640137
+    "confidence": 0.8482617735862732
   },
   {
     "index": 375,
     "name": "293_1",
-    "ood_score": 0.1460205614566803,
+    "ood_score": 0.14584031701087952,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8539794683456421
+    "confidence": 0.8541597127914429
   },
   {
     "index": 376,
     "name": "294_3",
-    "ood_score": 0.12150806188583374,
+    "ood_score": 0.12164849042892456,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8784919381141663
+    "confidence": 0.8783515095710754
   },
   {
     "index": 377,
     "name": "294_2",
-    "ood_score": 0.1434992253780365,
+    "ood_score": 0.1436203271150589,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8565007448196411
+    "confidence": 0.8563796877861023
   },
   {
     "index": 378,
     "name": "294_1",
-    "ood_score": 0.13216716051101685,
+    "ood_score": 0.13230042159557343,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8678328394889832
+    "confidence": 0.8676995635032654
   },
   {
     "index": 379,
     "name": "295_1",
-    "ood_score": 0.18624886870384216,
+    "ood_score": 0.1862598955631256,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8137511014938354
+    "confidence": 0.8137401342391968
   },
   {
     "index": 380,
     "name": "296_3",
-    "ood_score": 0.1560412049293518,
+    "ood_score": 0.15616127848625183,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8439587950706482
+    "confidence": 0.8438386917114258
   },
   {
     "index": 381,
     "name": "296_2",
-    "ood_score": 0.14353248476982117,
+    "ood_score": 0.14366105198860168,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8564674854278564
+    "confidence": 0.8563389778137207
   },
   {
     "index": 382,
     "name": "296_1",
-    "ood_score": 0.14466358721256256,
+    "ood_score": 0.14474175870418549,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8553364276885986
+    "confidence": 0.8552582263946533
   },
   {
     "index": 383,
     "name": "296_4",
-    "ood_score": 0.16136646270751953,
+    "ood_score": 0.1611841768026352,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8386335372924805
+    "confidence": 0.8388158082962036
   },
   {
     "index": 384,
     "name": "296_5",
-    "ood_score": 0.17918828129768372,
+    "ood_score": 0.1791701763868332,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8208117485046387
+    "confidence": 0.8208298087120056
   },
   {
     "index": 385,
     "name": "297_1",
-    "ood_score": 0.12032511830329895,
+    "ood_score": 0.1204000934958458,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8796749114990234
+    "confidence": 0.879599928855896
   },
   {
     "index": 386,
     "name": "298_1",
-    "ood_score": 0.15984117984771729,
+    "ood_score": 0.15972678363323212,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8401588201522827
+    "confidence": 0.8402732014656067
   },
   {
     "index": 387,
     "name": "299_1",
-    "ood_score": 0.20771321654319763,
+    "ood_score": 0.20777681469917297,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.79228675365448
+    "confidence": 0.7922232151031494
   },
   {
     "index": 388,
     "name": "3_1",
-    "ood_score": 0.11351832002401352,
+    "ood_score": 0.11332498490810394,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8864817023277283
+    "confidence": 0.8866750001907349
   },
   {
     "index": 389,
     "name": "30_1",
-    "ood_score": 0.14885969460010529,
+    "ood_score": 0.14885185658931732,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8511403203010559
+    "confidence": 0.8511481285095215
   },
   {
     "index": 390,
     "name": "300_1",
-    "ood_score": 0.10327751934528351,
+    "ood_score": 0.10316532105207443,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8967224955558777
+    "confidence": 0.896834671497345
   },
   {
     "index": 391,
     "name": "301_1",
-    "ood_score": 0.13665500283241272,
+    "ood_score": 0.13654929399490356,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8633450269699097
+    "confidence": 0.8634507060050964
   },
   {
     "index": 392,
     "name": "302_1",
-    "ood_score": 0.13820792734622955,
+    "ood_score": 0.13821914792060852,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8617920875549316
+    "confidence": 0.8617808818817139
   },
   {
     "index": 393,
     "name": "303_1",
-    "ood_score": 0.1402548849582672,
+    "ood_score": 0.14016494154930115,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8597451448440552
+    "confidence": 0.8598350286483765
   },
   {
     "index": 394,
     "name": "304_1",
-    "ood_score": 0.16832175850868225,
+    "ood_score": 0.16831852495670319,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8316782712936401
+    "confidence": 0.831681489944458
   },
   {
     "index": 395,
     "name": "305_1",
-    "ood_score": 0.14319436252117157,
+    "ood_score": 0.14321917295455933,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8568056225776672
+    "confidence": 0.8567808270454407
   },
   {
     "index": 396,
     "name": "306_1",
-    "ood_score": 0.1420697718858719,
+    "ood_score": 0.14241334795951843,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8579302430152893
+    "confidence": 0.8575866222381592
   },
   {
     "index": 397,
     "name": "307_1",
-    "ood_score": 0.16541337966918945,
+    "ood_score": 0.1655389368534088,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8345866203308105
+    "confidence": 0.8344610929489136
   },
   {
     "index": 398,
     "name": "308_1",
-    "ood_score": 0.15447872877120972,
+    "ood_score": 0.15428990125656128,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8455212712287903
+    "confidence": 0.8457100987434387
   },
   {
     "index": 399,
     "name": "309_1#cc1",
-    "ood_score": 0.13153916597366333,
+    "ood_score": 0.13125279545783997,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8684608340263367
+    "confidence": 0.8687472343444824
   },
   {
     "index": 400,
     "name": "309_1#cc2",
-    "ood_score": 0.13017456233501434,
+    "ood_score": 0.130408376455307,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8698254227638245
+    "confidence": 0.8695915937423706
   },
   {
     "index": 401,
     "name": "31_1",
-    "ood_score": 0.12477198243141174,
+    "ood_score": 0.12491416186094284,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8752280473709106
+    "confidence": 0.8750858306884766
   },
   {
     "index": 402,
     "name": "310_1",
-    "ood_score": 0.14750105142593384,
+    "ood_score": 0.1474323570728302,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8524989485740662
+    "confidence": 0.8525676727294922
   },
   {
     "index": 403,
     "name": "311_1",
-    "ood_score": 0.15148693323135376,
+    "ood_score": 0.15113447606563568,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8485130667686462
+    "confidence": 0.8488655090332031
   },
   {
     "index": 404,
     "name": "312_1",
-    "ood_score": 0.14010809361934662,
+    "ood_score": 0.14013974368572235,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8598918914794922
+    "confidence": 0.8598602414131165
   },
   {
     "index": 405,
     "name": "313_1",
-    "ood_score": 0.13926298916339874,
+    "ood_score": 0.13891755044460297,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8607370257377625
+    "confidence": 0.8610824346542358
   },
   {
     "index": 406,
     "name": "313_2",
-    "ood_score": 0.11855565011501312,
+    "ood_score": 0.1183791235089302,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8814443349838257
+    "confidence": 0.8816208839416504
   },
   {
     "index": 407,
     "name": "314_1#cc1",
-    "ood_score": 0.12652215361595154,
+    "ood_score": 0.12661319971084595,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8734778165817261
+    "confidence": 0.873386800289154
   },
   {
     "index": 408,
     "name": "314_1#cc2",
-    "ood_score": 0.21349048614501953,
+    "ood_score": 0.21302270889282227,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7865095138549805
+    "confidence": 0.7869772911071777
   },
   {
     "index": 409,
     "name": "315_1",
-    "ood_score": 0.12110229581594467,
+    "ood_score": 0.12113825976848602,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8788977265357971
+    "confidence": 0.8788617253303528
   },
   {
     "index": 410,
     "name": "315_2",
-    "ood_score": 0.1279016137123108,
+    "ood_score": 0.12794391810894012,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8720983862876892
+    "confidence": 0.8720560669898987
   },
   {
     "index": 411,
     "name": "316_1",
-    "ood_score": 0.13185536861419678,
+    "ood_score": 0.13174983859062195,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8681446313858032
+    "confidence": 0.8682501316070557
   },
   {
     "index": 412,
     "name": "317_1",
-    "ood_score": 0.23531830310821533,
+    "ood_score": 0.23505452275276184,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7646816968917847
+    "confidence": 0.7649455070495605
   },
   {
     "index": 413,
     "name": "317_2",
-    "ood_score": 0.11014562845230103,
+    "ood_score": 0.11027968674898148,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.889854371547699
+    "confidence": 0.8897203207015991
   },
   {
     "index": 414,
     "name": "318_2",
-    "ood_score": 0.12275522947311401,
+    "ood_score": 0.12301310151815414,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.877244770526886
+    "confidence": 0.8769869208335876
   },
   {
     "index": 415,
     "name": "318_1",
-    "ood_score": 0.0899314135313034,
+    "ood_score": 0.08991068601608276,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.9100685715675354
+    "confidence": 0.9100893139839172
   },
   {
     "index": 416,
     "name": "319_2",
-    "ood_score": 0.12859907746315002,
+    "ood_score": 0.12878365814685822,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8714009523391724
+    "confidence": 0.871216356754303
   },
   {
     "index": 417,
     "name": "319_1",
-    "ood_score": 0.14611950516700745,
+    "ood_score": 0.14626845717430115,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8538805246353149
+    "confidence": 0.8537315130233765
   },
   {
     "index": 418,
     "name": "32_1",
-    "ood_score": 0.14954999089241028,
+    "ood_score": 0.149541437625885,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8504500389099121
+    "confidence": 0.850458562374115
   },
   {
     "index": 419,
     "name": "320_1",
-    "ood_score": 0.13887931406497955,
+    "ood_score": 0.13894999027252197,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8611207008361816
+    "confidence": 0.861050009727478
   },
   {
     "index": 420,
     "name": "321_1",
-    "ood_score": 0.16994547843933105,
+    "ood_score": 0.1701316237449646,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.830054521560669
+    "confidence": 0.8298683762550354
   },
   {
     "index": 421,
     "name": "323_1",
-    "ood_score": 0.2708601951599121,
+    "ood_score": 0.2708365023136139,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7291398048400879
+    "confidence": 0.7291635274887085
   },
   {
     "index": 422,
     "name": "326_1",
-    "ood_score": 0.2708601951599121,
+    "ood_score": 0.2708365023136139,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7291398048400879
+    "confidence": 0.7291635274887085
   },
   {
     "index": 423,
     "name": "329_1",
-    "ood_score": 0.23000065982341766,
+    "ood_score": 0.22981099784374237,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7699993252754211
+    "confidence": 0.7701889872550964
   },
   {
     "index": 424,
     "name": "33_1",
-    "ood_score": 0.15302026271820068,
+    "ood_score": 0.1530510038137436,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8469797372817993
+    "confidence": 0.8469489812850952
   },
   {
     "index": 425,
     "name": "330_2",
-    "ood_score": 0.13406139612197876,
+    "ood_score": 0.13382497429847717,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8659386038780212
+    "confidence": 0.8661750555038452
   },
   {
     "index": 426,
     "name": "330_1",
-    "ood_score": 0.15951566398143768,
+    "ood_score": 0.15956109762191772,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8404843211174011
+    "confidence": 0.8404389023780823
   },
   {
     "index": 427,
     "name": "331_1",
-    "ood_score": 0.1649177074432373,
+    "ood_score": 0.16504162549972534,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8350822925567627
+    "confidence": 0.8349583745002747
   },
   {
     "index": 428,
     "name": "332_1",
-    "ood_score": 0.10391534119844437,
+    "ood_score": 0.10388529300689697,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8960846662521362
+    "confidence": 0.896114706993103
   },
   {
     "index": 429,
     "name": "333_1",
-    "ood_score": 0.13864946365356445,
+    "ood_score": 0.13850155472755432,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8613505363464355
+    "confidence": 0.8614984750747681
   },
   {
     "index": 430,
     "name": "334_1",
-    "ood_score": 0.11527001112699509,
+    "ood_score": 0.11540339887142181,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8847299814224243
+    "confidence": 0.884596586227417
   },
   {
     "index": 431,
     "name": "334_2",
-    "ood_score": 0.13525846600532532,
+    "ood_score": 0.13514238595962524,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8647415637969971
+    "confidence": 0.8648576140403748
   },
   {
     "index": 432,
     "name": "335_2",
-    "ood_score": 0.22702643275260925,
+    "ood_score": 0.22681237757205963,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7729735374450684
+    "confidence": 0.7731876373291016
   },
   {
     "index": 433,
     "name": "335_1",
-    "ood_score": 0.1299101859331131,
+    "ood_score": 0.13005398213863373,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8700898289680481
+    "confidence": 0.8699460029602051
   },
   {
     "index": 434,
     "name": "336_2",
-    "ood_score": 0.15564657747745514,
+    "ood_score": 0.1556757092475891,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.844353437423706
+    "confidence": 0.8443242907524109
   },
   {
     "index": 435,
     "name": "337_2",
-    "ood_score": 0.14663931727409363,
+    "ood_score": 0.14653146266937256,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.853360652923584
+    "confidence": 0.8534685373306274
   },
   {
     "index": 436,
     "name": "337_1",
-    "ood_score": 0.14201855659484863,
+    "ood_score": 0.14207561314105988,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8579814434051514
+    "confidence": 0.8579244017601013
   },
   {
     "index": 437,
     "name": "337_3",
-    "ood_score": 0.11868652701377869,
+    "ood_score": 0.11832088232040405,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8813134431838989
+    "confidence": 0.881679117679596
   },
   {
     "index": 438,
     "name": "338_2#cc1",
-    "ood_score": 0.12592573463916779,
+    "ood_score": 0.1257343590259552,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8740742802619934
+    "confidence": 0.8742656707763672
   },
   {
     "index": 439,
     "name": "338_2#cc2",
-    "ood_score": 0.1367177814245224,
+    "ood_score": 0.1363661140203476,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8632822036743164
+    "confidence": 0.8636338710784912
   },
   {
     "index": 440,
     "name": "338_1",
-    "ood_score": 0.1464846134185791,
+    "ood_score": 0.14632761478424072,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8535153865814209
+    "confidence": 0.8536723852157593
   },
   {
     "index": 441,
     "name": "339_1",
-    "ood_score": 0.15924623608589172,
+    "ood_score": 0.1595226526260376,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8407537937164307
+    "confidence": 0.8404773473739624
   },
   {
     "index": 442,
     "name": "34_1",
-    "ood_score": 0.11800946295261383,
+    "ood_score": 0.11790868639945984,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8819905519485474
+    "confidence": 0.8820912837982178
   },
   {
     "index": 443,
     "name": "340_1",
-    "ood_score": 0.16078869998455048,
+    "ood_score": 0.1608555018901825,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8392112851142883
+    "confidence": 0.8391444683074951
   },
   {
     "index": 444,
     "name": "341_1",
-    "ood_score": 0.11485990881919861,
+    "ood_score": 0.11478853970766068,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.885140061378479
+    "confidence": 0.8852114677429199
   },
   {
     "index": 445,
     "name": "342_1",
-    "ood_score": 0.2760007977485657,
+    "ood_score": 0.27582913637161255,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7239992022514343
+    "confidence": 0.7241708636283875
   },
   {
     "index": 446,
     "name": "343_1",
-    "ood_score": 0.16278943419456482,
+    "ood_score": 0.1627887636423111,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8372105360031128
+    "confidence": 0.8372112512588501
   },
   {
     "index": 447,
     "name": "344_1",
-    "ood_score": 0.2410023957490921,
+    "ood_score": 0.24044114351272583,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7589976191520691
+    "confidence": 0.7595588564872742
   },
   {
     "index": 448,
     "name": "345_1",
-    "ood_score": 0.1432693749666214,
+    "ood_score": 0.14312061667442322,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8567306399345398
+    "confidence": 0.8568793535232544
   },
   {
     "index": 449,
     "name": "346_1",
-    "ood_score": 0.14395880699157715,
+    "ood_score": 0.1441035270690918,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8560411930084229
+    "confidence": 0.8558964729309082
   },
   {
     "index": 450,
     "name": "347_1",
-    "ood_score": 0.18981626629829407,
+    "ood_score": 0.1894129514694214,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8101837635040283
+    "confidence": 0.8105870485305786
   },
   {
     "index": 451,
     "name": "347_2",
-    "ood_score": 0.23898962140083313,
+    "ood_score": 0.2390103042125702,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7610104084014893
+    "confidence": 0.7609896659851074
   },
   {
     "index": 452,
     "name": "348_1#cc1",
-    "ood_score": 0.12131904065608978,
+    "ood_score": 0.12190337479114532,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.878680944442749
+    "confidence": 0.8780966401100159
   },
   {
     "index": 453,
     "name": "348_1#cc2",
-    "ood_score": 0.14284145832061768,
+    "ood_score": 0.1428358107805252,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8571585416793823
+    "confidence": 0.857164204120636
   },
   {
     "index": 454,
     "name": "349_1",
-    "ood_score": 0.2708601951599121,
+    "ood_score": 0.2710144519805908,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7291398048400879
+    "confidence": 0.7289855480194092
   },
   {
     "index": 455,
     "name": "35_1",
-    "ood_score": 0.1327095627784729,
+    "ood_score": 0.13268189132213593,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.8672904372215271
+    "confidence": 0.8673180937767029
   },
   {
     "index": 456,
     "name": "350_2",
-    "ood_score": 0.1832076609134674,
+    "ood_score": 0.1832887828350067,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.816792368888855
+    "confidence": 0.8167111873626709
   },
   {
     "index": 457,
     "name": "350_1",
-    "ood_score": 0.2304210066795349,
+    "ood_score": 0.23033475875854492,
     "is_ood": false,
     "ood_label": null,
-    "confidence": 0.7695789933204651
+    "confidence": 0.7696652412414551
   }
 ]

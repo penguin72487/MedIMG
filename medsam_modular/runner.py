@@ -1177,14 +1177,17 @@ def main() -> None:
 
     if run_stage5_full_finetune:
         print("\n[Stage 5/8] 全資料微調（輸出 medsam_finetuned_best.pth）...")
-        if ood_finetuned_best_path.exists():
-            with _timed_log("Stage 5: load OOD fine-tuned weights before full fine-tune"):
-                load_state_dict_compat(model, ood_finetuned_best_path, map_location=device)
-            print(f"  📌 全資料微調起始權重: {ood_finetuned_best_path}")
+        vit_b_weight_path = project_root / "results" / "medsam_vit_b.pth"
+        if vit_b_weight_path.exists():
+            with _timed_log("Stage 5: load medsam_vit_b weights before full fine-tune"):
+                load_state_dict_compat(model, vit_b_weight_path, map_location=device)
+            print(f"  📌 全資料微調起始權重: {vit_b_weight_path}")
         elif baseline_weight_path and Path(baseline_weight_path).exists():
-            with _timed_log("Stage 5: load baseline weights before full fine-tune"):
+            with _timed_log("Stage 5: load fallback baseline weights before full fine-tune"):
                 load_state_dict_compat(model, Path(baseline_weight_path), map_location=device)
-            print(f"  📌 全資料微調起始權重: {baseline_weight_path}")
+            print(f"  ⚠️ 找不到 medsam_vit_b.pth，改用 fallback 起始權重: {baseline_weight_path}")
+        else:
+            print("  ⚠️ 找不到可用起始權重，將沿用目前模型權重進行全資料微調。")
 
         t2 = time.time()
         with _timed_log("Stage 5/8: full-data fine-tune"):

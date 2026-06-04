@@ -263,3 +263,9 @@ ddti_kaggle/*
 tn3k_kaggle/*
 tg3k_kaggle/*
 tn5000_kaggle/*
+results/modular/emb_cache/*
+results/modular/pred_cache_baseline/manifest.jsonl
+results/modular/processor_cache/image_size_1024/SamProcessor/val/manifest.jsonl
+results/modular/processor_cache/image_size_1024/SamProcessor/train/manifest.jsonl
+results/modular/pred_cache_train_ood_detect/manifest.jsonl
+results/modular/pred_cache_ood_finetuned/manifest.jsonl

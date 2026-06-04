@@ -92,6 +92,27 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw in {"1", "true", "yes", "y", "on"}
 
 
+def _env_float(name: str, default: float) -> float:
+    raw_default = ENV_DEFAULTS.get(name, str(default))
+    raw = os.getenv(name, raw_default).strip()
+    if not raw:
+        return float(default)
+    try:
+        return float(raw)
+    except ValueError:
+        return float(default)
+
+
+def _is_low_vram_cuda(device: str, cuda_mem_gb: Optional[float] = None) -> bool:
+    if device != "cuda":
+        return False
+    limit_gb = max(0.0, _env_float("MEDSAM_VRAM_LIMIT_GB", 0.0))
+    if limit_gb <= 0:
+        return False
+    total_gb = _cuda_total_memory_gb() if cuda_mem_gb is None else cuda_mem_gb
+    return bool(total_gb is not None and total_gb <= limit_gb)
+
+
 def _cuda_total_memory_gb() -> Optional[float]:
     if not torch.cuda.is_available():
         return None
@@ -316,9 +337,9 @@ def _try_compile_model(model: SamModel, processor: SamProcessor, device: str, im
     cuda_total_gb = _cuda_total_memory_gb() if device == "cuda" else None
     warmup_batches = _parse_warmup_batches(
         os.getenv("MEDSAM_COMPILE_WARMUP_BATCHES", ENV_DEFAULTS["MEDSAM_COMPILE_WARMUP_BATCHES"]),
-        [1] if (device == "cuda" and cuda_total_gb is not None and cuda_total_gb <= 12.5) else ([1, 8] if device == "cuda" else [1]),
+        [1] if _is_low_vram_cuda(device, cuda_total_gb) else ([1, 8] if device == "cuda" else [1]),
     )
-    if device == "cuda" and cuda_total_gb is not None and cuda_total_gb <= 12.5:
+    if _is_low_vram_cuda(device, cuda_total_gb):
         warmup_batches = [b for b in warmup_batches if b <= 1] or [1]
 
     last_error = ""
@@ -409,7 +430,10 @@ def _move_inputs_to_device(inputs: Dict[str, torch.Tensor], device: str) -> Dict
                     v = v.pin_memory()
                 except Exception:
                     pass
-            moved[k] = v.to(device, non_blocking=non_blocking)
+            if k == "pixel_values" and v.dim() == 4:
+                moved[k] = v.to(device, non_blocking=non_blocking, memory_format=torch.channels_last)
+            else:
+                moved[k] = v.to(device, non_blocking=non_blocking)
         else:
             moved[k] = v
     if profiler is not None and profiler.enabled:
@@ -440,8 +464,11 @@ def _run_prob_inference(
             probs = torch.sigmoid(outputs.pred_masks)
 
         probs = _normalize_masks_to_4d(probs)
+        del outputs
         if output_size is not None:
-            probs = F.interpolate(probs, size=output_size, mode="bilinear", align_corners=False)
+            resized_probs = F.interpolate(probs, size=output_size, mode="bilinear", align_corners=False)
+            del probs
+            probs = resized_probs
     if profiler is not None and profiler.enabled:
         profiler.record_duration("model.prob_inference", time.perf_counter() - t0)
     return probs

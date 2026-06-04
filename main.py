@@ -30,6 +30,8 @@ CLI_SETTING_KEYS = {
     "model_id",
     "weight_path",
     "image_size",
+    "enable_compile",
+    "enable_cuda_graph",
     "require_compile",
     "compile_dynamic",
     "compile_warmup_batches",
@@ -47,6 +49,8 @@ CLI_SETTING_KEYS = {
     "finetune_grad_accum",
     "finetune_grad_clip",
     "finetune_workers",
+    "vram_limit_gb",
+    "low_vram_empty_cache_every",
     "finetune_max_samples",
     "finetune_use_fused_adamw",
     "run_stage3_detect_train_ood",
@@ -68,6 +72,8 @@ CLI_SETTING_KEYS = {
     "ood_fragment_max_large_components",
     "eval_workers",
     "eval_batch",
+    "eval_forward_chunk",
+    "eval_empty_cache_after_forward",
     "cpu_threads",
     "ood_method",
     "tta_fusion",
@@ -165,6 +171,34 @@ def _parse_args(defaults: dict, config_path: Path) -> argparse.Namespace:
         metavar="N",
         help="輸入影像解析度（正方形邊長）",
     )
+    compile_toggle_group = model_group.add_mutually_exclusive_group()
+    compile_toggle_group.add_argument(
+        "--enable-compile",
+        action="store_true",
+        dest="enable_compile",
+        default=defaults["enable_compile"],
+        help="啟用 torch.compile（較快但會增加 VRAM workspace）",
+    )
+    compile_toggle_group.add_argument(
+        "--disable-compile",
+        action="store_false",
+        dest="enable_compile",
+        help="停用 torch.compile（12GB VRAM 建議）",
+    )
+    cuda_graph_group = model_group.add_mutually_exclusive_group()
+    cuda_graph_group.add_argument(
+        "--enable-cuda-graph",
+        action="store_true",
+        dest="enable_cuda_graph",
+        default=defaults["enable_cuda_graph"],
+        help="啟用 CUDA graph inference cache（較快但會保留靜態顯存）",
+    )
+    cuda_graph_group.add_argument(
+        "--disable-cuda-graph",
+        action="store_false",
+        dest="enable_cuda_graph",
+        help="停用 CUDA graph inference cache（12GB VRAM 建議）",
+    )
     model_group.add_argument(
         "--require-compile",
         action="store_true",
@@ -190,6 +224,14 @@ def _parse_args(defaults: dict, config_path: Path) -> argparse.Namespace:
         metavar="BATCHES",
         help="compile warmup 批次（逗號分隔），如: 1,8",
     )
+    model_group.add_argument(
+        "--vram-limit-gb",
+        type=float,
+        default=defaults["vram_limit_gb"],
+        dest="vram_limit_gb",
+        metavar="GB",
+        help="低 VRAM 策略門檻（0=關閉；建議 12GB 顯卡設 12）",
+    )
 
     # ── 訓練（微調） ──────────────────────────────────────────────────────────
     train_group = parser.add_argument_group("訓練（微調）")
@@ -207,6 +249,7 @@ def _parse_args(defaults: dict, config_path: Path) -> argparse.Namespace:
     train_group.add_argument("--grad-accum",      type=int,   default=defaults["finetune_grad_accum"], dest="finetune_grad_accum", metavar="N",   help="梯度累積步數")
     train_group.add_argument("--grad-clip",       type=float, default=defaults["finetune_grad_clip"], dest="finetune_grad_clip", metavar="V",   help="梯度裁剪最大範數")
     train_group.add_argument("--workers",         type=int,   default=defaults["finetune_workers"], dest="finetune_workers", metavar="N",   help="DataLoader worker 數量（0=自動）")
+    train_group.add_argument("--low-vram-empty-cache-every", type=int, default=defaults["low_vram_empty_cache_every"], dest="low_vram_empty_cache_every", metavar="N", help="CUDA low-VRAM 模式每 N 個 batch 清空 allocator cache（0=關閉）")
     train_group.add_argument("--max-samples",     type=int,   default=defaults["finetune_max_samples"], dest="finetune_max_samples", metavar="N",   help="每個資料集最多取樣數（0 = 不限）")
     pipeline_group = parser.add_argument_group("Pipeline 開關（可分步執行）")
     pipeline_group.add_argument("--run-stage3-detect-train-ood", action="store_true", dest="run_stage3_detect_train_ood", help="執行 Stage 3：偵測 train split OOD")
@@ -252,6 +295,28 @@ def _parse_args(defaults: dict, config_path: Path) -> argparse.Namespace:
         dest="eval_batch",
         metavar="N",
         help="評估批次大小（0 表示依模式自動）",
+    )
+    eval_group.add_argument(
+        "--eval-forward-chunk",
+        type=int,
+        default=defaults["eval_forward_chunk"],
+        dest="eval_forward_chunk",
+        metavar="N",
+        help="SAM eval forward 分塊大小（0=依 VRAM 策略自動；12GB 建議 1）",
+    )
+    eval_cache_group = eval_group.add_mutually_exclusive_group()
+    eval_cache_group.add_argument(
+        "--eval-empty-cache-after-forward",
+        action="store_true",
+        default=defaults["eval_empty_cache_after_forward"],
+        dest="eval_empty_cache_after_forward",
+        help="低 VRAM eval forward 後清空 CUDA allocator cache",
+    )
+    eval_cache_group.add_argument(
+        "--no-eval-empty-cache-after-forward",
+        action="store_false",
+        dest="eval_empty_cache_after_forward",
+        help="停用 eval forward 後清空 CUDA allocator cache",
     )
     eval_group.add_argument(
         "--cpu-threads",

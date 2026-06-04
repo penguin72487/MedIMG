@@ -1,44 +1,44 @@
 {
   "DDTI": {
-    "train_samples": 328,
+    "train_samples": 458,
     "train_ood": 0,
     "train_ood_ratio": 0.0,
-    "test_samples": 101,
-    "test_ood": 3,
-    "test_ood_ratio": 0.0297029702970297
-  },
-  "TG3K": {
-    "train_samples": 2015,
-    "train_ood": 7,
-    "train_ood_ratio": 0.0034739454094292804,
-    "test_samples": 577,
+    "test_samples": 127,
     "test_ood": 0,
     "test_ood_ratio": 0.0
   },
+  "TG3K": {
+    "train_samples": 2198,
+    "train_ood": 35,
+    "train_ood_ratio": 0.01592356687898089,
+    "test_samples": 621,
+    "test_ood": 1,
+    "test_ood_ratio": 0.001610305958132045
+  },
   "TN3K": {
-    "train_samples": 2015,
-    "train_ood": 6,
-    "train_ood_ratio": 0.002977667493796526,
-    "test_samples": 577,
+    "train_samples": 2201,
+    "train_ood": 37,
+    "train_ood_ratio": 0.016810540663334848,
+    "test_samples": 629,
     "test_ood": 0,
     "test_ood_ratio": 0.0
   },
   "TN5000": {
     "train_samples": 3500,
-    "train_ood": 2,
-    "train_ood_ratio": 0.0005714285714285715,
+    "train_ood": 48,
+    "train_ood_ratio": 0.013714285714285714,
     "test_samples": 1000,
     "test_ood": 0,
     "test_ood_ratio": 0.0
   },
   "__overall__": {
-    "ood_train_samples_total": 15,
-    "train_samples_total": 7858,
-    "ood_finetune_train_samples": 90,
-    "ood_finetune_epochs_ran": 60,
+    "ood_train_samples_total": 120,
+    "train_samples_total": 8357,
+    "ood_finetune_train_samples": 720,
+    "ood_finetune_epochs_ran": 16,
     "ood_finetune_convergence_epoch": 6,
-    "ood_finetune_avg_epoch_sec": 0.0,
-    "ood_finetune_total_sec": 0.0,
-    "ood_finetune_avg_sec_per_ood_sample": 0.0
+    "ood_finetune_avg_epoch_sec": 23.053947627544403,
+    "ood_finetune_total_sec": 734.0091906750001,
+    "ood_finetune_avg_sec_per_ood_sample": 6.116743255625001
   }
 }
