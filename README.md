@@ -112,3 +112,5 @@ conda run --no-capture-output -n medsam python -u main.py --tta-fusion entropy_w
 ```shell
 conda run --no-capture-output -n medsam python -u main.py --finetune --cpu-threads 0 --workers 0 --eval-workers 0 --tta-fusion entropy_weighted
 ```
+
+python3 main.py --run-clinical-mode

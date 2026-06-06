@@ -16,7 +16,7 @@ from tqdm import tqdm
 from medsam_modular.config import ENV_DEFAULTS
 from medsam_modular.data import compute_bbox_from_mask_np, prepare_datasets_by_split
 from medsam_modular.eval.evaluate import _compute_model_hash_tag
-from medsam_modular.model import load_state_dict_compat, normalize_pred_masks_to_4d
+from medsam_modular.model import load_state_dict_compat, normalize_pred_masks_to_4d, resolve_amp_dtype
 
 
 class _AsyncCheckpointSaver:
@@ -105,9 +105,43 @@ def _auto_train_workers(device: str) -> int:
 
 def _setup_cuda_backends() -> None:
     """Enable Tensor Core optimizations (TF32 + cuDNN benchmark)."""
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.allow_tf32 = True
-    torch.backends.cudnn.benchmark = True
+    torch.set_float32_matmul_precision(os.getenv("MEDSAM_CUDA_MATMUL_PRECISION", "high"))
+    allow_tf32 = _env_bool("MEDSAM_CUDA_ALLOW_TF32", True)
+    torch.backends.cuda.matmul.allow_tf32 = bool(allow_tf32)
+    torch.backends.cudnn.allow_tf32 = bool(allow_tf32)
+    torch.backends.cudnn.benchmark = _env_bool("MEDSAM_CUDA_CUDNN_BENCHMARK", True)
+
+
+def _build_optimizer(
+    param_groups: List[Dict[str, Any]],
+    *,
+    device: str,
+    lr: float,
+    betas: Tuple[float, float],
+    eps: float,
+    use_fused_adamw: bool,
+) -> Tuple[torch.optim.Optimizer, str]:
+    optimizer_name = os.getenv("MEDSAM_FINETUNE_OPTIMIZER", "adamw").strip().lower()
+    if device == "cuda" and optimizer_name in {"bnb_adamw8bit", "adamw8bit", "8bit_adamw"}:
+        try:
+            import bitsandbytes as bnb
+
+            optimizer = bnb.optim.AdamW8bit(param_groups, lr=lr, betas=betas, eps=eps)
+            return optimizer, "bitsandbytes.AdamW8bit"
+        except Exception as exc:
+            print(
+                f"  [optimizer] bitsandbytes AdamW8bit unavailable ({type(exc).__name__}: {str(exc)[:160]}), fallback to torch AdamW",
+                flush=True,
+            )
+
+    optimizer_kwargs: Dict[str, Any] = {
+        "lr": lr,
+        "betas": betas,
+        "eps": eps,
+    }
+    if device == "cuda":
+        optimizer_kwargs["fused"] = use_fused_adamw
+    return torch.optim.AdamW(param_groups, **optimizer_kwargs), "torch.AdamW(fused)" if optimizer_kwargs.get("fused") else "torch.AdamW"
 
 
 class EmbeddingDiskCache:
@@ -272,10 +306,8 @@ class ProcessorDiskCache:
 
 
 def _choose_amp_dtype() -> torch.dtype:
-    """BF16 on Ampere+ (no GradScaler needed), FP16 elsewhere."""
-    if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
-        return torch.bfloat16
-    return torch.float16
+    """Project-wide AMP dtype resolver (BF16 preferred)."""
+    return resolve_amp_dtype("cuda")
 
 
 def _is_cuda_oom(exc: BaseException) -> bool:
@@ -291,10 +323,11 @@ def _encode_vision_embeddings_cpu(
     amp_dtype: torch.dtype,
     initial_chunk: int,
 ) -> torch.Tensor:
-    """Encode pixel_values with adaptive CUDA chunks and return FP16 CPU embeddings."""
+    """Encode pixel_values with adaptive CUDA chunks and return AMP dtype CPU embeddings."""
     total = int(pixel_values.shape[0])
     if total <= 0:
-        return torch.empty((0,), dtype=torch.float16)
+        empty_dtype = amp_dtype if amp_dtype in {torch.float16, torch.bfloat16} else torch.float32
+        return torch.empty((0,), dtype=empty_dtype)
 
     chunk = max(1, min(int(initial_chunk), total))
     outputs: List[torch.Tensor] = []
@@ -307,7 +340,8 @@ def _encode_vision_embeddings_cpu(
             pv_chunk = pixel_values[start : start + cur].to(device, non_blocking=non_blocking)
             with torch.amp.autocast("cuda", dtype=amp_dtype, enabled=(device == "cuda")):
                 emb = vision_encoder(pv_chunk)[0]
-            outputs.append(emb.detach().to(dtype=torch.float16).cpu())
+            cache_dtype = amp_dtype if amp_dtype in {torch.float16, torch.bfloat16} else torch.float32
+            outputs.append(emb.detach().to(dtype=cache_dtype).cpu())
             del emb, pv_chunk
             start += cur
         except RuntimeError as exc:
@@ -337,7 +371,7 @@ def _precompute_image_embeddings(
     dataset: Dataset,
     device: str,
     batch_size: int = 4,
-    amp_dtype: torch.dtype = torch.float16,
+    amp_dtype: torch.dtype = torch.bfloat16,
     num_workers: int = 0,
     disk_cache: Optional[EmbeddingDiskCache] = None,
     cache_label: str = "dataset",
@@ -1342,14 +1376,15 @@ def maybe_finetune(model: Any, processor: Any, config: Dict[str, Any], profiler:
     print(f"  可訓練參數: {trainable_count:,} / {total_count:,} ({100*trainable_count/total_count:.1f}%)")
 
     param_groups = _build_adamw_param_groups(base_model, weight_decay=weight_decay)
-    optimizer_kwargs = {
-        "lr": lr,
-        "betas": (adamw_beta1, adamw_beta2),
-        "eps": adamw_eps,
-    }
-    if device == "cuda":
-        optimizer_kwargs["fused"] = use_fused_adamw
-    optimizer = torch.optim.AdamW(param_groups, **optimizer_kwargs)
+    optimizer, optimizer_label = _build_optimizer(
+        param_groups,
+        device=device,
+        lr=lr,
+        betas=(adamw_beta1, adamw_beta2),
+        eps=adamw_eps,
+        use_fused_adamw=use_fused_adamw,
+    )
+    print(f"  optimizer: {optimizer_label}", flush=True)
     scheduler = None
     if use_plateau_scheduler:
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(

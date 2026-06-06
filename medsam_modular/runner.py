@@ -9,13 +9,21 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import torch
+from tqdm import tqdm
 
 from medsam_modular.cache import PredictionCache
 from medsam_modular.config import DEFAULT_IMAGE_SIZE, DEFAULT_MODEL_ID, DEFAULT_OUTPUT_DIR_REL, ENV_DEFAULTS
 from medsam_modular.data import prepare_datasets_by_split
 from medsam_modular.eval import OODDetector, TTAPredictor, evaluate_dataset_ood_only, evaluate_dataset_ood_tta
 from medsam_modular.io_async import get_global_async_writer, shutdown_global_async_writer
-from medsam_modular.model import build_inputs_batch, load_medsam, load_state_dict_compat, predict_prob_masks_from_inputs
+from medsam_modular.model import (
+    build_inputs_batch,
+    load_medsam,
+    load_state_dict_compat,
+    normalize_pred_masks_to_4d,
+    predict_prob_masks_from_inputs,
+    resolve_amp_dtype,
+)
 from medsam_modular.pipeline.stage3_ood_detect import (
     detect_ood_train_subset as pipeline_detect_ood_train_subset,
     load_cached_ood_train_subset as pipeline_load_cached_ood_train_subset,
@@ -84,6 +92,16 @@ def _env(name: str) -> str:
     return os.getenv(name, ENV_DEFAULTS.get(name, ""))
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = _env(name).strip()
+    if not raw:
+        return float(default)
+    try:
+        return float(raw)
+    except ValueError:
+        return float(default)
+
+
 def _resolve_split_root(project_root: Path) -> Path:
     split_root_raw = _env("MEDSAM_SPLIT_ROOT").strip()
     if split_root_raw:
@@ -103,6 +121,9 @@ def _auto_cpu_threads(device: str) -> int:
 def _setup_cuda_accel() -> Dict[str, Any]:
     status: Dict[str, Any] = {
         "enabled": False,
+        "allow_tf32": None,
+        "cudnn_allow_tf32": None,
+        "cudnn_benchmark": None,
         "flash_sdp": None,
         "mem_efficient_sdp": None,
         "math_sdp": None,
@@ -112,16 +133,33 @@ def _setup_cuda_accel() -> Dict[str, Any]:
         return status
 
     status["enabled"] = True
+    matmul_precision = str(_env("MEDSAM_CUDA_MATMUL_PRECISION") or "high").strip().lower()
     try:
-        torch.set_float32_matmul_precision("high")
-        status["matmul_precision"] = "high"
+        torch.set_float32_matmul_precision(matmul_precision)
+        status["matmul_precision"] = matmul_precision
     except Exception:
         status["matmul_precision"] = "<unsupported>"
 
+    allow_tf32 = _env_bool("MEDSAM_CUDA_ALLOW_TF32", True)
+    cudnn_benchmark = _env_bool("MEDSAM_CUDA_CUDNN_BENCHMARK", True)
     try:
-        torch.backends.cuda.enable_flash_sdp(True)
-        torch.backends.cuda.enable_mem_efficient_sdp(True)
-        torch.backends.cuda.enable_math_sdp(True)
+        torch.backends.cuda.matmul.allow_tf32 = bool(allow_tf32)
+        status["allow_tf32"] = bool(torch.backends.cuda.matmul.allow_tf32)
+    except Exception:
+        status["allow_tf32"] = "<unsupported>"
+    try:
+        torch.backends.cudnn.allow_tf32 = bool(allow_tf32)
+        torch.backends.cudnn.benchmark = bool(cudnn_benchmark)
+        status["cudnn_allow_tf32"] = bool(torch.backends.cudnn.allow_tf32)
+        status["cudnn_benchmark"] = bool(torch.backends.cudnn.benchmark)
+    except Exception:
+        status["cudnn_allow_tf32"] = "<unsupported>"
+        status["cudnn_benchmark"] = "<unsupported>"
+
+    try:
+        torch.backends.cuda.enable_flash_sdp(_env_bool("MEDSAM_CUDA_ENABLE_FLASH_SDP", True))
+        torch.backends.cuda.enable_mem_efficient_sdp(_env_bool("MEDSAM_CUDA_ENABLE_MEM_EFFICIENT_SDP", True))
+        torch.backends.cuda.enable_math_sdp(_env_bool("MEDSAM_CUDA_ENABLE_MATH_SDP", True))
     except Exception:
         pass
 
@@ -225,6 +263,516 @@ def _resolve_resume_weight_path(project_root: Path, output_dir: Path) -> str:
     ]
     picked = next((p for p in candidates if p.exists()), None)
     return str(picked) if picked is not None else ""
+
+
+def _resolve_clinical_weight_path(project_root: Path, output_dir: Path) -> str:
+    configured = _env("MEDSAM_CLINICAL_WEIGHT_PATH").strip()
+    if configured and Path(configured).exists():
+        return configured
+    candidates = [
+        output_dir / "medsam_OOD_finetuned_best.pth",
+        output_dir / "medsam_OOD_finetuned_last.pth",
+        project_root / "results" / "modular" / "medsam_OOD_finetuned_best.pth",
+        project_root / "results" / "modular" / "medsam_OOD_finetuned_last.pth",
+        project_root / "results" / "medsam_OOD_finetuned_best.pth",
+        project_root / "results" / "medsam_OOD_finetuned_last.pth",
+    ]
+    picked = next((p for p in candidates if p.exists()), None)
+    return str(picked) if picked is not None else ""
+
+
+def _get_train_base_model(model: Any) -> Any:
+    if hasattr(model, "_orig_mod") and getattr(model, "_orig_mod") is not None:
+        return model._orig_mod
+    return model
+
+
+def _configure_online_finetune_params(model: Any) -> int:
+    base = _get_train_base_model(model)
+    for p in base.parameters():
+        p.requires_grad = False
+    if hasattr(base, "mask_decoder"):
+        for p in base.mask_decoder.parameters():
+            p.requires_grad = True
+    if hasattr(base, "prompt_encoder"):
+        for p in base.prompt_encoder.parameters():
+            p.requires_grad = True
+    if _env_bool("MEDSAM_FINETUNE_TRAIN_BACKBONE", False) and hasattr(base, "vision_encoder"):
+        for p in base.vision_encoder.parameters():
+            p.requires_grad = True
+    return int(sum(int(p.numel()) for p in base.parameters() if bool(getattr(p, "requires_grad", False))))
+
+
+def _online_seg_loss(outputs: Any, gt_mask: torch.Tensor) -> torch.Tensor:
+    logits = normalize_pred_masks_to_4d(outputs.pred_masks)
+    target = gt_mask.unsqueeze(1)
+    if target.shape[-2:] != logits.shape[-2:]:
+        target = torch.nn.functional.interpolate(target, size=logits.shape[-2:], mode="nearest")
+    target = target.to(dtype=logits.dtype)
+
+    probs = torch.sigmoid(logits)
+    bce = torch.nn.functional.binary_cross_entropy_with_logits(logits, target)
+
+    flat_p = probs.reshape(probs.shape[0], -1)
+    flat_t = target.reshape(target.shape[0], -1)
+    numerator = 2.0 * (flat_p * flat_t).sum(dim=1) + 1.0
+    denominator = flat_p.pow(2).sum(dim=1) + flat_t.pow(2).sum(dim=1) + 1.0
+    dice = 1.0 - (numerator / denominator).mean()
+    return bce + dice
+
+
+def _online_finetune_single_sample(
+    *,
+    model: Any,
+    processor: Any,
+    image: Any,
+    bbox: List[int],
+    gt_mask: Any,
+    device: str,
+    optimizer: torch.optim.Optimizer,
+    scaler: Optional[torch.amp.GradScaler],
+    steps: int,
+    amp_dtype: torch.dtype,
+) -> Dict[str, Any]:
+    if gt_mask is None:
+        return {"applied": False, "reason": "missing_gt_mask", "loss_last": None, "steps": 0}
+
+    gt = gt_mask if isinstance(gt_mask, torch.Tensor) else torch.as_tensor(gt_mask)
+    if int(gt.numel()) <= 0:
+        return {"applied": False, "reason": "empty_gt_mask", "loss_last": None, "steps": 0}
+
+    gt = gt.to(device=device, dtype=torch.float32, non_blocking=(device == "cuda")).unsqueeze(0)
+    base = _get_train_base_model(model)
+    base.train()
+
+    loss_last: Optional[float] = None
+    ran_steps = 0
+    for _ in range(max(1, int(steps))):
+        inputs = build_inputs_batch(processor=processor, images=[image], input_boxes=[[bbox]])
+        inputs = {
+            k: (v.to(device=device, non_blocking=(device == "cuda")) if isinstance(v, torch.Tensor) else v)
+            for k, v in inputs.items()
+        }
+
+        optimizer.zero_grad(set_to_none=True)
+        if device == "cuda":
+            with torch.amp.autocast("cuda", dtype=amp_dtype):
+                outputs = base(**inputs)
+                loss = _online_seg_loss(outputs, gt)
+        else:
+            outputs = base(**inputs)
+            loss = _online_seg_loss(outputs, gt)
+
+        if scaler is not None and scaler.is_enabled():
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            optimizer.step()
+
+        loss_last = float(loss.detach().item())
+        ran_steps += 1
+
+    base.eval()
+    return {"applied": True, "reason": "ok", "loss_last": loss_last, "steps": ran_steps}
+
+
+def _safe_mean(values: List[float]) -> float:
+    if not values:
+        return 0.0
+    return float(np.mean(np.asarray(values, dtype=np.float64)))
+
+
+def _is_cuda_oom_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return ("out of memory" in msg) or (("cuda" in msg) and ("memory" in msg))
+
+
+def _is_cuda_runtime_unready_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return (
+        ("cuda" in msg)
+        and (
+            "device not ready" in msg
+            or "device-side assert" in msg
+            or "illegal memory access" in msg
+            or "unspecified launch failure" in msg
+        )
+    )
+
+
+def _stabilize_tta_for_clinical(tta_predictor: TTAPredictor, device: str) -> None:
+    # Clinical mode prioritizes run stability; tuner can spike memory on first sample.
+    if hasattr(tta_predictor, "_autotune_enabled"):
+        setattr(tta_predictor, "_autotune_enabled", False)
+    if hasattr(tta_predictor, "_chunk_size_tuned"):
+        setattr(tta_predictor, "_chunk_size_tuned", True)
+    if hasattr(tta_predictor, "_build_inputs_on_cpu"):
+        setattr(tta_predictor, "_build_inputs_on_cpu", bool(device == "cuda"))
+
+    if hasattr(tta_predictor, "infer_chunk_size"):
+        forced_chunk_raw = _env("MEDSAM_CLINICAL_TTA_CHUNK_SIZE").strip()
+        forced_chunk = int(forced_chunk_raw) if forced_chunk_raw else 0
+        if forced_chunk > 0:
+            setattr(tta_predictor, "infer_chunk_size", max(1, forced_chunk))
+            return
+
+        # Clinical mode defaults to the most stable chunk to avoid CUDA driver resets.
+        if device == "cuda":
+            setattr(tta_predictor, "infer_chunk_size", 1)
+        else:
+            setattr(tta_predictor, "infer_chunk_size", 1)
+
+
+def _estimate_clinical_tta_max_chunk(device: str) -> int:
+    if device != "cuda" or not torch.cuda.is_available():
+        return 1
+    try:
+        total_gb = float(torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory) / (1024.0 ** 3)
+    except Exception:
+        total_gb = 12.0
+
+    # Deterministic chunk policy by VRAM class (no runtime trial).
+    if total_gb <= 12.5:
+        return 1
+    if total_gb <= 16.5:
+        return 2
+    if total_gb <= 24.5:
+        return 3
+    return 4
+
+
+def _set_tta_augmentations(tta_predictor: TTAPredictor, augmentations: List[str]) -> None:
+    tta_predictor.augmentations = list(augmentations)
+    tta_predictor._aug_to_id = {name: idx for idx, name in enumerate(tta_predictor.augmentations)}
+
+
+def _build_clinical_tta_aug_levels(base_augmentations: List[str]) -> List[List[str]]:
+    levels: List[List[str]] = []
+
+    full = [str(v) for v in base_augmentations if str(v)]
+    if full:
+        levels.append(full)
+
+    four_way = [aug for aug in ["none", "hflip", "vflip", "hvflip"] if aug in full]
+    if len(four_way) >= 2 and four_way not in levels:
+        levels.append(four_way)
+
+    two_way = [aug for aug in ["none", "hflip"] if aug in full]
+    if len(two_way) < 2:
+        two_way = full[:2]
+    if len(two_way) >= 2 and two_way not in levels:
+        levels.append(two_way)
+
+    return levels or [["none", "hflip"]]
+
+
+def _run_clinical_mode(
+    *,
+    model: Any,
+    processor: Any,
+    device: str,
+    test_sets: Dict[str, Any],
+    ood_detector: OODDetector,
+    tta_predictor: TTAPredictor,
+    output_dir: Path,
+    project_root: Path,
+) -> Dict[str, Any]:
+    clinical_weight_path = _resolve_clinical_weight_path(project_root=project_root, output_dir=output_dir)
+    if not clinical_weight_path:
+        raise RuntimeError("Clinical mode requires OOD-finetuned weight, but none was found.")
+
+    with _timed_log("Clinical mode: load OOD-finetuned weights"):
+        load_state_dict_compat(model, Path(clinical_weight_path), map_location=device)
+
+    trainable_count = _configure_online_finetune_params(model)
+    base = _get_train_base_model(model)
+    base.eval()
+
+    clinical_steps = max(1, int(_env("MEDSAM_CLINICAL_FINETUNE_STEPS") or "2"))
+    clinical_lr = float(_env("MEDSAM_CLINICAL_FINETUNE_LR") or "5e-6")
+    clinical_wd = float(_env("MEDSAM_CLINICAL_FINETUNE_WEIGHT_DECAY") or "1e-4")
+    clinical_use_fused = _env_bool("MEDSAM_CLINICAL_FINETUNE_USE_FUSED_ADAMW", True)
+    amp_dtype = resolve_amp_dtype(device)
+    use_scaler = device == "cuda" and amp_dtype == torch.float16
+    scaler = torch.amp.GradScaler("cuda", enabled=use_scaler)
+
+    params = [p for p in base.parameters() if bool(getattr(p, "requires_grad", False))]
+    optimizer_kwargs: Dict[str, Any] = {"lr": clinical_lr, "weight_decay": clinical_wd}
+    if device == "cuda":
+        optimizer_kwargs["fused"] = bool(clinical_use_fused)
+    optimizer = torch.optim.AdamW(params, **optimizer_kwargs)
+
+    all_rows: List[Dict[str, Any]] = []
+    no_ood_ood_times: List[float] = []
+    no_ood_tta_times: List[float] = []
+    no_ood_total_times: List[float] = []
+    ood_branch_ood_times: List[float] = []
+    ood_branch_ft_times: List[float] = []
+    ood_branch_tta_times: List[float] = []
+    ood_branch_total_times: List[float] = []
+    finetune_applied_count = 0
+    finetune_skipped_count = 0
+
+    print("\n=== Clinical Mode ===")
+    print(f"  weight: {clinical_weight_path}")
+    print(f"  online finetune steps: {clinical_steps}")
+    print(f"  online finetune lr/wd: {clinical_lr:.2e} / {clinical_wd:.2e}")
+    print(f"  online finetune trainable params: {trainable_count:,}")
+
+    tta_default_chunk = int(getattr(tta_predictor, "infer_chunk_size", 1) or 1)
+    clinical_chunk_target_raw = _env("MEDSAM_CLINICAL_TTA_MAX_CHUNK_SIZE").strip()
+    if clinical_chunk_target_raw:
+        clinical_chunk_target = max(1, int(clinical_chunk_target_raw))
+    else:
+        clinical_chunk_target = _estimate_clinical_tta_max_chunk(device=device)
+
+    _stabilize_tta_for_clinical(tta_predictor=tta_predictor, device=device)
+    if hasattr(tta_predictor, "infer_chunk_size"):
+        base_chunk = int(getattr(tta_predictor, "infer_chunk_size", 1) or 1)
+        setattr(tta_predictor, "infer_chunk_size", max(1, min(base_chunk, clinical_chunk_target)))
+    print(
+        f"  clinical TTA: autotune=off, chunk_size={int(getattr(tta_predictor, 'infer_chunk_size', 1) or 1)}, "
+        f"max_chunk_target={clinical_chunk_target}"
+    )
+
+    progress_enabled = _env_bool("MEDSAM_PROGRESS", True)
+    progress_interval = max(0.2, _env_float("MEDSAM_PROGRESS_INTERVAL", 1.0))
+    total_clinical_samples = int(sum(len(ds) for ds in test_sets.values() if len(ds) > 0))
+    processed_samples = 0
+
+    with tqdm(
+        total=total_clinical_samples,
+        desc="Clinical Mode",
+        unit="sample",
+        dynamic_ncols=False,
+        mininterval=progress_interval,
+        disable=not progress_enabled,
+    ) as clinical_bar:
+        for dataset_name, dataset in test_sets.items():
+            if len(dataset) == 0:
+                continue
+            print(f"\n[Clinical] dataset={dataset_name}, samples={len(dataset)}")
+            for idx in range(len(dataset)):
+                branch = "unknown"
+                sample_name = f"sample_{idx}"
+                try:
+                    sample = dataset[idx]
+                    image = sample.get("image")
+                    bbox = sample.get("bbox")
+                    sample_name = str(sample.get("name", f"sample_{idx}"))
+                    if image is None:
+                        continue
+                    if not isinstance(bbox, list) or len(bbox) < 4:
+                        if hasattr(image, "size") and isinstance(getattr(image, "size"), tuple):
+                            w, h = image.size
+                        else:
+                            w, h = 1024, 1024
+                        bbox = [0, 0, max(0, int(w) - 1), max(0, int(h) - 1)]
+
+                    t_sample_start = time.perf_counter()
+
+                    t_ood_start = time.perf_counter()
+                    prob_for_ood = _predict_prob_single(
+                        model=model,
+                        processor=processor,
+                        tta_predictor=tta_predictor,
+                        image=image,
+                        bbox=bbox,
+                        device=device,
+                        use_tta=False,
+                    )
+                    ood_info = ood_detector.detect_tensor(prob_for_ood)
+                    ood_elapsed = float(time.perf_counter() - t_ood_start)
+
+                    is_ood = bool(ood_info.get("is_ood", False))
+                    ft_elapsed = 0.0
+                    ft_info: Dict[str, Any] = {"applied": False, "reason": "not_needed", "loss_last": None, "steps": 0}
+
+                    if is_ood:
+                        t_ft_start = time.perf_counter()
+                        ft_info = _online_finetune_single_sample(
+                            model=model,
+                            processor=processor,
+                            image=image,
+                            bbox=bbox,
+                            gt_mask=sample.get("mask"),
+                            device=device,
+                            optimizer=optimizer,
+                            scaler=scaler,
+                            steps=clinical_steps,
+                            amp_dtype=amp_dtype,
+                        )
+                        ft_elapsed = float(time.perf_counter() - t_ft_start)
+                        if device == "cuda":
+                            try:
+                                torch.cuda.synchronize()
+                                torch.cuda.empty_cache()
+                            except Exception:
+                                pass
+                        if bool(ft_info.get("applied", False)):
+                            finetune_applied_count += 1
+                        else:
+                            finetune_skipped_count += 1
+
+                    t_tta_start = time.perf_counter()
+                    tta_retries = 0
+                    tta_aug_levels = _build_clinical_tta_aug_levels(list(getattr(tta_predictor, "augmentations", [])))
+                    tta_aug_level_idx = 0
+                    while True:
+                        try:
+                            _ = tta_predictor.predict(
+                                model=model,
+                                processor=processor,
+                                image=image,
+                                bbox=bbox,
+                                device=device,
+                            )
+                            break
+                        except Exception as exc:
+                            if device != "cuda":
+                                raise
+
+                            cur_chunk = int(getattr(tta_predictor, "infer_chunk_size", 1) or 1)
+                            if _is_cuda_oom_error(exc):
+                                next_chunk = max(1, cur_chunk // 2)
+                                if next_chunk < cur_chunk:
+                                    setattr(tta_predictor, "infer_chunk_size", next_chunk)
+                                    print(
+                                        f"  [Clinical TTA retry] {dataset_name}/{sample_name}: chunk {cur_chunk} -> {next_chunk}",
+                                        flush=True,
+                                    )
+
+                                if tta_aug_level_idx + 1 < len(tta_aug_levels):
+                                    tta_aug_level_idx += 1
+                                    next_augs = tta_aug_levels[tta_aug_level_idx]
+                                    _set_tta_augmentations(tta_predictor, next_augs)
+                                    print(
+                                        f"  [Clinical TTA degrade] {dataset_name}/{sample_name}: augmentations -> {next_augs}",
+                                        flush=True,
+                                    )
+
+                                if tta_retries < 6:
+                                    tta_retries += 1
+                                    try:
+                                        torch.cuda.empty_cache()
+                                        torch.cuda.synchronize()
+                                    except Exception:
+                                        pass
+                                    continue
+
+                            if _is_cuda_runtime_unready_error(exc):
+                                if tta_retries < 1:
+                                    setattr(tta_predictor, "infer_chunk_size", 1)
+                                    tta_retries += 1
+                                    try:
+                                        torch.cuda.empty_cache()
+                                        torch.cuda.synchronize()
+                                    except Exception:
+                                        pass
+                                    print(
+                                        f"  [Clinical TTA recover] {dataset_name}/{sample_name}: CUDA unstable, retry with chunk=1",
+                                        flush=True,
+                                    )
+                                    continue
+                                raise RuntimeError(
+                                    "CUDA runtime became unstable during clinical TTA inference. "
+                                    "Try rerun with smaller chunk via MEDSAM_TTA_CHUNK_SIZE=1 "
+                                    "or restart the Python process/GPU driver."
+                                ) from exc
+                            raise
+                    tta_elapsed = float(time.perf_counter() - t_tta_start)
+
+                    total_elapsed = float(time.perf_counter() - t_sample_start)
+
+                    branch = "ood_branch" if is_ood else "no_ood_branch"
+                    if is_ood:
+                        ood_branch_ood_times.append(ood_elapsed)
+                        ood_branch_ft_times.append(ft_elapsed)
+                        ood_branch_tta_times.append(tta_elapsed)
+                        ood_branch_total_times.append(total_elapsed)
+                    else:
+                        no_ood_ood_times.append(ood_elapsed)
+                        no_ood_tta_times.append(tta_elapsed)
+                        no_ood_total_times.append(total_elapsed)
+
+                    all_rows.append(
+                        {
+                            "dataset": dataset_name,
+                            "index": int(idx),
+                            "name": sample_name,
+                            "branch": branch,
+                            "is_ood": is_ood,
+                            "ood_score": float(ood_info.get("ood_score", 0.0)),
+                            "ood_reason_codes": list(ood_info.get("ood_reason_codes", [])),
+                            "ood_time_sec": ood_elapsed,
+                            "finetune_time_sec": ft_elapsed,
+                            "finetune_applied": bool(ft_info.get("applied", False)),
+                            "finetune_reason": str(ft_info.get("reason", "")),
+                            "finetune_steps": int(ft_info.get("steps", 0)),
+                            "finetune_loss_last": ft_info.get("loss_last", None),
+                            "tta_time_sec": tta_elapsed,
+                            "total_time_sec": total_elapsed,
+                        }
+                    )
+                finally:
+                    processed_samples += 1
+                    clinical_bar.update(1)
+                    clinical_bar.set_postfix(
+                        dataset=dataset_name,
+                        sample=sample_name,
+                        branch=branch,
+                        done=f"{processed_samples}/{max(1, total_clinical_samples)}",
+                        refresh=False,
+                    )
+
+    n_total = len(all_rows)
+    n_no_ood = len(no_ood_total_times)
+    n_ood = len(ood_branch_total_times)
+    clinical_total_time = float(np.sum(np.asarray([r["total_time_sec"] for r in all_rows], dtype=np.float64))) if all_rows else 0.0
+
+    summary: Dict[str, Any] = {
+        "mode": "clinical",
+        "weight_path": clinical_weight_path,
+        "clinical_finetune_steps": int(clinical_steps),
+        "clinical_finetune_lr": float(clinical_lr),
+        "clinical_finetune_weight_decay": float(clinical_wd),
+        "clinical_finetune_use_fused_adamw": bool(clinical_use_fused),
+        "num_samples": int(n_total),
+        "num_no_ood_branch": int(n_no_ood),
+        "num_ood_branch": int(n_ood),
+        "finetune_applied_count": int(finetune_applied_count),
+        "finetune_skipped_count": int(finetune_skipped_count),
+        "total_time_sec": clinical_total_time,
+        "overall_avg_time_per_sample_sec": float(clinical_total_time / max(1, n_total)),
+        "overall_throughput_samples_per_sec": float(n_total / clinical_total_time) if clinical_total_time > 0 else 0.0,
+        "no_ood_branch": {
+            "avg_ood_time_sec": _safe_mean(no_ood_ood_times),
+            "avg_finetune_time_sec": 0.0,
+            "avg_tta_time_sec": _safe_mean(no_ood_tta_times),
+            "avg_total_time_sec": _safe_mean(no_ood_total_times),
+            "throughput_samples_per_sec": float(n_no_ood / max(1e-8, float(np.sum(np.asarray(no_ood_total_times, dtype=np.float64))))) if n_no_ood > 0 else 0.0,
+        },
+        "ood_branch": {
+            "avg_ood_time_sec": _safe_mean(ood_branch_ood_times),
+            "avg_finetune_time_sec": _safe_mean(ood_branch_ft_times),
+            "avg_tta_time_sec": _safe_mean(ood_branch_tta_times),
+            "avg_total_time_sec": _safe_mean(ood_branch_total_times),
+            "throughput_samples_per_sec": float(n_ood / max(1e-8, float(np.sum(np.asarray(ood_branch_total_times, dtype=np.float64))))) if n_ood > 0 else 0.0,
+        },
+    }
+
+    _save_json(output_dir / "clinical_mode_results.json", all_rows)
+    _save_json(output_dir / "clinical_mode_stats.json", summary)
+
+    print("\n[Clinical] Summary")
+    print(f"  total samples: {n_total}")
+    print(f"  no-OOD branch: {n_no_ood} | avg_total={summary['no_ood_branch']['avg_total_time_sec']:.4f}s")
+    print(f"  OOD branch   : {n_ood} | avg_total={summary['ood_branch']['avg_total_time_sec']:.4f}s")
+    print(f"  overall throughput: {summary['overall_throughput_samples_per_sec']:.3f} samples/s")
+
+    return summary
 
 
 def _save_json(path: Path, payload: Any) -> None:
@@ -999,6 +1547,9 @@ def main() -> None:
         print(
             "cuda accel   : "
             f"matmul={cuda_accel.get('matmul_precision')} "
+            f"tf32={cuda_accel.get('allow_tf32')} "
+            f"cudnn_tf32={cuda_accel.get('cudnn_allow_tf32')} "
+            f"cudnn_bench={cuda_accel.get('cudnn_benchmark')} "
             f"flash_sdp={cuda_accel.get('flash_sdp')} "
             f"mem_eff_sdp={cuda_accel.get('mem_efficient_sdp')} "
             f"math_sdp={cuda_accel.get('math_sdp')}"
@@ -1088,6 +1639,7 @@ def main() -> None:
     run_stage7_eval_ood_finetuned = _env_bool("MEDSAM_RUN_STAGE7_EVAL_OOD_FINETUNED", True)
     run_stage7_eval_full_finetuned = _env_bool("MEDSAM_RUN_STAGE7_EVAL_FULL_FINETUNED", True)
     run_stage8_plotting = _env_bool("MEDSAM_RUN_STAGE8_PLOTTING", True)
+    run_clinical_mode = _env_bool("MEDSAM_RUN_CLINICAL_MODE", False)
 
     print("\n=== Pipeline Stage Switches ===")
     print(f"  Stage3 detect train OOD       : {run_stage3_detect_train_ood}")
@@ -1097,6 +1649,25 @@ def main() -> None:
     print(f"  Stage7 eval OOD-finetuned     : {run_stage7_eval_ood_finetuned}")
     print(f"  Stage7 eval full-finetuned    : {run_stage7_eval_full_finetuned}")
     print(f"  Stage8 plotting               : {run_stage8_plotting}")
+    print(f"  Clinical mode                 : {run_clinical_mode}")
+
+    if run_clinical_mode:
+        print("\n[Clinical Mode] 啟用：使用 OOD finetuned 權重進行線上決策流程。")
+        with _timed_log("Clinical mode total"):
+            _run_clinical_mode(
+                model=model,
+                processor=processor,
+                device=device,
+                test_sets=test_sets,
+                ood_detector=ood_detector,
+                tta_predictor=tta_predictor,
+                output_dir=output_dir,
+                project_root=project_root,
+            )
+        with _timed_log("Shutdown async writer"):
+            shutdown_global_async_writer()
+        print(f"\nPipeline total elapsed: {_fmt_elapsed(time.perf_counter() - pipeline_start)}")
+        return
 
     split_root = _resolve_split_root(project_root)
 

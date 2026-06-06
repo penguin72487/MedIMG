@@ -607,7 +607,7 @@ def _auto_tune_eval_batch_size(
             safety = 1.0
     else:
         safety = 1.0
-    safety = float(np.clip(safety, 0.1, 1.0))
+    safety = float(max(0.1, min(1.0, safety)))
 
     tuned_safe = max(1, int(np.floor(tuned * safety)))
     print(
@@ -787,12 +787,14 @@ class OODDetector:
             self.enable_entropy_detection and (active_entropy > self.entropy_threshold)
         )
 
-        fragment_binary = (p2d > self.fragment_prob_threshold).to(dtype=torch.uint8).cpu().numpy()
-        large_component_count = self._count_large_components(fragment_binary)
-        fragmentation_is_ood = bool(
-            self.enable_fragmentation_detection
-            and (large_component_count > self.fragment_max_large_components)
-        )
+        # Fragmentation path needs connected-components (CPU/OpenCV fallback),
+        # so only execute it when the detector is explicitly enabled.
+        large_component_count = 0
+        fragmentation_is_ood = False
+        if self.enable_fragmentation_detection:
+            fragment_binary = (p2d > self.fragment_prob_threshold).to(dtype=torch.uint8).cpu().numpy()
+            large_component_count = self._count_large_components(fragment_binary)
+            fragmentation_is_ood = bool(large_component_count > self.fragment_max_large_components)
 
         reason_codes: List[str] = []
         if collapse_is_ood:
@@ -890,6 +892,7 @@ class TTAPredictor:
 
         # If user fixed chunk size or disabled autotune, skip first-sample tuner.
         self._chunk_size_tuned = (fixed_chunk > 0) or (not self._autotune_enabled)
+        self._build_inputs_on_cpu = _env_bool("MEDSAM_TTA_BUILD_ON_CPU", False)
         self._norm_cache: Dict[int, Tuple[torch.Tensor, torch.Tensor]] = {}
         self._aug_to_id = {name: idx for idx, name in enumerate(self.augmentations)}
         assert fusion_mode in ["mean", "median", "entropy_weighted"], \
@@ -947,12 +950,17 @@ class TTAPredictor:
         self._norm_cache[key] = (mean, std)
         return mean.to(device), std.to(device)
 
-    def _preprocess_image_tensor(self, image_np: np.ndarray, processor: Any, device: str) -> Tuple[torch.Tensor, int]:
+    def _preprocess_image_tensor(self, image: Image.Image, processor: Any, device: str) -> Tuple[torch.Tensor, int]:
         target_edge = self._get_sam_target_edge(processor)
         mean, std = self._get_sam_norm_tensors(processor, device)
 
-        image_t = torch.from_numpy(np.ascontiguousarray(image_np)).to(device)
-        image_t = image_t.permute(2, 0, 1).to(torch.float32).div_(255.0).unsqueeze(0)
+        rgb = image.convert("RGB")
+        width, height = rgb.size
+        # Avoid NumPy bridge on the TTA hot path: decode PIL bytes directly into torch.
+        # torch.frombuffer on bytes warns because bytes are read-only; use writable bytearray.
+        raw = bytearray(rgb.tobytes())
+        image_u8 = torch.frombuffer(raw, dtype=torch.uint8).view(height, width, 3)
+        image_t = image_u8.permute(2, 0, 1).to(device=device, dtype=torch.float32).div_(255.0).unsqueeze(0)
         if image_t.shape[-2] != target_edge or image_t.shape[-1] != target_edge:
             image_t = F.interpolate(image_t, size=(target_edge, target_edge), mode="bilinear", align_corners=False)
         image_t = (image_t - mean.unsqueeze(0)) / std.unsqueeze(0)
@@ -1025,26 +1033,21 @@ class TTAPredictor:
         output_sizes_list: List[Tuple[int, int]] = []
         true_aug_counts: List[int] = []
         
+        build_device = "cpu" if bool(getattr(self, "_build_inputs_on_cpu", False)) else device
+
         for sample_idx, (image, bbox) in enumerate(zip(images, bboxes)):
-            image_np = np.array(image.convert("RGB"))
-            h, w = image_np.shape[:2]
-            
-            base_tensor, target_edge = self._preprocess_image_tensor(image_np=image_np, processor=processor, device=device)
+            h = int(image.height)
+            w = int(image.width)
+
+            base_tensor, target_edge = self._preprocess_image_tensor(image=image, processor=processor, device=build_device)
             # _preprocess_image_tensor uses direct resize to (target_edge, target_edge),
             # so bbox scaling must follow per-axis resize factors.
             sx = float(target_edge) / float(max(w, 1))
             sy = float(target_edge) / float(max(h, 1))
-            x1, y1, x2, y2 = [float(v) for v in bbox]
-            base_box = torch.tensor(
-                [
-                    float(np.clip(x1 * sx, 0.0, float(target_edge - 1))),
-                    float(np.clip(y1 * sy, 0.0, float(target_edge - 1))),
-                    float(np.clip(x2 * sx, 0.0, float(target_edge - 1))),
-                    float(np.clip(y2 * sy, 0.0, float(target_edge - 1))),
-                ],
-                device=device,
-                dtype=torch.float32,
-            )
+            bbox_t = torch.as_tensor(bbox, device=build_device, dtype=torch.float32)
+            max_coord = float(target_edge - 1)
+            scaled = bbox_t * bbox_t.new_tensor([sx, sy, sx, sy], dtype=torch.float32)
+            base_box = scaled.clamp_(min=0.0, max=max_coord)
             target_edge = int(base_tensor.shape[-1])
             
             output_sizes_list.append((h, w))
@@ -1054,8 +1057,8 @@ class TTAPredictor:
                 all_pixel_values.append(self._apply_tensor_aug(base_tensor, aug_name))
                 all_input_boxes.append(self._augment_square_bbox(base_box, aug_name, target_edge))
                 
-                all_original_sizes.append(torch.tensor([h, w], dtype=torch.int64, device=device))
-                all_reshaped_sizes.append(torch.tensor([target_edge, target_edge], dtype=torch.int64, device=device))
+                all_original_sizes.append(torch.tensor([h, w], dtype=torch.int64, device=build_device))
+                all_reshaped_sizes.append(torch.tensor([target_edge, target_edge], dtype=torch.int64, device=build_device))
                 aug_ids.append(int(self._aug_to_id[aug_name]))
                 aug_count += 1
             
@@ -1064,6 +1067,11 @@ class TTAPredictor:
         stacked_pixels = torch.stack(all_pixel_values, dim=0).contiguous()
         if stacked_pixels.dim() == 4:
             stacked_pixels = stacked_pixels.contiguous(memory_format=torch.channels_last)
+        if build_device == "cpu" and device == "cuda":
+            try:
+                stacked_pixels = stacked_pixels.pin_memory()
+            except Exception:
+                pass
         
         total_augs = len(aug_ids)
         target_batch = self.fixed_batch_size if self.fixed_batch_size > 0 else total_augs
@@ -1081,11 +1089,18 @@ class TTAPredictor:
             "original_sizes": torch.stack(all_original_sizes, dim=0),
             "reshaped_input_sizes": torch.stack(all_reshaped_sizes, dim=0),
         }
+
+        if build_device == "cpu" and device == "cuda":
+            for k in ("input_boxes", "original_sizes", "reshaped_input_sizes"):
+                try:
+                    inputs[k] = inputs[k].pin_memory()
+                except Exception:
+                    pass
         
         if profiler is not None and profiler.enabled:
             profiler.record_duration("tta.build_inputs", time.perf_counter() - t0)
 
-        return inputs, torch.tensor(aug_ids, device=device, dtype=torch.int64), output_sizes_list, true_aug_counts
+        return inputs, torch.tensor(aug_ids, device=build_device, dtype=torch.int64), output_sizes_list, true_aug_counts
 
     def _deaugment_grouped_batch(self, preds_t: torch.Tensor, aug_ids: torch.Tensor) -> torch.Tensor:
         if preds_t.dim() != 3:
@@ -1252,7 +1267,7 @@ class TTAPredictor:
         if device != "cuda":
             test_sizes = [1, 2, 4, 8]
         elif _is_low_vram_cuda(device, cuda_mem_gb):
-            test_sizes = [4, 8, 12, 16, 24, 32]
+            test_sizes = [1, 2, 4, 8]
         else:
             test_sizes = [8, 12, 16, 24, 32, 48, 64]
         best_size = self.infer_chunk_size
@@ -1290,6 +1305,9 @@ class TTAPredictor:
                         "original_sizes": original_sizes[start:end],
                         "reshaped_input_sizes": reshaped_input_sizes[start:end],
                     }
+                    inputs_already_on_device = all(
+                        isinstance(v, torch.Tensor) and v.device.type == device for v in chunk_inputs.values()
+                    )
                     pred_chunk = predict_prob_masks_from_inputs(
                         model=model,
                         inputs=chunk_inputs,
@@ -1299,7 +1317,7 @@ class TTAPredictor:
                         # NOTE:
                         # TTA long runs may hit non-finite outputs when reusing CUDA graph replay.
                         # Force eager path here for numerical stability.
-                        inputs_already_on_device=False,
+                        inputs_already_on_device=inputs_already_on_device,
                     )[:, 0]
                     pred_chunks.append(pred_chunk)
                 
@@ -1318,11 +1336,19 @@ class TTAPredictor:
                     torch.cuda.empty_cache()
                     torch.cuda.synchronize()
             except RuntimeError as e:
-                msg = str(e).lower()
-                if "out of memory" in msg or "cuda" in msg and "memory" in msg:
+                if _is_cuda_runtime_unready_error(e):
+                    print(
+                        f"[TTA Tuner]   chunk_size={test_chunk_size}: CUDA unstable, keep chunk_size={best_size}",
+                        flush=True,
+                    )
+                    if device == "cuda":
+                        torch.cuda.empty_cache()
+                    break
+                if _is_cuda_oom_error(e):
                     print(f"[TTA Tuner]   chunk_size={test_chunk_size}: OOM", flush=True)
                     if device == "cuda":
                         torch.cuda.empty_cache()
+                    break
                 else:
                     raise
         
@@ -1408,47 +1434,52 @@ class TTAPredictor:
         total_count = int(pixel_values.shape[0])
         chunk_size = max(1, self.infer_chunk_size)
 
-        # Chunk-wise inference with dynamic OOM recovery
-        while True:
-            pred_chunks: List[torch.Tensor] = []
-            try:
-                for start in range(0, total_count, chunk_size):
-                    end = min(start + chunk_size, total_count)
-                    chunk_inputs = {
-                        "pixel_values": pixel_values[start:end],
-                        "input_boxes": input_boxes[start:end],
-                        "original_sizes": original_sizes[start:end],
-                        "reshaped_input_sizes": reshaped_input_sizes[start:end],
-                    }
-                    t_chunk = time.perf_counter() if profiler is not None and profiler.enabled else 0.0
-                    pred_chunk = predict_prob_masks_from_inputs(
-                        model=model,
-                        inputs=chunk_inputs,
-                        device=device,
-                        output_size=None,
-                        use_amp=True,
-                        # Keep autotune behavior aligned with predict_batch inference path.
-                        inputs_already_on_device=False,
-                    )[:, 0]
-                    if profiler is not None and profiler.enabled:
-                        profiler.record_duration("tta.chunk_inference", time.perf_counter() - t_chunk)
-                    pred_chunks.append(pred_chunk)
-                break
-            except RuntimeError as e:
-                msg = str(e).lower()
-                is_oom = "out of memory" in msg or "cuda" in msg and "memory" in msg
-                if not is_oom or chunk_size <= 1:
-                    raise
-                if device == "cuda":
-                    torch.cuda.empty_cache()
-                chunk_size = max(1, chunk_size // 2)
+        # Chunk-wise inference with dynamic OOM recovery.
+        # Use inference_mode to reduce autograd bookkeeping in this pure inference path.
+        with torch.inference_mode():
+            while True:
+                pred_chunks: List[torch.Tensor] = []
+                try:
+                    for start in range(0, total_count, chunk_size):
+                        end = min(start + chunk_size, total_count)
+                        chunk_inputs = {
+                            "pixel_values": pixel_values[start:end],
+                            "input_boxes": input_boxes[start:end],
+                            "original_sizes": original_sizes[start:end],
+                            "reshaped_input_sizes": reshaped_input_sizes[start:end],
+                        }
+                        inputs_already_on_device = all(
+                            isinstance(v, torch.Tensor) and v.device.type == device for v in chunk_inputs.values()
+                        )
+                        t_chunk = time.perf_counter() if profiler is not None and profiler.enabled else 0.0
+                        pred_chunk = predict_prob_masks_from_inputs(
+                            model=model,
+                            inputs=chunk_inputs,
+                            device=device,
+                            output_size=None,
+                            use_amp=True,
+                            # Skip redundant host->device move when TTA inputs are already on target device.
+                            inputs_already_on_device=inputs_already_on_device,
+                        )[:, 0]
+                        if profiler is not None and profiler.enabled:
+                            profiler.record_duration("tta.chunk_inference", time.perf_counter() - t_chunk)
+                        pred_chunks.append(pred_chunk)
+                    break
+                except RuntimeError as e:
+                    msg = str(e).lower()
+                    is_oom = "out of memory" in msg or "cuda" in msg and "memory" in msg
+                    if not is_oom or chunk_size <= 1:
+                        raise
+                    if device == "cuda":
+                        torch.cuda.empty_cache()
+                    chunk_size = max(1, chunk_size // 2)
 
         pred_batch_t = torch.cat(pred_chunks, dim=0)
 
         # Ignore optional pad entries; only true augmentations should contribute.
         valid_total = int(sum(int(c) for c in true_aug_counts))
         pred_batch_t = pred_batch_t[:valid_total]
-        aug_ids = aug_ids[:valid_total]
+        aug_ids = aug_ids[:valid_total].to(device=pred_batch_t.device)
 
         n_samples = len(images)
         result_probs: List[torch.Tensor] = []

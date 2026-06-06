@@ -60,6 +60,12 @@ CLI_SETTING_KEYS = {
     "run_stage7_eval_ood_finetuned",
     "run_stage7_eval_full_finetuned",
     "run_stage8_plotting",
+    "run_clinical_mode",
+    "clinical_weight_path",
+    "clinical_finetune_steps",
+    "clinical_finetune_lr",
+    "clinical_finetune_weight_decay",
+    "clinical_finetune_use_fused_adamw",
     "ood_threshold",
     "ood_enable_collapse_detection",
     "ood_collapse_max_prob_threshold",
@@ -266,9 +272,18 @@ def _parse_args(defaults: dict, config_path: Path) -> argparse.Namespace:
     pipeline_group.add_argument("--skip-stage7-eval-full-finetuned", action="store_false", dest="run_stage7_eval_full_finetuned", help="略過 Stage 7：full finetuned 模型評估")
     pipeline_group.add_argument("--run-stage8-plotting", action="store_true", dest="run_stage8_plotting", help="執行 Stage 8：繪圖與比較表")
     pipeline_group.add_argument("--skip-stage8-plotting", action="store_false", dest="run_stage8_plotting", help="略過 Stage 8：繪圖與比較表")
+    pipeline_group.add_argument("--run-clinical-mode", action="store_true", dest="run_clinical_mode", help="啟用臨床模式：單張 OOD 判斷，依分支執行原地微調 + TTA")
+    pipeline_group.add_argument("--skip-clinical-mode", action="store_false", dest="run_clinical_mode", help="停用臨床模式")
     fused_group = train_group.add_mutually_exclusive_group()
     fused_group.add_argument("--use-fused-adamw", action="store_true", dest="finetune_use_fused_adamw", help="啟用 fused AdamW")
     fused_group.add_argument("--no-fused-adamw", action="store_false", dest="finetune_use_fused_adamw", help="停用 fused AdamW（在某些環境下需要）")
+    train_group.add_argument("--clinical-weight-path", default=defaults["clinical_weight_path"], dest="clinical_weight_path", metavar="FILE", help="臨床模式使用的 OOD finetuned 權重 .pth（空白則自動尋找）")
+    train_group.add_argument("--clinical-finetune-steps", type=int, default=defaults["clinical_finetune_steps"], dest="clinical_finetune_steps", metavar="N", help="臨床模式 OOD 分支每張圖原地微調步數")
+    train_group.add_argument("--clinical-finetune-lr", type=float, default=defaults["clinical_finetune_lr"], dest="clinical_finetune_lr", metavar="LR", help="臨床模式原地微調學習率")
+    train_group.add_argument("--clinical-finetune-weight-decay", type=float, default=defaults["clinical_finetune_weight_decay"], dest="clinical_finetune_weight_decay", metavar="WD", help="臨床模式原地微調權重衰減")
+    clinical_fused_group = train_group.add_mutually_exclusive_group()
+    clinical_fused_group.add_argument("--clinical-use-fused-adamw", action="store_true", dest="clinical_finetune_use_fused_adamw", help="臨床模式原地微調啟用 fused AdamW")
+    clinical_fused_group.add_argument("--clinical-no-fused-adamw", action="store_false", dest="clinical_finetune_use_fused_adamw", help="臨床模式原地微調停用 fused AdamW")
 
     # ── 評估 ──────────────────────────────────────────────────────────────────
     eval_group = parser.add_argument_group("評估")
@@ -477,6 +492,8 @@ def _parse_args(defaults: dict, config_path: Path) -> argparse.Namespace:
         run_stage7_eval_ood_finetuned=bool(defaults["run_stage7_eval_ood_finetuned"]),
         run_stage7_eval_full_finetuned=bool(defaults["run_stage7_eval_full_finetuned"]),
         run_stage8_plotting=bool(defaults["run_stage8_plotting"]),
+        run_clinical_mode=bool(defaults["run_clinical_mode"]),
+        clinical_finetune_use_fused_adamw=bool(defaults["clinical_finetune_use_fused_adamw"]),
         ood_enable_collapse_detection=bool(defaults["ood_enable_collapse_detection"]),
         ood_enable_entropy_detection=bool(defaults["ood_enable_entropy_detection"]),
         ood_enable_fragmentation_detection=bool(defaults["ood_enable_fragmentation_detection"]),

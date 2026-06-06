@@ -29,6 +29,25 @@ _SAM_NORM_CACHE: Dict[int, Tuple[torch.Tensor, torch.Tensor]] = {}
 _CUDA_GRAPH_RUNNERS: Dict[Tuple[int, Tuple[int, ...], Tuple[int, ...], Tuple[int, ...], Tuple[int, ...], bool], "_CudaGraphRunner"] = {}
 
 
+def resolve_amp_dtype(device: str) -> torch.dtype:
+    """Resolve project-wide AMP dtype with BF16 preference.
+
+    MEDSAM_AMP_DTYPE:
+    - bf16 (default): BF16 on CUDA if supported, else FP16
+    - fp16: force FP16
+    - auto: BF16 if supported, else FP16
+    """
+    mode = str(os.getenv("MEDSAM_AMP_DTYPE", ENV_DEFAULTS.get("MEDSAM_AMP_DTYPE", "bf16"))).strip().lower()
+    if device != "cuda":
+        return torch.float32
+    if mode in {"fp16", "float16", "half"}:
+        return torch.float16
+    # bf16 / auto both prefer bf16 when available
+    if bool(torch.cuda.is_bf16_supported()):
+        return torch.bfloat16
+    return torch.float16
+
+
 class _CudaGraphRunner:
     def __init__(self, model: SamModel, sample_inputs: Dict[str, torch.Tensor], use_amp: bool):
         self.model = model
@@ -48,7 +67,7 @@ class _CudaGraphRunner:
 
     def _forward(self) -> torch.Tensor:
         if self.use_amp:
-            with torch.amp.autocast("cuda", dtype=torch.float16):
+            with torch.amp.autocast("cuda", dtype=resolve_amp_dtype("cuda")):
                 outputs = self.model(**self.static_inputs)
                 probs = torch.sigmoid(outputs.pred_masks)
         else:
@@ -330,7 +349,8 @@ def _try_compile_model(model: SamModel, processor: SamProcessor, device: str, im
 
     # Only use inductor for compilation per user preference.
     backend_candidates = ["inductor"]
-    mode_candidates = ["reduce-overhead"]
+    compile_mode_raw = os.getenv("MEDSAM_COMPILE_MODE", ENV_DEFAULTS.get("MEDSAM_COMPILE_MODE", "reduce-overhead")).strip()
+    mode_candidates = [compile_mode_raw or "reduce-overhead"]
 
     default_dynamic = False if device == "cuda" else True
     compile_dynamic = _env_bool("MEDSAM_COMPILE_DYNAMIC", default_dynamic)
@@ -351,7 +371,7 @@ def _try_compile_model(model: SamModel, processor: SamProcessor, device: str, im
                     model,
                     backend=compile_backend,
                     mode=compile_mode,
-                    fullgraph=False,
+                    fullgraph=_env_bool("MEDSAM_COMPILE_FULLGRAPH", False),
                     dynamic=compile_dynamic,
                 )
                 with torch.no_grad():
@@ -367,6 +387,7 @@ def _try_compile_model(model: SamModel, processor: SamProcessor, device: str, im
                 report["backend"] = compile_backend
                 report["error"] = ""
                 report["compile_mode"] = compile_mode
+                report["compile_fullgraph"] = _env_bool("MEDSAM_COMPILE_FULLGRAPH", False)
                 report["compile_dynamic"] = compile_dynamic
                 report["warmup_batches"] = warmup_batches
                 return compiled, report
@@ -400,10 +421,11 @@ def load_medsam(model_id: str, device: str, image_size: int, local_weight_path: 
     # Enable TensorFloat32 on CUDA and set matmul precision to avoid runtime warnings
     # while keeping performance characteristics suitable for training/eval.
     if device == "cuda":
-        torch.set_float32_matmul_precision("high")
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
-        torch.backends.cudnn.benchmark = True
+        torch.set_float32_matmul_precision(os.getenv("MEDSAM_CUDA_MATMUL_PRECISION", "high"))
+        allow_tf32 = _env_bool("MEDSAM_CUDA_ALLOW_TF32", True)
+        torch.backends.cuda.matmul.allow_tf32 = bool(allow_tf32)
+        torch.backends.cudnn.allow_tf32 = bool(allow_tf32)
+        torch.backends.cudnn.benchmark = _env_bool("MEDSAM_CUDA_CUDNN_BENCHMARK", True)
         model = model.to(memory_format=torch.channels_last)
 
     model.eval()
@@ -456,7 +478,7 @@ def _run_prob_inference(
     t0 = time.perf_counter() if profiler is not None and profiler.enabled else 0.0
     with torch.inference_mode():
         if use_amp and device == "cuda":
-            with torch.amp.autocast("cuda", dtype=torch.float16):
+            with torch.amp.autocast("cuda", dtype=resolve_amp_dtype(device)):
                 outputs = model(**inputs)
                 probs = torch.sigmoid(outputs.pred_masks)
         else:

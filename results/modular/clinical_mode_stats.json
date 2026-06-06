@@ -1,0 +1,30 @@
+{
+  "mode": "clinical",
+  "weight_path": "/root/MedIMG/results/modular/medsam_OOD_finetuned_best.pth",
+  "clinical_finetune_steps": 2,
+  "clinical_finetune_lr": 5e-06,
+  "clinical_finetune_weight_decay": 0.0001,
+  "clinical_finetune_use_fused_adamw": true,
+  "num_samples": 2377,
+  "num_no_ood_branch": 2376,
+  "num_ood_branch": 1,
+  "finetune_applied_count": 1,
+  "finetune_skipped_count": 0,
+  "total_time_sec": 1308.4236757761682,
+  "overall_avg_time_per_sample_sec": 0.5504516936374287,
+  "overall_throughput_samples_per_sec": 1.8166898413772152,
+  "no_ood_branch": {
+    "avg_ood_time_sec": 0.09381225193485282,
+    "avg_finetune_time_sec": 0.0,
+    "avg_tta_time_sec": 0.4561619035281697,
+    "avg_total_time_sec": 0.5499778272151344,
+    "throughput_samples_per_sec": 1.8182551195992682
+  },
+  "ood_branch": {
+    "avg_ood_time_sec": 0.09350219601765275,
+    "avg_finetune_time_sec": 1.0354880800005049,
+    "avg_tta_time_sec": 0.5243555099586956,
+    "avg_total_time_sec": 1.6763583130086772,
+    "throughput_samples_per_sec": 0.5965311784717614
+  }
+}
